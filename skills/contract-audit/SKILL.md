@@ -9,6 +9,18 @@ Use this skill to find where downstream work violates, narrows, omits, or mutate
 
 This is not a generic review. The PRD and `vibe.md` are the source of truth; the target artifact is guilty until it proves traceability. A vibe violation is a contract violation.
 
+## Dependencies (subagents)
+
+This skill dispatches a panel of reviewer subagents (see `references/agent-loop.md`). Those agents are bundled with the skill in `agents/*.agent.md` so they travel with it — `npx skills` copies the whole skill directory, but it does **not** place subagents into the host tool's agents directory. Run the one-time install step so they resolve:
+
+```sh
+# from the installed skill directory
+bash scripts/install-agents.sh          # symlinks agents into ~/.claude/agents (and other detected tools)
+# or: bash scripts/install-agents.sh --copy   # hard-copy instead of symlink
+```
+
+Re-run after `npx skills update`. If a referenced reviewer is missing, the audit will note the gap and continue with the reviewers that are available.
+
 ## Artifacts
 
 - **PRD:** immutable product intent: requirements, undesirable outcomes, success criteria, scope boundaries, and explicit deferrals.
