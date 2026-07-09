@@ -1,0 +1,4 @@
+interface:
+  display_name: "NM Contract Audit"
+  short_description: "Audit PRD and vibe alignment"
+  default_prompt: "Use $contract-audit to audit this spec, plan, or implementation against the approved PRD and vibe.md until no contract violations remain."
