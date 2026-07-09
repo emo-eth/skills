@@ -71,7 +71,7 @@ For formal contract work, prefer vibe first, then PRD:
 
 If the repo already uses a flat PRD convention, keep the PRD path and place the source `vibe.md` beside it when possible. Use stable vibe IDs (`V1`, `V2`, ...) and PRD requirement IDs (`R1`, `R2`, ...). Keep both product-facing and free of implementation choreography.
 
-Before moving on, use `nm-prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes enough that approval needs pressure-testing. Then ask the user to approve the `vibe.md` and PRD, or request amendments. Do not infer approval from silence.
+Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes enough that approval needs pressure-testing. Then ask the user to approve the `vibe.md` and PRD, or request amendments. Do not infer approval from silence.
 
 Completion criterion for formal contract work: requested contract files exist, have no placeholders, have no "Resolve Before Spec" questions, and are explicitly approved by the user.
 
@@ -91,7 +91,7 @@ Completion criterion: every spec requirement has an implementation task or a del
 
 ### 6. Grill Downstream Artifacts
 
-After a spec, plan, or implementation claims to satisfy the contract, use `nm-contract-audit` to audit it against PRD and `vibe.md` intent before calling it complete. Use `nm-prd-grill` only when grilling the human on whether the PRD and `vibe.md` themselves match expectations.
+After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` to audit it against PRD and `vibe.md` intent before calling it complete. Use `prd-grill` only when grilling the human on whether the PRD and `vibe.md` themselves match expectations.
 
 Completion criterion: no open P0/P1/P2 PRD/vibe contract violations remain, or the user has explicitly accepted the residual risk.
 

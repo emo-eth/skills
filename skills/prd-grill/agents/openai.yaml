@@ -1,0 +1,4 @@
+interface:
+  display_name: "NM PRD Grill"
+  short_description: "Grill humans on PRD and vibe fit"
+  default_prompt: "Use $prd-grill to walk me through this PRD and vibe.md until the contract matches my expectations."
