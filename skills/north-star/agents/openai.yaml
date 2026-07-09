@@ -1,4 +1,4 @@
 interface:
-  display_name: "NM North Star"
+  display_name: "North Star"
   short_description: "Shape ideal-reality vibes into PRDs"
   default_prompt: "Use $north-star to suss out my ideal-reality vibe first, then turn it into a PRD only if needed."

@@ -3,7 +3,7 @@ name: regression-audit
 description: Audit a Native Markets branch or PR against `origin/dev` to find and fix regressions, unintended behavior changes, unnecessary churn, partial reverts, config drift, and silent field drops from shared-package migrations. Use when the user asks to compare a PR to `origin/dev`, find unnecessary changes, audit suspicious diffs, restore lost upstream behavior, verify a refactor or shared-package migration didn't drop functionality, or check a Sarajevo/usdh-account branch for reverted KYC/analytics/deploy wiring.
 ---
 
-# NM Regression Audit
+# Regression Audit
 
 Audit a branch against `origin/dev`, prove what regressed, restore only lost behavior, leave intentional branch work intact.
 
