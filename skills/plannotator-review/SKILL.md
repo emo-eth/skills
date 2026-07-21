@@ -30,6 +30,25 @@ Two load-bearing facts, learned the hard way:
   content persists until the next same-target launch. Recover BEFORE
   relaunching anything.
 
+## Prepare docs for review: SELF-CONTAINED, always
+
+Every doc entering a session must stand alone — the reviewer will not
+context-switch to other files, ever (assume they can't; that's the
+accommodation, not a preference):
+
+- Glossary at the top defining every coined term and abbreviation.
+- Acronyms expanded on first use: "V7 (judgment labeled as judgment)",
+  never bare "V7".
+- No references to documents that aren't loaded in the same session; if
+  a reference is essential, either inline the needed content or ask to
+  add the referenced doc to the bundle.
+- Cross-references by bare number ("#9", "R4") must quote the thing they
+  point at.
+
+Violating this converts a review into a comprehension interrogation —
+the annotations come back as "what is X?" instead of decisions, and the
+round is wasted.
+
 ## Standing session (the durable answer to rug-pulls)
 
 Prefer ONE long-lived session on a DURABLE folder (e.g. `~/simon-review/`,
