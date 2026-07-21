@@ -30,6 +30,19 @@ Two load-bearing facts, learned the hard way:
   content persists until the next same-target launch. Recover BEFORE
   relaunching anything.
 
+## Standing session (the durable answer to rug-pulls)
+
+Prefer ONE long-lived session on a DURABLE folder (e.g. `~/simon-review/`,
+never `/tmp` — reboots eat it). Changed docs are updated IN PLACE (same
+filename: the live session picks it up and native diff keeps working).
+Adding a brand-new file requires a restart — so it requires the human's
+explicit ok first. Enforce the contract with a harness hook, not
+discipline: a PreToolUse guard that exits 2 on lifecycle operations
+against live sessions (process termination, or a fresh launch while one
+is live), overridable only by a token the human grants in chat.
+Instructions bend under pressure; hooks don't — this skill's own history
+proves both halves.
+
 ## Launch
 
 Always detached (harness-tracked background tasks get reaped between
