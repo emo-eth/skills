@@ -1,6 +1,6 @@
 ---
 name: comeback-recovery
-description: When the user returns after being away or context has been lost, quickly re-orient by reading .context/progress.md, the newest docs/log/ handoff, git state, and recent history, then propose the immediate next action. Use when the conversation resumes after a gap, after compaction, or when the user asks "where were we?" — this resumes an in-flight task; use project-status instead for a project-wide briefing of what shipped, what is left, and what is blocked on the user.
+description: When the user returns after being away or context has been lost, quickly re-orient by reading .context/progress.md, the newest docs/log/ handoff, git state, and recent history, then propose the immediate next action. Use when the conversation resumes after a gap, after compaction, or when the user asks "where were we?" — this resumes an in-flight task; use lc-project-state status instead for a project-wide briefing of what shipped, what is left, and what is blocked on the user.
 ---
 
 # Comeback Recovery
@@ -34,7 +34,7 @@ git log -5                    — recent commits
 
 Handoffs are one dated file per session, so take the newest by filename rather than expecting a single fixed path.
 
-Scope discipline: this skill resumes **the task you were on**. It does not brief on the project — no milestone accounting, no ranked queue, no what-needs-the-human. That is `project-status`, which is read-only and reads `docs/STATE.md` and `docs/DECISIONS.md` properly. If the user is asking "what's left" or "what needs me" rather than "where were we," use that instead.
+Scope discipline: this skill resumes **the task you were on**. It does not brief on the project — no milestone accounting, no ranked queue, no what-needs-the-human. That is `lc-project-state status`, which is read-only and reads `docs/STATE.md` and `docs/DECISIONS.md` properly. If the user is asking "what's left" or "what needs me" rather than "where were we," use that instead.
 
 ### 2. Build Context (5 seconds)
 
