@@ -113,7 +113,7 @@ the prime rule, not by age.
   quoted lines; a `Linked Document Feedback` section often repeats the
   same items — dedupe by content before counting.
 - Three outcomes: `The user approved.`; empty or dismissed; numbered
-  feedback. All three run `review-capture` — approvals and empty rounds
+  feedback. All three run `lc-review-capture` — approvals and empty rounds
   are cheap passes, numbered rounds are full ones.
 
 No stdout file (launched wrong, or by someone else)? Last resorts, in
@@ -123,7 +123,7 @@ human to export from the UI.
 
 ## Process the feedback
 
-- Hand the round to `review-capture` — every submitted round, without
+- Hand the round to `lc-review-capture` — every submitted round, without
   exception, INCLUDING approval rounds. Its pass owns the order:
   snapshot the raw feedback FIRST, then apply, then record. Applying
   feedback without persisting it is how the same review happens three

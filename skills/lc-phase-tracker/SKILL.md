@@ -1,5 +1,5 @@
 ---
-name: phase-tracker
+name: lc-phase-tracker
 description: Track progress through multi-step tasks by maintaining a .context/progress.md checklist. Read it before each action, confirm context, and update after completing each phase. Use when a task has 3+ sequential phases, involves multiple accounts/environments, or spans enough work that context could drift.
 ---
 
@@ -88,4 +88,4 @@ When all phases are complete:
 - Add a final log entry summarizing the outcome
 - Ask the user if they want to keep or delete .context/progress.md
 
-If anything in the log is worth keeping beyond this task — a decision, a discovered constraint — it does not belong here. Route decisions to `docs/DECISIONS.md` (via `review-capture`) and durable findings to `docs/log/`, then let the checklist be discarded.
+If anything in the log is worth keeping beyond this task — a decision, a discovered constraint — it does not belong here. Route decisions to `docs/DECISIONS.md` (via `lc-review-capture`) and durable findings to `docs/log/`, then let the checklist be discarded.

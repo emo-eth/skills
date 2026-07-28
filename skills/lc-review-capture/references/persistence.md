@@ -1,6 +1,6 @@
 # Persistence formats
 
-Reference for `review-capture`. Load when writing entries, not on every round.
+Reference for `lc-review-capture`. Load when writing entries, not on every round.
 
 ## `docs/DECISIONS.md` — the log
 

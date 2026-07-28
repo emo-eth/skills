@@ -71,7 +71,7 @@ Use this structure:
 - Include exact commands where applicable.
 - Only include decisions that a fresh session wouldn't be able to derive from the code.
 - Do not include information that is already in CLAUDE.md or the codebase.
-- If a .context/progress.md exists from the phase-tracker skill, reference it rather than duplicating its content.
+- If a .context/progress.md exists from the lc-phase-tracker skill, reference it rather than duplicating its content.
 - Keep it concise. A fresh session should be able to read this in under 30 seconds and know exactly what to do.
 
 ## Prior handoffs
@@ -82,4 +82,4 @@ One file per session, each dated — so there is nothing to archive and nothing 
 - If today already has a handoff, append to it under a `## Later that day` heading rather than starting a second file for the same date.
 - If the previous handoff's "Next Steps" were completed, do not restate them — the new handoff describes the current frontier only. A reader who wants the trail reads the earlier files.
 
-If the repo has a `docs/STATE.md`, a handoff is not a substitute for updating it. The handoff carries *session* continuity; `STATE.md` carries *project* currency, and per `project-state` it must be updated in the same commit as the work.
+If the repo has a `docs/STATE.md`, a handoff is not a substitute for updating it. The handoff carries *session* continuity; `STATE.md` carries *project* currency, and per `lc-project-state` it must be updated in the same commit as the work.

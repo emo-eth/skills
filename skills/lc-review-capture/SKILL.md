@@ -1,5 +1,5 @@
 ---
-name: review-capture
+name: lc-review-capture
 description: Persist what a human review round decided, so the round never has to happen twice. Use immediately after annotations or feedback come back from ANY human review round (Plannotator or otherwise), while applying them, and after applying them — snapshot the raw feedback, produce the numbered answers doc, record decisions to docs/DECISIONS.md, update docs/taste.md, route deferred work, and close with one summary. Triggers on "the annotations came back", retrieved Plannotator output, applying review feedback, or a review round ending — including approval rounds. Never human-invoked; runs every round.
 ---
 
@@ -60,7 +60,7 @@ Seven steps, in order. Steps 1–3 happen with the raw feedback in hand;
    that constrains ALL future work also gets a one-line mirror in
    STATE.md's Standing constraints citing its D-ID. `docs/DECISIONS.md`
    and `docs/taste.md` themselves get rows in the topic index. Mechanics
-   of STATE.md are `project-state`'s — this skill only hands off.
+   of STATE.md are `lc-project-state`'s — this skill only hands off.
 7. **Close with one summary** — the only human-facing output: what was
    applied, what was recorded (decision IDs), what was deferred and why,
    and exactly what (if anything) still needs the human. Short.
@@ -101,7 +101,7 @@ corrections.
 ## Artifact roles
 
 - **STATE.md** — the map: current work, deferred work, open decisions,
-  pointers. Owned by `project-state`.
+  pointers. Owned by `lc-project-state`.
 - **DECISIONS.md** — the log: every decision, append-only, superseded
   entries demoted not deleted. Load-bearing is a tag on an entry, not a
   separate ADR ceremony.
