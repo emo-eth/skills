@@ -1,7 +1,6 @@
 ---
 name: confidence-gated-review
-disable-model-invocation: true
-description: Replace review-everything with confidence-gated exception handling. Use when working under a product owner who doesn't want to review every doc/decision - rate each decision by how well you understand their intent, proceed above threshold with a logged call, and bring them only the low-confidence residue plus actions only they can take. Requires a written product contract (vibe/PRD or equivalent) to score against.
+description: Replace review-everything with confidence-gated exception handling after the user has adopted that policy for a project. Use when a written product contract exists and downstream decisions can proceed above a stated confidence threshold, while low-confidence decisions and irreversible actions still go to the owner. Do not infer permission to change the review policy merely because a PRD exists.
 ---
 
 # Confidence-Gated Review
