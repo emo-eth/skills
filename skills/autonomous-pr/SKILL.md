@@ -1,5 +1,6 @@
 ---
 name: autonomous-pr
+disable-model-invocation: true
 description: Use when the user asks to drive a specific GitHub PR to ready-to-merge state without intervention — ship PR N, get this PR ready to merge, autonomously handle CI, review threads, Bugbot state, and mergeability. NEVER merges; human approval is always required to merge in this repo.
 ---
 

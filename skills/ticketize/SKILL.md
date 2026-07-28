@@ -1,5 +1,6 @@
 ---
 name: ticketize
+disable-model-invocation: true
 description: "Turn crystallized thinking — a problem map, plan doc, spec, or post-synthesis understanding — into tickets a team can actually pick up. Use when the user says 'ticket this out,' 'break this into tasks,' or 'populate the board'; when a planning doc needs to land in a tracker (Notion, Linear, GitHub Issues); or as the step after synthesize or north-star when understanding must become assigned work."
 ---
 

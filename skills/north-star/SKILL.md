@@ -1,5 +1,6 @@
 ---
 name: north-star
+disable-model-invocation: true
 description: "Vibe-first north-star clarification. Use when the user wants to word-dump an ideal reality, suss out vibes, name a north star, explore product taste, write a vibe.md, or translate a settled vibe into a PRD; also use when product feel, failure modes, users, success criteria, or scope boundaries are vague. Does not require a PRD unless the user asks for one or downstream execution needs one. Do not override an explicit downstream skill invocation such as plan; mention vibe/PRD risk only if material."
 ---
 

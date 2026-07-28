@@ -1,5 +1,6 @@
 ---
 name: ralph-ci
+disable-model-invocation: true
 description: "Autonomous push-fix-watch loop that drives a PR to green AND addresses every bot review thread with a code fix. Runs local preflight (make preflight or act), fixes failures, pushes, creates/updates the PR, then watches remote CI while polling unresolved review threads via GraphQL (scripts/get-pr-feedback.sh) — the authoritative signal for Cursor BugBot, CodeRabbit, Greptile, and similar inline-comment bots. On failure, fetches logs, fixes, re-pushes, re-watches. NEVER posts replies or resolves threads on the PR — fixes land in code, bots auto-resolve, humans handle their own threads. Exits when CI is green AND every addressable finding has a pushed fix AND bugbot_state is CLEAN AND 3 consecutive clean settle polls AND PR is mergeable, or max attempts hit. Triggers include /ralph-ci, 'ralph it', 'push and watch ci', 'get this green', 'ship it and watch', or any autonomous push-and-fix-until-green request."
 ---
 

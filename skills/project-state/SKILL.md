@@ -1,5 +1,6 @@
 ---
 name: project-state
+disable-model-invocation: true
 description: "Bootstrap and maintain a living project-state convention so a fresh clean-context agent (Claude, Codex, Cursor — any tool) orients itself from the repo alone, without being fed context and without asking. Use when project context keeps dying across sessions or compactions; when someone asks 'what's current here?' or 'make a fresh chat understand this project'; when the repo root is a pile of undated docs, findings, and handoffs; when setting up docs/STATE.md; or for an end-of-session doc sync after meaningful work. Two modes: bootstrap (first run in a repo) and sync (ongoing upkeep)."
 argument-hint: "[bootstrap | sync] (defaults: bootstrap if no docs/STATE.md exists, else sync)"
 ---

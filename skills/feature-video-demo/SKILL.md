@@ -1,5 +1,6 @@
 ---
 name: feature-video-demo
+disable-model-invocation: true
 description: This skill should be used when creating Playwright-based video demos of user flows for features, bug reproductions, or compliance demos. It produces deterministic WebM recordings with fake cursors showing realistic user interactions — no QuickTime or OBS required.
 ---
 

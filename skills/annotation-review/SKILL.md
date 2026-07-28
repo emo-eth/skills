@@ -1,5 +1,6 @@
 ---
 name: annotation-review
+disable-model-invocation: true
 description: Launch a Plannotator annotation session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when sending docs/plans to a human for annotation review, when the user says "open X in plannotator", or when retrieving feedback after a session ("pull up the annotations"). Handles single files, multi-doc folder bundles, and diff-based re-review.
 ---
 
