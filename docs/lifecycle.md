@@ -6,21 +6,23 @@ installed skill.
 
 ## The test for what belongs here
 
-**A lifecycle skill either owns a file that outlives the session, or exists only
-to read the ones that do.**
+**A lifecycle skill maintains the project's record: it owns one of the record
+files, or it is a read mode over them.**
 
-That is the whole discriminator. `code-review` finds bugs and owns nothing — its
-output dies with the conversation. `project-state` owns `docs/STATE.md`, which is
-still there next week.
+That is the whole discriminator, and it is narrower than "owns a file that
+outlives the session." `code-review` finds bugs and owns nothing — its output
+dies with the conversation, so it is out. But `session-handoff` owns a durable
+dated file and is *still* out: a handoff tracks **your task** across a gap, not
+**the project's record** of what is true, decided, and shipped. The record is
+the thing a fresh agent must orient from cold; a handoff is a note to your
+future self. (Session continuity gets its own short section at the end.)
 
-Applied to ~107 installed skills, this leaves **nine**: seven that own a file,
-plus two readers that own nothing. Everything else is build / verify / review
-tooling — useful, invoked ad hoc, irrelevant to the question "how does this
-project remember things."
+Applied to ~107 installed skills, the record test leaves **five**. Everything
+else is build / verify / review tooling — useful, invoked ad hoc, irrelevant to
+the question "how does this project remember things."
 
-The two readers answer different questions, and conflating them is easy:
-`comeback-recovery` resumes **the task you were on**; `project-status` briefs on
-**the project** — what shipped, what's left, what's blocked on you.
+The five are `lc-`prefixed so the lifecycle set is unambiguous at a glance and
+sorts together in any skill list.
 
 ## Three kinds of record
 
@@ -53,39 +55,56 @@ Most confusion about "which doc do I put this in" resolves by asking which of th
 three it is. A frozen contract cannot hold a growing inventory; a 1–2 page map
 cannot hold dozens of feature rows; a history cannot answer "does this work now."
 
-## The nine
+The map (`docs/STATE.md`) and the domain record (`docs/capabilities.md`) are both
+owned by `lc-project-state` — one skill, because there is no moment you sync the
+map without wanting the capability record re-checked too. It keeps them separate
+files and re-checks them at different costs (see its four modes below).
+
+## The five
 
 | Skill | Owns | Fires when | Invoked by |
 | --- | --- | --- | --- |
-| `north-star` | `docs/prds/<date>-<topic>/vibe.md`, `prd.md` | starting something new; amending the contract | you |
-| `review-capture` | `docs/DECISIONS.md`, `docs/taste.md` | every human review round, always | auto — never you |
-| `project-state` | `docs/STATE.md` (the map) | bootstrap once per repo, then sync every session | you, or session end |
-| `project-status` | nothing — read-only | you want a project briefing | you |
-| `capability-registry` | `docs/capabilities.md` | after features exist; re-sync when code moves | you |
-| `ticketize` | tracker items (Notion / Linear / Issues) | a settled plan must become assigned work | you |
-| `phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
-| `session-handoff` | `docs/log/YYYY-MM-DD-handoff.md` | ending a session with unfinished work | you, or session end |
-| `comeback-recovery` | nothing — read-only | resuming an in-flight task after a gap | you |
+| `lc-north-star` | `docs/prds/<date>-<topic>/vibe.md`, `prd.md` | starting something new; amending the contract | you |
+| `lc-review-capture` | `docs/DECISIONS.md`, `docs/taste.md` | every human review round, always | auto — never you |
+| `lc-project-state` | `docs/STATE.md` (the map) + `docs/capabilities.md` (the domain record) | bootstrap once per repo; sync every session; status / audit on demand | you, or session end |
+| `lc-ticketize` | tracker items (Notion / Linear / Issues) | a settled plan must become assigned work | you |
+| `lc-phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
 
-Read the trigger column. **Two of the nine are never yours to type:**
-`review-capture` runs itself after every review round, and `phase-tracker` fires
-*inside* a task rather than at its start. If you have been trying to remember
-when to invoke those, that is why it felt wrong — they are not commands.
+`docs/DECISIONS.md` is one append-only decision log, not a directory of ADR
+files — see *Resolved conflicts* §2 for why, and for how ADR's depth was folded
+back in.
+
+Read the trigger column. **Two of the five are never yours to type:**
+`lc-review-capture` runs itself after every review round, and `lc-phase-tracker`
+fires *inside* a task rather than at its start. If you have been trying to
+remember when to invoke those, that is why it felt wrong — they are not commands.
+
+### `lc-project-state`'s four modes
+
+The merge put the map, the domain record, and the read-back under one skill.
+Invoked bare (`/lc-project-state`, no args) it infers the mode: bootstrap if
+there is no `docs/STATE.md`, else sync.
+
+| Mode | Does | Writes? |
+| --- | --- | --- |
+| `bootstrap` | first run: turn the doc pile into a map + clean structure | yes |
+| `sync` | cheap end-of-session upkeep: reconcile the map, downgrade stale tiers, and do a **cheap** capability pass — downgrade rows whose code moved and flag that an audit is due | yes |
+| `status` | read-only briefing: what shipped / what's left / what's blocked on you / what's awaiting review / what's most pressing | **no** |
+| `audit` | full capability verification: (re)build `docs/capabilities.md` with per-capability reachability + drove-it checks, partition the gaps | yes |
+
+The `status`/`audit` split is the whole reason the merge is safe: read-only is a
+**mode guarantee** now, not a separate skill you might forget exists, and the
+expensive verification (`audit`) is decoupled from the cheap habit (`sync`) so
+the habit stays cheap enough to actually run.
 
 ## When to run what
 
-- **Starting fresh work** → `north-star`, then `ticketize` once the plan settles.
-- **First session in a repo with no `docs/STATE.md`** → `project-state bootstrap`, once.
-- **"Where do things stand?"** → `project-status`. Read-only, safe any time.
-- **"Which features actually work? what are the gaps?"** → `capability-registry`.
-- **"What do I need to deploy so I can test it?"** → `capability-registry`; its gap
-  partition separates what blocks testability from what blocks completeness.
-- **End of any session that changed understanding or code** → `project-state sync`,
-  in the same commit as the work. **This is the one habit everything else depends
-  on.** Skip it and the map becomes a lie within a week — and a stale map is worse
-  than no map, because it still gets trusted.
-- **Ending mid-task** → `session-handoff`. **Resuming one** → `comeback-recovery`.
-- **A review round came back** → nothing. `review-capture` handles it.
+- **Starting fresh work** → `lc-north-star`, then `lc-ticketize` once the plan settles.
+- **First session in a repo with no `docs/STATE.md`** → `/lc-project-state` (it infers `bootstrap`), once.
+- **"Where do things stand?" / "what's blocked on me?"** → `/lc-project-state status`. Read-only, safe any time, writes nothing by mode guarantee.
+- **"Which features actually work? where are the gaps?"** → `/lc-project-state audit`. Its gap partition (blocks-testability vs blocks-completeness) also answers "what do I need to deploy so I can test it," and is worth running standalone — outside any ticket or milestone workflow.
+- **End of any session that changed understanding or code** → `/lc-project-state` (it infers `sync`), in the same commit as the work. **This is the one habit everything else depends on.** Skip it and the map becomes a lie within a week — and a stale map is worse than no map, because it still gets trusted. Sync now also keeps the domain record honest: it downgrades capability tiers where code moved and flags when a full `audit` is due, without doing the expensive verification inline.
+- **A review round came back** → nothing. `lc-review-capture` handles it.
 
 ## Where session state goes
 
@@ -101,34 +120,10 @@ Two homes, chosen by the nature of the file — not one catch-all directory.
 The repo root holds only README, AGENTS/CLAUDE, and config. Nothing in this set
 writes there.
 
-## Cross-tool portability
-
-The artifacts are fully portable by design — `STATE.md`, `DECISIONS.md`,
-`docs/capabilities.md`, `docs/log/`, `.context/progress.md` are all plain
-markdown, and `project-state`'s definition of done forbids tool-specific
-machinery. Codex, Cursor, and opencode read them natively.
-
-Six skills are pure file I/O and work anywhere: `project-status`, `north-star`,
-`ticketize`, `phase-tracker`, `session-handoff`, `comeback-recovery`. Three
-degrade rather than break:
-
-- `project-state` — its step-5 fresh-chat test spawns `fresh-eyes`, which needs
-  subagents. Without them, open a literal fresh session in another tool and ask it
-  the question. That is a *stronger* test than the subagent version, since it also
-  proves a non-Claude tool can orient from the map.
-- `capability-registry` — fans out one agent per capability to verify support
-  independently. Without subagents, verify sequentially: slower, same result.
-- `review-capture` — one subagent hop for applying feedback; do it inline instead.
-
-**Wire `AGENTS.md`, not only `CLAUDE.md`.** The `@`-import direction decides
-whether other tools see the convention at all: `CLAUDE.md` importing `AGENTS.md`
-works everywhere, the reverse hides the map from every non-Claude tool. When
-`project-state` bootstraps a repo, the three directives go in `AGENTS.md`.
-
 ## The domain record, in detail
 
 `docs/capabilities.md` is one row per capability → implementing code → support
-level → evidence → gap. Two properties keep it from being a table that lies:
+level → evidence → gap. Three properties keep it from being a table that lies:
 
 - **Support is verified, not declared.** `absent` / `partial` (gap note required)
   / `wired` (reachable, untested) / `live` (driven and observed), on the same
@@ -138,22 +133,74 @@ level → evidence → gap. Two properties keep it from being a table that lies:
 - **Gaps are partitioned** into blocks-testability vs blocks-completeness. That
   split is what makes "what do we need to deploy so I can test it" answerable
   without expanding into "finish everything."
+- **Current-state only.** The registry records what exists *now*. Planned and
+  in-progress work lives in tickets (`lc-ticketize`) and `STATE.md`'s milestone
+  section — putting planned rows in the registry recreates the exact
+  declaration-graded-as-verification failure the support ladder exists to
+  prevent.
 
 It uses the repo's own noun — intents, commands, tools, endpoints, features —
 rather than imposing "capability" on a codebase with its own vocabulary. And it
 refuses to invent the set: where capabilities exist only implicitly, it proposes
 unconfirmed candidates and says that confirming them is product work.
 
+**Open, not designed yet:** how the map and the registry scope to a *worktree* —
+"which tickets and capabilities does this worktree own" — is an unanswered
+question, not a decided one. Do not assume the current single-tree model extends
+cleanly to parallel worktrees.
+
+## Cross-tool portability
+
+The artifacts are fully portable by design — `STATE.md`, `DECISIONS.md`,
+`docs/capabilities.md`, `docs/log/`, `.context/progress.md` are all plain
+markdown, and `lc-project-state`'s definition of done forbids tool-specific
+machinery. Codex, Cursor, and opencode read them natively.
+
+`lc-north-star`, `lc-ticketize`, and `lc-phase-tracker` are pure file I/O and
+work anywhere. Two skills degrade rather than break:
+
+- `lc-project-state` — `status` and `sync` are pure file I/O and portable as-is.
+  Two pieces need subagents and degrade gracefully without them: `bootstrap`'s
+  step-5 fresh-chat test spawns `fresh-eyes` (without it, open a literal fresh
+  session in another tool and ask the question — a *stronger* test, since it
+  also proves a non-Claude tool can orient from the map), and `audit` fans out
+  one agent per capability to verify support independently (without subagents,
+  verify sequentially: slower, same result).
+- `lc-review-capture` — one subagent hop for applying feedback; do it inline instead.
+
+**Wire `AGENTS.md`, not only `CLAUDE.md`.** The `@`-import direction decides
+whether other tools see the convention at all: `CLAUDE.md` importing `AGENTS.md`
+works everywhere, the reverse hides the map from every non-Claude tool. When
+`lc-project-state` bootstraps a repo, the three directives go in `AGENTS.md`.
+
+## Adjacent: session continuity
+
+Two skills look like they belong here and do not. They track **your task** across
+a gap in your attention, not **the project's record** — they own or read
+session-scoped state, and a fresh agent orienting to the project should never
+need them.
+
+- `session-handoff` owns `docs/log/YYYY-MM-DD-handoff.md` — a durable, committed,
+  dated note written when you stop mid-task. It outlives the session, which is
+  exactly why the naive "outlives the session" test misclassifies it as
+  lifecycle. But a handoff carries *session* continuity; `STATE.md` carries
+  *project* currency. Fires when you end a session with unfinished work.
+- `comeback-recovery` owns nothing — it reads `.context/progress.md`, the newest
+  handoff, and git state to resume **the task you were on**. Fires when you
+  return after a gap. For a project-wide briefing (what shipped, what's left,
+  what's blocked on you) use `/lc-project-state status` instead — that is the
+  lifecycle read, this is the task read.
+
 ## Resolved conflicts
 
 Kept as a record of why the layout is what it is.
 
-1. **Root-vs-`docs/log/`** — `phase-tracker` and `session-handoff` both wrote to
-   repo root, violating `project-state`'s invariant. Resolved by the split above:
-   the progress checklist is runtime state (`.context/`, gitignored, because a
-   checklist shipping in commits causes cross-machine churn); the handoff is
-   durable dated history (`docs/log/`, committed). `session-handoff`'s old
-   prune-after-two-sessions rule was also removed — it deleted history.
+1. **Root-vs-`docs/log/`** — `lc-phase-tracker` and `session-handoff` both wrote
+   to repo root, violating `lc-project-state`'s invariant. Resolved by the split
+   above: the progress checklist is runtime state (`.context/`, gitignored,
+   because a checklist shipping in commits causes cross-machine churn); the
+   handoff is durable dated history (`docs/log/`, committed). `session-handoff`'s
+   old prune-after-two-sessions rule was also removed — it deleted history.
 2. **Two decision logs** — resolved in favour of `docs/DECISIONS.md`. One
    append-only file stays greppable in a single read, keeps the monotonic IDs
    `taste.md` cites, and holds every status transition in one place; a directory
@@ -161,5 +208,22 @@ Kept as a record of why the layout is what it is.
    `Alternatives:` and `Consequences:` were added to the entry template, required
    when `Load-bearing: yes`. `CONTEXT.md` keeps vocabulary only; `docs/adr/` is
    not used.
-3. **Unpublished members** — `phase-tracker`, `session-handoff`, and
+3. **Unpublished members** — `lc-phase-tracker`, `session-handoff`, and
    `comeback-recovery` lived on one machine only. Now in this repo.
+4. **Nine collapsed to five: merges, a demotion, and a prefix** — the set was
+   nine skills and read as sprawl. Three moves fixed it:
+   - `project-status` **merged into** `lc-project-state` as its read-only
+     `status` mode. Making read-only a *mode guarantee* of one skill beats a
+     separate skill you have to remember exists, and it puts the briefing next to
+     the map it reads.
+   - `capability-registry` **folded into** `lc-project-state`, split by cost: the
+     domain record is something you want re-checked on every sync, but the full
+     per-capability verification is too expensive to run every session. So `sync`
+     does a cheap downgrade-and-flag pass and the new `audit` mode does the real
+     verification. Folding it in makes the one lifecycle habit cover the domain
+     record instead of relying on a second habit nobody kept.
+   - The five survivors took an **`lc-` prefix** so the lifecycle set groups
+     unambiguously and sorts together. `session-handoff` and `comeback-recovery`
+     were **demoted** out of the set (see *Adjacent: session continuity*) — they
+     are session continuity, not the project record — so they keep their plain
+     names.
