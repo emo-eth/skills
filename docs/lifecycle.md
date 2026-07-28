@@ -6,73 +6,85 @@ installed skill.
 
 ## The test for what belongs here
 
-**A lifecycle-management skill owns a file that outlives the session.**
+**A lifecycle skill either owns a file that outlives the session, or exists only
+to read the ones that do.**
 
-That is the whole discriminator. `code-review` finds bugs and owns nothing —
-its output dies with the conversation. `project-state` owns `docs/STATE.md`,
-which is still there next week. Only the second kind is lifecycle management.
+That is the whole discriminator. `code-review` finds bugs and owns nothing — its
+output dies with the conversation. `project-state` owns `docs/STATE.md`, which is
+still there next week.
 
-Applied to ~107 installed skills, this leaves **nine** — eight that own a file,
-plus two read-only members (`project-status`, `comeback-recovery`) that own
-nothing but exist only to read this set. Everything else is build / verify /
-review tooling: useful, invoked ad hoc, irrelevant to the question "how does the
+Applied to ~107 installed skills, this leaves **nine**: seven that own a file,
+plus two readers that own nothing. Everything else is build / verify / review
+tooling — useful, invoked ad hoc, irrelevant to the question "how does this
 project remember things."
 
 The two readers answer different questions, and conflating them is easy:
 `comeback-recovery` resumes **the task you were on**; `project-status` briefs on
-**the project** — what shipped, what is left, what is blocked on you.
+**the project** — what shipped, what's left, what's blocked on you.
 
-## Two chains, not one
+## Three kinds of record
 
-Conflating these is what makes the set feel incoherent.
+Treating these as one undifferentiated pile is what makes the set feel
+incoherent. They have different mutability rules, and that is the point.
 
-**The artifact chain** — how an idea becomes shipped code. Each stage is a
-contract for the next; each is written once and amended deliberately.
+**1. The artifact chain** — how an idea becomes shipped code. Each stage is a
+contract for the next; written once, amended deliberately, never edited casually.
 
 ```
 vibe.md → PRD → spec → plan → implementation
 ```
 
-**The record chain** — how what happened survives context death. Append-only or
-continuously re-verified; never "finished."
+**2. The record chain** — how what happened survives context death. Append-only
+or continuously re-verified; never "finished."
 
 ```
 decisions → state map → briefing
 ```
 
-`north-star` owns the artifact chain and is well covered. The record chain is
-where the gaps are, and it is what answers "what shipped," "what's left,"
-"what's blocked on me."
+**3. The domain record** — what the product can actually do, and how well each
+part of it is verified. Neither a contract nor a history: a current-state
+inventory that goes stale the moment code moves.
 
-## The eight
+```
+capabilities
+```
+
+Most confusion about "which doc do I put this in" resolves by asking which of the
+three it is. A frozen contract cannot hold a growing inventory; a 1–2 page map
+cannot hold dozens of feature rows; a history cannot answer "does this work now."
+
+## The nine
 
 | Skill | Owns | Fires when | Invoked by |
 | --- | --- | --- | --- |
 | `north-star` | `docs/prds/<date>-<topic>/vibe.md`, `prd.md` | starting something new; amending the contract | you |
 | `review-capture` | `docs/DECISIONS.md`, `docs/taste.md` | every human review round, always | auto — never you |
 | `project-state` | `docs/STATE.md` (the map) | bootstrap once per repo, then sync every session | you, or session end |
-| `project-status` | nothing — read-only | you want a briefing | you |
+| `project-status` | nothing — read-only | you want a project briefing | you |
+| `capability-registry` | `docs/capabilities.md` | after features exist; re-sync when code moves | you |
 | `ticketize` | tracker items (Notion / Linear / Issues) | a settled plan must become assigned work | you |
 | `phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
 | `session-handoff` | `docs/log/YYYY-MM-DD-handoff.md` | ending a session with unfinished work | you, or session end |
 | `comeback-recovery` | nothing — read-only | resuming an in-flight task after a gap | you |
-| `capability-registry` | `docs/capabilities.md` | after features exist; re-sync when code moves | you |
 
-Read the trigger column twice. `review-capture` is never yours to type; it runs
-itself every round. `phase-tracker` fires inside a task, not at its start. Most
-of the confusion about "when do I use these" is that only four of the eight are
-things you invoke at all.
+Read the trigger column. **Two of the nine are never yours to type:**
+`review-capture` runs itself after every review round, and `phase-tracker` fires
+*inside* a task rather than at its start. If you have been trying to remember
+when to invoke those, that is why it felt wrong — they are not commands.
 
 ## When to run what
 
 - **Starting fresh work** → `north-star`, then `ticketize` once the plan settles.
-- **Any session in a repo with no `docs/STATE.md`** → `project-state bootstrap`, once.
-- **Asking where things stand** → `project-status`. Read-only, safe any time.
+- **First session in a repo with no `docs/STATE.md`** → `project-state bootstrap`, once.
+- **"Where do things stand?"** → `project-status`. Read-only, safe any time.
+- **"Which features actually work? what are the gaps?"** → `capability-registry`.
+- **"What do I need to deploy so I can test it?"** → `capability-registry`; its gap
+  partition separates what blocks testability from what blocks completeness.
 - **End of any session that changed understanding or code** → `project-state sync`,
-  in the same commit as the work. This is the one habit the rest depends on;
-  skip it and the map becomes a lie within a week, and a stale map is worse than
-  no map because it gets trusted.
-- **Ending mid-task** → `session-handoff`.
+  in the same commit as the work. **This is the one habit everything else depends
+  on.** Skip it and the map becomes a lie within a week — and a stale map is worse
+  than no map, because it still gets trusted.
+- **Ending mid-task** → `session-handoff`. **Resuming one** → `comeback-recovery`.
 - **A review round came back** → nothing. `review-capture` handles it.
 
 ## Where session state goes
@@ -92,37 +104,56 @@ writes there.
 ## Cross-tool portability
 
 The artifacts are fully portable by design — `STATE.md`, `DECISIONS.md`,
-`docs/log/`, `.context/progress.md` are plain markdown, and `project-state`'s
-definition of done requires no tool-specific machinery. Codex, Cursor, and
-opencode read them natively.
+`docs/capabilities.md`, `docs/log/`, `.context/progress.md` are all plain
+markdown, and `project-state`'s definition of done forbids tool-specific
+machinery. Codex, Cursor, and opencode read them natively.
 
-The skills are mostly portable. Six own nothing but file I/O and work anywhere:
-`project-status`, `north-star`, `ticketize`, `phase-tracker`, `session-handoff`,
-`comeback-recovery`. Three degrade rather than break:
+Six skills are pure file I/O and work anywhere: `project-status`, `north-star`,
+`ticketize`, `phase-tracker`, `session-handoff`, `comeback-recovery`. Three
+degrade rather than break:
 
-- `project-state` — the step-5 fresh-chat test spawns `fresh-eyes`, which needs
-  subagents. Without them, open a literal fresh session in another tool and ask
-  it the question. That is a *stronger* test than the subagent version, since it
-  also proves a non-Claude tool can orient from the map.
+- `project-state` — its step-5 fresh-chat test spawns `fresh-eyes`, which needs
+  subagents. Without them, open a literal fresh session in another tool and ask it
+  the question. That is a *stronger* test than the subagent version, since it also
+  proves a non-Claude tool can orient from the map.
+- `capability-registry` — fans out one agent per capability to verify support
+  independently. Without subagents, verify sequentially: slower, same result.
 - `review-capture` — one subagent hop for applying feedback; do it inline instead.
-- `contract-audit` — not in this set, but bundles `agents/*.agent.md` and is
-  effectively Claude-only.
 
 **Wire `AGENTS.md`, not only `CLAUDE.md`.** The `@`-import direction decides
 whether other tools see the convention at all: `CLAUDE.md` importing `AGENTS.md`
 works everywhere, the reverse hides the map from every non-Claude tool. When
 `project-state` bootstraps a repo, the three directives go in `AGENTS.md`.
 
+## The domain record, in detail
+
+`docs/capabilities.md` is one row per capability → implementing code → support
+level → evidence → gap. Two properties keep it from being a table that lies:
+
+- **Support is verified, not declared.** `absent` / `partial` (gap note required)
+  / `wired` (reachable, untested) / `live` (driven and observed), on the same
+  evidence tiers `STATE.md` uses, downgraded when code moves. The `partial` →
+  `wired` line — code exists vs. code is actually reachable — is where most real
+  gaps hide, because a handler nobody registered looks complete in a grep.
+- **Gaps are partitioned** into blocks-testability vs blocks-completeness. That
+  split is what makes "what do we need to deploy so I can test it" answerable
+  without expanding into "finish everything."
+
+It uses the repo's own noun — intents, commands, tools, endpoints, features —
+rather than imposing "capability" on a codebase with its own vocabulary. And it
+refuses to invent the set: where capabilities exist only implicitly, it proposes
+unconfirmed candidates and says that confirming them is product work.
+
 ## Resolved conflicts
 
 Kept as a record of why the layout is what it is.
 
 1. **Root-vs-`docs/log/`** — `phase-tracker` and `session-handoff` both wrote to
-   repo root, violating `project-state`'s invariant. Resolved by the split
-   above: the progress checklist is runtime state (`.context/`, gitignored,
-   because a checklist shipping in commits causes cross-machine churn), the
-   handoff is durable dated history (`docs/log/`, committed). `session-handoff`'s
-   old prune-after-two-sessions rule was also removed — it deleted history.
+   repo root, violating `project-state`'s invariant. Resolved by the split above:
+   the progress checklist is runtime state (`.context/`, gitignored, because a
+   checklist shipping in commits causes cross-machine churn); the handoff is
+   durable dated history (`docs/log/`, committed). `session-handoff`'s old
+   prune-after-two-sessions rule was also removed — it deleted history.
 2. **Two decision logs** — resolved in favour of `docs/DECISIONS.md`. One
    append-only file stays greppable in a single read, keeps the monotonic IDs
    `taste.md` cites, and holds every status transition in one place; a directory
@@ -132,31 +163,3 @@ Kept as a record of why the layout is what it is.
    not used.
 3. **Unpublished members** — `phase-tracker`, `session-handoff`, and
    `comeback-recovery` lived on one machine only. Now in this repo.
-
-## The domain record
-
-Every artifact above records *process* — where we are, why we chose, what
-happened when — or is a frozen contract. None answers "which features exist, and
-which actually work end to end." That is a **domain** record, and it is a
-different kind of thing.
-
-It cannot be retrofitted into the others: `STATE.md` has a 1–2 page cap that
-dozens of feature rows destroy, and the PRD is immutable after approval while
-features accrete. So it gets its own file, `docs/capabilities.md`, maintained by
-`capability-registry` and pointed at by exactly one `STATE.md` row.
-
-Two properties make it worth having rather than being a table that lies:
-
-- **Support is verified, not declared.** `absent` / `partial` (gap note required)
-  / `wired` (reachable, untested) / `live` (driven and observed), mapping onto the
-  same evidence tiers `STATE.md` uses, and downgraded when code moves. The
-  `partial` → `wired` line — code exists vs. code is actually reachable — is
-  where most real gaps hide, because an unregistered handler looks complete in a
-  grep.
-- **Gaps are partitioned** into blocks-testability vs blocks-completeness. That
-  split is what makes "what do we need to deploy so I can test it" answerable
-  without it expanding into "finish everything."
-
-The registry uses the repo's own noun — intents, commands, tools, endpoints,
-features — rather than imposing "capability" on a codebase with its own
-vocabulary.
