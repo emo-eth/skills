@@ -1,5 +1,6 @@
 ---
 name: prd-grill
+disable-model-invocation: true
 description: "Human-facing PRD and vibe.md grill. Use after drafting or revising a PRD, vibe.md, product contract, or north-star artifact when the user wants to be questioned until the document matches their expectations; triggers include grill the PRD, grill me on this PRD, walk me through the product contract, does this capture what I mean, or before approval of high-stakes PRD/vibe docs. Do not use to audit a spec, plan, code diff, branch, or implementation against an approved contract; use contract-audit for artifact alignment."
 ---
 

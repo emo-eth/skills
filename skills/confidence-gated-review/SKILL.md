@@ -1,5 +1,6 @@
 ---
 name: confidence-gated-review
+disable-model-invocation: true
 description: Replace review-everything with confidence-gated exception handling. Use when working under a product owner who doesn't want to review every doc/decision - rate each decision by how well you understand their intent, proceed above threshold with a logged call, and bring them only the low-confidence residue plus actions only they can take. Requires a written product contract (vibe/PRD or equivalent) to score against.
 ---
 
