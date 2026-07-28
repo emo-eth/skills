@@ -101,7 +101,7 @@ Completion: `AGENTS.md` carries the three directives at its top.
 
 ### 5. Verify — the fresh-chat test
 
-Spawn a clean-context subagent given **only** the repo (no briefing, no context from this session). Ask it a topical question about current state or a past decision — something answerable only by orienting through STATE.md into the right source doc (e.g. "which execution venue is live-verified and where is that proven?").
+Run `fresh-eyes` against the repo: a clean-context agent given **only** the repo (no briefing, no context from this session), asked a topical question about current state or a past decision — something answerable only by orienting through STATE.md into the right source doc (e.g. "which execution venue is live-verified and where is that proven?") — and required to answer from the files or declare a gap.
 
 It passes if it orients from STATE.md and answers correctly **without asking you for context**. If it flounders — asks what the project is, or answers from a superseded doc — the map is at fault, not the agent. Fix the map (better pointers, clearer currency, a missing row) and re-run until a fresh agent passes cold.
 
