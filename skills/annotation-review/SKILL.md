@@ -1,9 +1,9 @@
 ---
-name: plannotator-review
-description: Launch a Plannotator review session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when sending docs/plans to a human for annotation review, when the user says "open X in plannotator", or when retrieving feedback after a session ("pull up the annotations"). Handles single files, multi-doc folder bundles, and diff-based re-review.
+name: annotation-review
+description: Launch a Plannotator annotation session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when sending docs/plans to a human for annotation review, when the user says "open X in plannotator", or when retrieving feedback after a session ("pull up the annotations"). Handles single files, multi-doc folder bundles, and diff-based re-review.
 ---
 
-# Plannotator Review
+# Annotation Review
 
 Two load-bearing facts, learned the hard way:
 
@@ -112,8 +112,9 @@ the prime rule, not by age.
 - `# File/Folder Feedback` sections carry numbered items anchored to
   quoted lines; a `Linked Document Feedback` section often repeats the
   same items — dedupe by content before counting.
-- Three outcomes: `The user approved.` (acknowledge, stop); empty or
-  dismissed (acknowledge, stop); numbered feedback (process it).
+- Three outcomes: `The user approved.`; empty or dismissed; numbered
+  feedback. All three run `review-capture` — approvals and empty rounds
+  are cheap passes, numbered rounds are full ones.
 
 No stdout file (launched wrong, or by someone else)? Last resorts, in
 order: the drafts snapshot; `plannotator last` (flaky — sometimes
@@ -122,11 +123,16 @@ human to export from the UI.
 
 ## Process the feedback
 
-- Address EVERY numbered item, in the human's numbering, stating where
-  each fix landed (reply or answers doc, per project convention). Items
-  you disagree with get a stated reason — never silence.
-- After applying a round: refresh the bundle copies (same session, no
-  relaunch) and tell the human it's ready for the next pass.
+- Hand the round to `review-capture` — every submitted round, without
+  exception, INCLUDING approval rounds. Its pass owns the order:
+  snapshot the raw feedback FIRST, then apply, then record. Applying
+  feedback without persisting it is how the same review happens three
+  times.
+- Address EVERY numbered item (as part of that pass), in the human's
+  numbering, stating where each fix landed. Items you disagree with get
+  a stated reason — never silence.
+- After the pass: refresh the bundle copies (same session, no relaunch)
+  and tell the human it's ready for the next pass.
 
 ## Re-review as a DIFF
 

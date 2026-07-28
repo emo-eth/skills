@@ -70,4 +70,4 @@ Confidence measures your SENSE of understanding, not truth — you can be
 When something does go to the owner, keep the surface tiny: one short
 item (or diff) per decision, the recommendation stated first, and — if
 using an annotation tool — one standing session, never replaced under
-them (see plannotator-review's prime rule).
+them (see annotation-review's prime rule).
