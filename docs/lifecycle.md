@@ -43,21 +43,23 @@ or continuously re-verified; never "finished."
 decisions → state map → briefing
 ```
 
-**3. The domain record** — what the product can actually do, and how well each
-part of it is verified. Neither a contract nor a history: a current-state
-inventory that goes stale the moment code moves.
+**3. The readiness record** — every behavior the product is meant to have, how
+far along each one is, and how well the built ones are verified. Neither a
+contract nor a history: a per-behavior inventory on one ladder from `deferred`
+to `live`, whose top rungs go stale the moment code moves.
 
 ```
-capabilities
+readiness
 ```
 
 Most confusion about "which doc do I put this in" resolves by asking which of the
 three it is. A frozen contract cannot hold a growing inventory; a 1–2 page map
-cannot hold dozens of feature rows; a history cannot answer "does this work now."
+cannot hold a row per feature; a history cannot answer "does this work now" or
+"how far along is it."
 
-The map (`docs/STATE.md`) and the domain record (`docs/capabilities.md`) are both
+The map (`docs/STATE.md`) and the readiness record (`docs/readiness.md`) are both
 owned by `lc-project-state` — one skill, because there is no moment you sync the
-map without wanting the capability record re-checked too. It keeps them separate
+map without wanting the readiness record re-checked too. It keeps them separate
 files and re-checks them at different costs (see its four modes below).
 
 ## The five
@@ -66,7 +68,7 @@ files and re-checks them at different costs (see its four modes below).
 | --- | --- | --- | --- |
 | `lc-north-star` | `docs/prds/<date>-<topic>/vibe.md`, `prd.md` | starting something new; amending the contract | you |
 | `lc-review-capture` | `docs/DECISIONS.md`, `docs/taste.md` | every human review round, always | auto — never you |
-| `lc-project-state` | `docs/STATE.md` (the map) + `docs/capabilities.md` (the domain record) | bootstrap once per repo; sync every session; status / audit on demand | you, or session end |
+| `lc-project-state` | `docs/STATE.md` (the map) + `docs/readiness.md` (the readiness record) | bootstrap once per repo; sync every session; status / audit on demand | you, or session end |
 | `lc-ticketize` | tracker items (Notion / Linear / Issues) | a settled plan must become assigned work | you |
 | `lc-phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
 
@@ -81,16 +83,16 @@ remember when to invoke those, that is why it felt wrong — they are not comman
 
 ### `lc-project-state`'s four modes
 
-The merge put the map, the domain record, and the read-back under one skill.
+The merge put the map, the readiness record, and the read-back under one skill.
 Invoked bare (`/lc-project-state`, no args) it infers the mode: bootstrap if
 there is no `docs/STATE.md`, else sync.
 
 | Mode | Does | Writes? |
 | --- | --- | --- |
 | `bootstrap` | first run: turn the doc pile into a map + clean structure | yes |
-| `sync` | cheap end-of-session upkeep: reconcile the map, downgrade stale tiers, and do a **cheap** capability pass — downgrade rows whose code moved and flag that an audit is due | yes |
+| `sync` | cheap end-of-session upkeep: reconcile the map, downgrade stale tiers, and do a **cheap** readiness pass — downgrade verified rows whose code moved, cheaply move bottom-rung stages where plans changed, and flag that an audit is due | yes |
 | `status` | read-only briefing: what shipped / what's left / what's blocked on you / what's awaiting review / what's most pressing | **no** |
-| `audit` | full capability verification: (re)build `docs/capabilities.md` with per-capability reachability + drove-it checks, partition the gaps | yes |
+| `audit` | full verification of the readiness record's top rungs: (re)build `docs/readiness.md` with per-behavior reachability + drove-it checks, partition the gaps | yes |
 
 The `status`/`audit` split is the whole reason the merge is safe: read-only is a
 **mode guarantee** now, not a separate skill you might forget exists, and the
@@ -102,8 +104,8 @@ the habit stays cheap enough to actually run.
 - **Starting fresh work** → `lc-north-star`, then `lc-ticketize` once the plan settles.
 - **First session in a repo with no `docs/STATE.md`** → `/lc-project-state` (it infers `bootstrap`), once.
 - **"Where do things stand?" / "what's blocked on me?"** → `/lc-project-state status`. Read-only, safe any time, writes nothing by mode guarantee.
-- **"Which features actually work? where are the gaps?"** → `/lc-project-state audit`. Its gap partition (blocks-testability vs blocks-completeness) also answers "what do I need to deploy so I can test it," and is worth running standalone — outside any ticket or milestone workflow.
-- **End of any session that changed understanding or code** → `/lc-project-state` (it infers `sync`), in the same commit as the work. **This is the one habit everything else depends on.** Skip it and the map becomes a lie within a week — and a stale map is worse than no map, because it still gets trusted. Sync now also keeps the domain record honest: it downgrades capability tiers where code moved and flags when a full `audit` is due, without doing the expensive verification inline.
+- **"How far along is X? which features actually work? where are the gaps?"** → `/lc-project-state audit`. "How far along" and "does it actually work" are the *same lookup* — one behavior, one position on one ladder. Its gap partition (blocks-testability vs blocks-completeness) also answers "what do I need to deploy so I can test it," and is worth running standalone — outside any ticket or milestone workflow.
+- **End of any session that changed understanding or code** → `/lc-project-state` (it infers `sync`), in the same commit as the work. **This is the one habit everything else depends on.** Skip it and the map becomes a lie within a week — and a stale map is worse than no map, because it still gets trusted. Sync now also keeps the readiness record honest: it downgrades the verified rungs where code moved, cheaply moves bottom-rung stages where plans changed this session, and flags when a full `audit` is due, without doing the expensive verification inline.
 - **A review round came back** → nothing. `lc-review-capture` handles it.
 
 ## Where session state goes
@@ -120,39 +122,54 @@ Two homes, chosen by the nature of the file — not one catch-all directory.
 The repo root holds only README, AGENTS/CLAUDE, and config. Nothing in this set
 writes there.
 
-## The domain record, in detail
+## The readiness record, in detail
 
-`docs/capabilities.md` is one row per capability → implementing code → support
-level → evidence → gap. Three properties keep it from being a table that lies:
+`docs/readiness.md` is one row per behavior → stage on a single ladder →
+implementing code (once any exists) → evidence → gap. One axis answers two
+questions that used to feel separate: "how far along is X" and "does X actually
+work" are the same lookup, because both are just the row's position on the
+ladder. Three properties keep it from being a table that lies:
 
-- **Support is verified, not declared.** `absent` / `partial` (gap note required)
-  / `wired` (reachable, untested) / `live` (driven and observed), on the same
-  evidence tiers `STATE.md` uses, downgraded when code moves. The `partial` →
-  `wired` line — code exists vs. code is actually reachable — is where most real
-  gaps hide, because a handler nobody registered looks complete in a grep.
-- **Gaps are partitioned** into blocks-testability vs blocks-completeness. That
-  split is what makes "what do we need to deploy so I can test it" answerable
-  without expanding into "finish everything."
-- **Current-state only.** The registry records what exists *now*. Planned and
-  in-progress work lives in tickets (`lc-ticketize`) and `STATE.md`'s milestone
-  section — putting planned rows in the registry recreates the exact
-  declaration-graded-as-verification failure the support ladder exists to
-  prevent.
+- **One ladder, split into declarations and verified claims.**
+  `deferred → planned → in-progress → partial → wired → live`. The **bottom
+  rungs** (`deferred`, `planned`, `in-progress`) are *declarations*: a row there
+  claims nothing about reality and needs no evidence. The **top rungs**
+  (`partial` — gap note required — `wired` (reachable, untested), `live` (driven
+  and observed)) are *verified*, on the same evidence tiers `STATE.md` uses,
+  defaulted down when evidence is absent and downgraded when the code moves. The
+  trust boundary sits between `in-progress` and `partial`: nothing crosses it
+  without evidence. The `partial` → `wired` line — code exists vs. code is
+  actually reachable — is where most real gaps hide, because a handler nobody
+  registered looks complete in a grep.
+- **Gaps are partitioned** into blocks-testability vs blocks-completeness, at the
+  verified end of the ladder. That split is what makes "what do we need to deploy
+  so I can test it" answerable without expanding into "finish everything."
+- **Tracks planned and in-flight work, not just current state.** The record
+  spans the whole ladder deliberately. `lc-ticketize` fires *once*, when a
+  settled plan becomes assigned work, and nothing ever syncs status back from the
+  tracker; `STATE.md`'s milestone section is capped at 1–2 pages and cannot hold
+  a row per feature. So per-behavior work status — planned, in-flight,
+  done-and-verified — lived *nowhere* in the lifecycle before. It lives here now.
+  This does **not** reintroduce the declaration-graded-as-verification failure:
+  the original failure was never "planned rows exist," it was "declared things
+  graded as verified," and the declaration/verification split in the ladder makes
+  that structural — a `planned` row can never masquerade as a `live` one.
 
-It uses the repo's own noun — intents, commands, tools, endpoints, features —
-rather than imposing "capability" on a codebase with its own vocabulary. And it
-refuses to invent the set: where capabilities exist only implicitly, it proposes
-unconfirmed candidates and says that confirming them is product work.
+It uses the repo's own noun — intents, commands, tools, endpoints, features — for
+its rows rather than imposing "readiness" (or "capability") as the noun;
+readiness is the *axis*, not the thing. And it refuses to invent the set: where
+the behaviors exist only implicitly, it proposes unconfirmed candidates and says
+that confirming them is product work.
 
-**Open, not designed yet:** how the map and the registry scope to a *worktree* —
-"which tickets and capabilities does this worktree own" — is an unanswered
-question, not a decided one. Do not assume the current single-tree model extends
-cleanly to parallel worktrees.
+**Open, not designed yet:** how the map and the readiness record scope to a
+*worktree* — "which tickets and behaviors does this worktree own" — is an
+unanswered question, not a decided one. Do not assume the current single-tree
+model extends cleanly to parallel worktrees.
 
 ## Cross-tool portability
 
 The artifacts are fully portable by design — `STATE.md`, `DECISIONS.md`,
-`docs/capabilities.md`, `docs/log/`, `.context/progress.md` are all plain
+`docs/readiness.md`, `docs/log/`, `.context/progress.md` are all plain
 markdown, and `lc-project-state`'s definition of done forbids tool-specific
 machinery. Codex, Cursor, and opencode read them natively.
 
@@ -164,7 +181,7 @@ work anywhere. Two skills degrade rather than break:
   step-5 fresh-chat test spawns `fresh-eyes` (without it, open a literal fresh
   session in another tool and ask the question — a *stronger* test, since it
   also proves a non-Claude tool can orient from the map), and `audit` fans out
-  one agent per capability to verify support independently (without subagents,
+  one agent per behavior to verify the top rungs independently (without subagents,
   verify sequentially: slower, same result).
 - `lc-review-capture` — one subagent hop for applying feedback; do it inline instead.
 
@@ -227,3 +244,22 @@ Kept as a record of why the layout is what it is.
      were **demoted** out of the set (see *Adjacent: session continuity*) — they
      are session continuity, not the project record — so they keep their plain
      names.
+5. **`capabilities` → `readiness`, and scope widened to planned work** — the
+   domain record (formerly `docs/capabilities.md`, produced by the
+   `capability-registry` skill folded in at item 4) was renamed to
+   **`docs/readiness.md`** and its scope widened from current-state-only to the
+   whole `deferred → planned →
+   in-progress → partial → wired → live` ladder. The old design kept the record
+   current-state-only and pushed planned/in-progress work to tickets and
+   `STATE.md`'s milestone section. That left a real hole: `lc-ticketize` fires
+   once and nothing syncs status back from the tracker, and the milestone section
+   is capped at 1–2 pages and cannot hold a row per feature — so per-behavior work
+   status lived *nowhere*. Widening the record fills the hole. It does not
+   reintroduce the failure the old boundary guarded against, because that failure
+   was "declarations graded as verified," not "planned rows exist": the ladder's
+   split between declaration rungs (bottom, no evidence) and verified rungs (top,
+   evidence required, defaulted down) makes the guarantee structural. The rename
+   also made "how far along is X" and "does X actually work" one lookup instead of
+   two. The historical name `capabilities`/`capability-registry` is kept in the
+   entries above where they describe how the skill got here; the current name is
+   `readiness`.

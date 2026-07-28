@@ -1,7 +1,7 @@
 ---
 name: lc-project-state
-description: "Bootstrap and maintain a project's living record so a fresh clean-context agent (Claude, Codex, Cursor — any tool) orients from the repo alone, and read that record back on demand. Owns docs/STATE.md (the map) and docs/capabilities.md (what the product can actually do, verified not declared). Use when context keeps dying across sessions or compactions; when someone asks 'what's current here?', 'what did we just ship', 'what's left for v0', 'what's blocked on me', 'what should I review', 'which features actually work', 'where are the gaps', or 'what do we need to deploy so I can test it'; when setting up docs/STATE.md; or for an end-of-session doc sync. Four modes: bootstrap (first run in a repo), sync (cheap end-of-session upkeep), status (read-only briefing, writes nothing), audit (full capability verification). Invoked bare, it infers the mode."
-argument-hint: "[bootstrap | sync | status | audit] (defaults: bootstrap if no docs/STATE.md, else sync)"
+description: "Bootstrap and maintain a project's living record so a fresh clean-context agent (Claude, Codex, Cursor — any tool) orients from the repo alone, and read that record back on demand. Owns docs/STATE.md (the map) and docs/readiness.md (how far along each behavior is and how well it's verified — one ladder from deferred through live). Use when context keeps dying across sessions or compactions; when someone asks 'what's current here?', 'what did we just ship', 'what's left for v0', 'what's blocked on me', 'what should I review', 'how far along is X', 'which features actually work', 'where are the gaps', or 'what do we need to deploy so I can test it'; when setting up docs/STATE.md; or for an end-of-session doc sync. Four modes: bootstrap (first run in a repo), sync (cheap end-of-session upkeep), status (read-only briefing, writes nothing), audit (full verification of the readiness record). Invoked bare, it infers the mode."
+argument-hint: "[bootstrap | sync | status | audit] (defaults: bootstrap if no docs/STATE.md, else sync) — answers 'how far along is X', 'which features actually work', 'where are the gaps', 'what do we need to deploy so I can test it'"
 ---
 
 # Project State
@@ -13,9 +13,11 @@ The fix is one small, tool-agnostic convention: plain markdown plus `AGENTS.md` 
 This skill maintains two records and reads them back:
 
 - **`docs/STATE.md`** — the map. Where truth lives, and how well each claim is verified.
-- **`docs/capabilities.md`** — the domain record. What the product can actually do, which code implements each capability, and how well each one is verified end to end.
+- **`docs/readiness.md`** — the readiness record. Every behavior the product is meant to have, how far along each one is on a single ladder from `deferred` to `live`, which code implements it, and how well the ones claimed done are actually verified. "How far along is X" and "does X actually work" are the *same lookup* here — one axis answers both.
 
-The two travel together on purpose. There is essentially no moment you would sync project state without also wanting the capability record re-checked — a session that moved code moved what the product can do. But the full capability audit (independent verification per capability) is expensive, and the end-of-session habit has to stay cheap or it gets skipped. So the split is by cost, not by concept: **`sync` does a cheap capability pass** (downgrade rows whose code moved, flag that an audit is due) and **`audit` does the expensive verification**.
+The two travel together on purpose. There is essentially no moment you would sync project state without also wanting the readiness record re-checked — a session that moved code moved what the product can do, and a session that reshaped plans moved what the product is *going* to do. But the full audit (independent verification of everything claimed done) is expensive, and the end-of-session habit has to stay cheap or it gets skipped. So the split is by cost, not by concept: **`sync` does a cheap pass** (downgrade verified rows whose code moved, cheaply move bottom-rung stages when plans changed, flag that an audit is due) and **`audit` does the expensive verification** of the top rungs.
+
+Why this record exists at all: `lc-ticketize` fires *once*, when a settled plan becomes assigned work, and nothing ever syncs status back from the tracker; `STATE.md`'s milestone section is capped at 1–2 pages and cannot hold a row per feature. So per-behavior work status — planned, in-flight, done-and-verified — previously lived *nowhere* in the lifecycle. The readiness record is where it lives now.
 
 Read this whole file before acting. Pick the mode from the argument, or infer it: no `docs/STATE.md` yet → **bootstrap**; one exists → **sync**. `status` and `audit` are always explicit (or triggered by the phrases above).
 
@@ -25,10 +27,10 @@ These override any impulse to the contrary. Violating one defeats the purpose of
 
 - **The map points at truth, never is the truth.** STATE.md is an index. Agents — including you — still open and read the source doc or the code before editing anything. A row in the map is a pointer plus a verification tier, not a substitute for the source.
 - **Never delete an old doc. Demote it.** Superseded thinking moves to `docs/log/` and gets a status header pointing at its successor. History is evidence of how decisions were reached; destroying it destroys that.
-- **No doc-generation sprawl.** This skill maintains a small map, a capability record, and reorganizes what already exists. It does not spawn new explainer docs, summaries, or per-topic write-ups. If you feel the urge to write a new doc, you are almost certainly off-task.
+- **No doc-generation sprawl.** This skill maintains a small map, a readiness record, and reorganizes what already exists. It does not spawn new explainer docs, summaries, or per-topic write-ups. If you feel the urge to write a new doc, you are almost certainly off-task.
 - **Re-derive, don't inherit.** When you find an existing verdict, shortlist, or "current status" in the pile, check it against the underlying docs and code before transcribing it into the map. Inherited verdicts are unvetted claims wearing a confident tone.
 - **Adapt to what exists.** If the repo already has a docs convention (a `docs/` layout, an ADR directory, a status doc under another name), extend it rather than imposing this exact structure. The goal is the properties in "Definition of done," not this literal file tree.
-- **The map stays re-readable.** STATE.md has a hard cap of ~1–2 pages — small enough to fully re-read and re-verify every session. A map that outgrows one sitting rots, because nobody checks it. Push detail down into the source docs; keep the map a map. The capability record lives in `docs/capabilities.md`, not the map — STATE.md carries exactly one pointer row to it.
+- **The map stays re-readable.** STATE.md has a hard cap of ~1–2 pages — small enough to fully re-read and re-verify every session. A map that outgrows one sitting rots, because nobody checks it. Push detail down into the source docs; keep the map a map. The readiness record lives in `docs/readiness.md`, not the map — STATE.md carries exactly one pointer row to it. Per-behavior work status (planned, in-flight, done) belongs in the readiness record too, not in the map's milestone summary.
 
 ## Evidence tiers
 
@@ -38,7 +40,7 @@ Every factual claim in the map — every topic row — carries a visible tier ta
 - **documented** — an authoritative source states it, but it is untested here.
 - **inferred** — extrapolation, single-sourced, third-party, or assumed.
 
-If code changes under a row that was `verified-live`, the verification is stale: downgrade the tier until someone re-verifies. A tier is a claim about *evidence*, and evidence expires when its subject moves. The capability support ladder in "Mode: audit" is the same idea applied to `docs/capabilities.md`.
+If code changes under a row that was `verified-live`, the verification is stale: downgrade the tier until someone re-verifies. A tier is a claim about *evidence*, and evidence expires when its subject moves. The readiness ladder in "Mode: audit" is the same idea applied to `docs/readiness.md`: its top rungs (`wired`, `live`) are evidence claims that expire the same way.
 
 ---
 
@@ -81,9 +83,9 @@ Completion: repo root is down to README/AGENTS/CLAUDE + config; every moved file
 Use `references/state-template.md` as the skeleton. Five sections, nothing more:
 
 1. **What this is** — three sentences. What the project is, who it is for, what stage it is at.
-2. **Where we are** — current phase, current priorities, what is proven versus what is open, and what is deferred (v1+ work parked with a revisit trigger, or a pointer to deferred entries in the decision log). This is also where planned and in-progress milestone work lives — the capability record is current-state only and must not hold planned rows (see "Mode: audit").
+2. **Where we are** — current phase, current priorities, what is proven versus what is open, and what is deferred (v1+ work parked with a revisit trigger, or a pointer to deferred entries in the decision log). This is the *milestone-level* summary — a paragraph or two, held to the page cap. Per-behavior work status (which features are planned, in-flight, or done) does not live here; it lives as rows in `docs/readiness.md`, which the map points at (see "Mode: audit").
 3. **Standing constraints** — the rules that must survive into any future work regardless of how old the doc they came from is (e.g. "never place session artifacts at repo root," "IBKR adapter is the only live-verified execution path"). These are the load-bearing invariants a fresh agent must not violate.
-4. **Topic index** — a table, one row per topic: `topic | thinking/decision doc | code that implements it | verified-by`, and each row tagged with an evidence tier. Superseded docs appear as `historical, behind <successor>`. This is the heart of the map: it connects each area of the project to the doc that decides it, the code that implements it, and the evidence that it works. When the project has a decision log (`docs/DECISIONS.md`) or distilled taste (`docs/taste.md`) — the artifacts `lc-review-capture` maintains — they get standard rows here, so a fresh agent learns they exist from the map. If a `docs/capabilities.md` exists, it gets exactly one pointer row too.
+4. **Topic index** — a table, one row per topic: `topic | thinking/decision doc | code that implements it | verified-by`, and each row tagged with an evidence tier. Superseded docs appear as `historical, behind <successor>`. This is the heart of the map: it connects each area of the project to the doc that decides it, the code that implements it, and the evidence that it works. When the project has a decision log (`docs/DECISIONS.md`) or distilled taste (`docs/taste.md`) — the artifacts `lc-review-capture` maintains — they get standard rows here, so a fresh agent learns they exist from the map. If a `docs/readiness.md` exists, it gets exactly one pointer row too.
 5. **Maintenance rule** — the contract from "Mode: sync" below, stated in-doc so any agent that reads STATE.md learns how to keep it alive.
 
 Keep it under the ~1–2 page cap. If it overflows, you are putting detail in the map that belongs in a source doc.
@@ -133,16 +135,17 @@ Compare what this session changed — `git diff`, plus what you know from the co
 - Mark newly-superseded docs historical in **two** places: the topic index (`historical, behind <successor>`) and a status header at the top of the doc itself pointing to its successor.
 - Keep it within the page cap. If the map grew, prune detail down into source docs rather than letting the map bloat.
 
-### 3. Cheap capability pass
+### 3. Cheap readiness pass
 
-If `docs/capabilities.md` exists, do the cheap pass only — no verification, no fan-out:
+If `docs/readiness.md` exists, do the cheap pass only — no verification, no fan-out:
 
-- For every row whose implementing code moved this session, **downgrade the support level** one step toward `absent` (a moved `live` row drops to `wired`; the code it claimed to have driven is no longer the code that was driven) and note the downgrade.
-- **Flag the registry as needing an audit** — add a dated line at the top of `docs/capabilities.md` (e.g. `> ⚠️ Audit due: code moved under N rows on YYYY-MM-DD; run lc-project-state audit.`) so the next reader knows the record is behind and a `status` briefing surfaces it.
+- **Downgrade the verified rungs whose code moved.** For every row at `wired` or `live` whose implementing code moved this session, **downgrade one step down the ladder** (a moved `live` row drops to `wired`; the code it claimed to have driven is no longer the code that was driven) and note the downgrade. These are the evidence claims, and their evidence just expired.
+- **Cheaply move bottom-rung stages when plans changed this session.** The bottom rungs (`deferred`, `planned`, `in-progress`) are *declarations*, not evidence — editing them is not verification, so it is allowed here. If this session settled a plan for a behavior, promote its row `planned → in-progress`; if work parked, drop it to `deferred`; add a `planned`/`deferred` row for a behavior the session newly committed to or shelved. Do **not** promote anything into the verified rungs here — reaching `wired`/`live` requires the evidence check, which is `audit` work.
+- **Flag the record as needing an audit** — add a dated line at the top of `docs/readiness.md` (e.g. `> ⚠️ Audit due: code moved under N verified rows on YYYY-MM-DD; run lc-project-state audit.`) so the next reader knows the top rungs are behind and a `status` briefing surfaces it.
 
 That is the whole pass. Re-deriving the set, checking reachability, and re-driving anything is `audit` work — do not do it here, or the end-of-session habit stops being cheap and starts getting skipped.
 
-If no `docs/capabilities.md` exists yet, skip this step; the record is created by `audit`.
+If no `docs/readiness.md` exists yet, skip this step; the record is created by `audit`.
 
 ### 4. Route new artifacts
 
@@ -152,7 +155,7 @@ Any findings / handoff / status doc this session produced goes to `docs/log/YYYY
 
 The map update ships in the same commit as the work that made it necessary. A map updated in a later commit — or not at all — is a map a future agent cannot trust, which is a map nobody reads.
 
-Completion: STATE.md reflects the session's changes; stale `verified-live` tiers are downgraded; moved capability rows are downgraded and the registry flagged if an audit is due; newly-superseded docs are marked in both places; new artifacts are in `docs/log/`; all of it is staged in the same commit as the work.
+Completion: STATE.md reflects the session's changes; stale `verified-live` tiers are downgraded; moved verified readiness rows are downgraded, bottom-rung stages moved where plans changed, and the record flagged if an audit is due; newly-superseded docs are marked in both places; new artifacts are in `docs/log/`; all of it is staged in the same commit as the work.
 
 ---
 
@@ -174,7 +177,7 @@ These override any impulse to the contrary.
 
 - **Read-only. Write nothing.** No file edits, no `git mv`, no commits, no "while I'm here" map fixes. If `docs/STATE.md` is wrong, *report* that and point at `lc-project-state sync` — do not fix it. A read mode that mutates is a mode nobody can run safely mid-session, which defeats the point of having it.
 - **Never invent a queue.** If nothing is blocked on the human, the answer is "nothing needs you." Manufacturing plausible-sounding action items to fill the section is the worst possible failure here — it spends the user's attention on fiction.
-- **Staleness is the headline, not a footnote.** If the map is behind the code, that fact outranks everything else in the briefing, because it determines whether the rest can be trusted at all. A `> ⚠️ Audit due` flag on `docs/capabilities.md` is the same headline for the domain record — surface it.
+- **Staleness is the headline, not a footnote.** If the map is behind the code, that fact outranks everything else in the briefing, because it determines whether the rest can be trusted at all. A `> ⚠️ Audit due` flag on `docs/readiness.md` is the same headline for the readiness record — surface it.
 - **Tiers survive to the output.** An `inferred` row in the topic index is relayed as inferred. Never launder a weak claim into a confident status line by dropping its tag.
 - **Distinguish blocked-on-human from blocked-on-work.** This is the whole value of the briefing. "Needs a decision from you" and "needs someone to write the code" are different queues; collapsing them makes both useless.
 - **Cap it at one screen.** This is a briefing you re-read daily, not a report. Detail lives in the artifacts; the briefing points.
@@ -186,7 +189,7 @@ Find which inputs exist before planning around them. In a repo maintained by thi
 | Input | What it supplies |
 | --- | --- |
 | `docs/STATE.md` | current phase, priorities, proven/open/deferred, topic index + tiers |
-| `docs/capabilities.md` | what works vs. what's a gap, support levels, any audit-due flag |
+| `docs/readiness.md` | how far along each behavior is (deferred → live), what works vs. what's a gap, any audit-due flag |
 | `docs/DECISIONS.md` | `Scope:` per decision, `Status: deferred` + `Revisit:`, `Load-bearing: yes` |
 | `docs/taste.md` | standing principles, so a "pressing" item isn't proposed against known taste |
 | `docs/log/YYYY-MM-DD-*.md` | dated session artifacts — the trail of what actually happened |
@@ -288,90 +291,102 @@ Completion: briefing fits one screen, every claim cites its source, staleness le
 
 ## Mode: audit
 
-Full verification of the domain record. The failure this mode defends against: a coverage table that lists *declarations* as though they were *verifications*. A handler exists, so the capability is marked supported — but nothing checked that it is registered with the router, that it handles its own edge cases, or that anyone has ever run it end to end. The table then reads authoritative, gets trusted, and is wrong in exactly the places that matter.
+Full verification of the readiness record's **top rungs**. The failure this mode defends against: a coverage table that lists *declarations* as though they were *verifications*. A handler exists, so the behavior is marked done — but nothing checked that it is registered with the router, that it handles its own edge cases, or that anyone has ever run it end to end. The table then reads authoritative, gets trusted, and is wrong in exactly the places that matter. The original failure was never "planned rows exist" — it was "declared things graded as verified." The ladder makes that distinction structural: bottom rungs claim nothing, top rungs must prove it.
 
-Every other record here tracks **process** — where we are, why we chose, what happened when. `docs/capabilities.md` tracks **domain**: what the product can actually do. It is the only artifact that answers "which features work." If no `docs/capabilities.md` exists, audit bootstraps it; if one exists, audit refreshes it with full verification (and clears any audit-due flag `sync` left).
+Every other record here tracks **process** — where we are, why we chose, what happened when. `docs/readiness.md` tracks **the product's behaviors**: what it's meant to do, how far along each one is, and whether the ones claimed done actually work. It is the single artifact that answers both "how far along is X" and "which features actually work" — the same lookup, because both are just the row's position on one ladder.
+
+If no `docs/readiness.md` exists, audit bootstraps it; if one exists, audit refreshes the verified rungs with full verification (and clears any audit-due flag `sync` left). Bottom-rung declarations are not re-verified here — there is nothing to verify — but audit may correct a stage that reality has overtaken (a `planned` behavior whose code now exists and is reachable becomes a candidate `wired` row, subject to the evidence check).
 
 The gap partition this mode produces is useful **standalone** — "what do we need to deploy so I can test it" and "where are the gaps" are worth answering outside any ticket or milestone workflow.
 
 ### Standing rules (audit mode)
 
-- **Never invent the capability set.** If no authoritative list exists, propose candidates and mark them unconfirmed — do not silently manufacture a list and then grade coverage against your own invention. That is circular, and it reads as authority.
-- **Use the project's own noun.** If the repo says intents, commands, tools, endpoints, or features, use that word throughout. Do not impose "capability" on a codebase with its own vocabulary.
-- **Derive from code wherever possible.** A hand-maintained inventory of dozens of rows rots faster than the map, and a rotted registry is worse than none because its size reads as authority. If an enum, router table, manifest, or registry exists, that is the source; humans annotate only support level and gap notes.
-- **Default the support level down, never up.** Absent evidence, the lower level is correct. Assigning `live` without having driven the capability is the central failure this mode exists to prevent.
-- **Gaps are the deliverable.** A registry of all-green rows is either a finished product or a lying table. Assume the second and go look.
-- **Current-state only.** `docs/capabilities.md` records what exists *now*. Planned and in-progress work lives in tickets (`lc-ticketize`) and STATE.md's milestone section — putting planned rows in the registry recreates the exact declaration-graded-as-verification failure this mode exists to prevent.
+- **Never invent the set.** If no authoritative list of behaviors exists, propose candidates and mark them unconfirmed — do not silently manufacture a list and then grade it against your own invention. That is circular, and it reads as authority.
+- **Use the project's own noun.** If the repo says intents, commands, tools, endpoints, or features, use that word throughout — one row per one of *those*. Do not impose "readiness" (or "capability") as the noun on rows; readiness is the *axis*, not the thing.
+- **Derive from code wherever possible.** A hand-maintained inventory of dozens of rows rots faster than the map, and a rotted record is worse than none because its size reads as authority. If an enum, router table, manifest, or registry exists, that is the source for the behaviors that have code; humans annotate stage, evidence, and gap notes. (Bottom-rung rows for not-yet-built behaviors necessarily come from plans, not code.)
+- **Default the verified rungs down, never up.** Absent evidence, the lower stage is correct. Assigning `live` without having driven the behavior is the central failure this mode exists to prevent. This defaulting applies to the top of the ladder; the bottom rungs are declarations and take whatever stage the plan says.
+- **Gaps are the deliverable.** A record of all-`live` rows is either a finished product or a lying table. Assume the second and go look.
 
-### Support levels
+### The readiness ladder
 
-Each capability carries exactly one, aligned to the evidence tiers above:
+One axis, one row per behavior. A row sits at exactly one stage, and the ladder splits cleanly into declarations and verified claims:
 
-| Level | Means | Equivalent tier |
-| --- | --- | --- |
-| `absent` | nothing implements it | — |
-| `partial` | implemented but incomplete — **requires a gap note** | inferred |
-| `wired` | complete and reachable (registered, routed, exposed), untested here | documented |
-| `live` | driven end to end and observed working | verified-live |
+| Stage | Means | Kind | Evidence? |
+| --- | --- | --- | --- |
+| `deferred` | acknowledged but intentionally not being built now | declaration | none needed |
+| `planned` | committed to, not started | declaration | none needed |
+| `in-progress` | actively being built, not yet reachable | declaration | none needed |
+| `partial` | implemented but incomplete — **requires a gap note** | verified (inferred) | yes |
+| `wired` | complete and reachable (registered, routed, exposed), untested here | verified (documented) | yes |
+| `live` | driven end to end and observed working | verified (verified-live) | yes |
 
-`wired` → `live` is the expensive step and the one people skip. The distinction between "the code exists" and "the code is reachable" is `partial` → `wired`, and it is where most real gaps hide: a handler nobody registered is invisible to every caller and looks complete in a grep.
+**Bottom rungs are declarations** (`deferred`, `planned`, `in-progress`): a row at these stages claims nothing about reality and needs no evidence — it records intent. **Top rungs are verified** (`partial`, `wired`, `live`): each is an evidence claim, defaulted DOWN when evidence is absent and downgraded when the implementing code moves. A behavior with no row yet is simply not on the ladder — do not manufacture a `deferred` row for every hypothetical; add rows for behaviors the project has actually committed to, deferred, or built.
+
+`wired` → `live` is the expensive step and the one people skip. The distinction between "the code exists" and "the code is reachable" is `partial` → `wired`, and it is where most real gaps hide: a handler nobody registered is invisible to every caller and looks complete in a grep. The declaration/verification line — between `in-progress` and `partial` — is the trust boundary: nothing crosses it without evidence.
+
+### Row shape
+
+One row per behavior → stage on the ladder → implementing code (once any exists) → evidence (for the verified rungs) → gap note. A `deferred`/`planned` row has no code and no evidence yet and that is correct; an `in-progress` row may have code but is not yet reachable; the verified rungs must cite evidence, and `partial` must carry a gap note. The gap partition (blocks-testability vs blocks-completeness) is unchanged and applies to the verified end of the ladder.
 
 ### 1. Find the authoritative set
 
-Determine where the list of capabilities actually lives. Three cases, and which one holds decides everything downstream:
+Determine where the list of behaviors actually lives. Three cases, and which one holds decides everything downstream:
 
-- **Code-derivable** — an enum, router table, command registry, tool manifest, OpenAPI spec, or similar single place that enumerates them. Best case: derive the rows mechanically, and cells can legitimately reach `live`.
-- **Spec-derivable** — enumerated in a PRD, spec, or design doc but not in code. Derive from there, and note that the doc is the source. A capability in the spec with no code is an `absent` row, which is a real finding.
+- **Code-derivable** — an enum, router table, command registry, tool manifest, OpenAPI spec, or similar single place that enumerates them. Best case: derive the built rows mechanically, and they can legitimately reach `live`.
+- **Spec-derivable** — enumerated in a PRD, spec, or design doc but not (yet) in code. Derive from there, and note that the doc is the source. A behavior in the spec with no code is a bottom-rung row (`planned`, or `deferred` if the plan shelved it), which is a real finding, not an omission.
 - **Nowhere** — the set exists only implicitly, in prompt text or in someone's head. **Stop and say so.** Propose candidates from what you can find, mark every row unconfirmed, and tell the user that confirming the list is a product decision, not a documentation one. Deciding what the product does is `lc-north-star` work; this skill records it, it does not invent it.
 
 Completion: the case is named, and if code- or spec-derivable, the exact file that is the source of truth is cited.
 
-### 2. Map each capability to its implementation
+### 2. Map each behavior to its implementation
 
-For each row, find the code that implements it — and check reachability, not just existence. A function that no router, dispatcher, or registry points at is `partial`, not `wired`, however complete it looks.
+For each row that claims any implementation, find the code — and check reachability, not just existence. A function that no router, dispatcher, or registry points at is `partial`, not `wired`, however complete it looks. Bottom-rung rows (`deferred`, `planned`, `in-progress`) need no implementing code to be correct; leave their code cell empty (or, for `in-progress`, point at the work in flight).
 
-Where per-capability work is independent, fan out: one agent per capability, each returning implementing path, reachability, and proposed level with its evidence. Independent verification is what keeps this from being a grep with opinions.
+Where per-behavior work is independent, fan out: one agent per behavior with code, each returning implementing path, reachability, and proposed stage with its evidence. Independent verification is what keeps this from being a grep with opinions.
 
-Completion: every row has an implementing path or is marked `absent`.
+Completion: every row that reaches a verified rung has an implementing path; bottom-rung rows are left without one by design.
 
-### 3. Assign support levels — adversarially
+### 3. Assign the verified rungs — adversarially
 
-For every row proposed as `wired` or `live`, try to disprove it. Those are the claims that lie; `absent` and `partial` rarely need defending.
+For every row proposed as `partial`, `wired`, or `live`, try to disprove it. Those are the claims that lie; bottom-rung declarations claim nothing and need no defending.
 
 - Proposed `wired`: is it genuinely registered and reachable from a real entry point, or only defined?
-- Proposed `live`: who drove it, when, and what did they observe? A test passing is not the same as the capability working; note which one you have.
+- Proposed `live`: who drove it, when, and what did they observe? A test passing is not the same as the behavior working; note which one you have.
 
-Downgrade anything that cannot survive the check. Record what the evidence was, not just the level.
+Downgrade anything that cannot survive the check — including back across the trust boundary into `in-progress` if it turns out nothing reachable exists yet. Record what the evidence was, not just the stage.
 
-Completion: every `wired`/`live` row cites its evidence; unsupported claims are downgraded.
+Completion: every `partial`/`wired`/`live` row cites its evidence; unsupported claims are downgraded.
 
-### 4. Write `docs/capabilities.md`
+### 4. Write `docs/readiness.md`
 
 ```md
-# Capabilities
+# Readiness
 
-> What the product can do and how well each is verified. Derived from
-> `src/intents/registry.ts` — re-run `lc-project-state audit` after changing it.
-> Support: absent · partial (gap note required) · wired (reachable, untested) · live (driven, observed)
+> How far along each behavior is and how well the built ones are verified. Derived from
+> `src/intents/registry.ts` (plus planned behaviors from the roadmap) — re-run
+> `lc-project-state audit` after changing it.
+> Ladder: deferred · planned · in-progress · partial (gap note required) · wired (reachable, untested) · live (driven, observed)
 
-| Capability | Implemented by | Support | Evidence | Gap |
+| Behavior | Stage | Implemented by | Evidence | Gap |
 | --- | --- | --- | --- | --- |
-| transfer | `src/tools/transfer.ts` | live | drove on staging 2026-07-24 | — |
-| swap | `src/tools/swap.ts` | wired | registered, never run | untested |
-| bridge | `src/tools/bridge.ts` | partial | no multi-hop path | multi-hop unimplemented |
-| stake | — | absent | — | no implementation |
+| transfer | live | `src/tools/transfer.ts` | drove on staging 2026-07-24 | — |
+| swap | wired | `src/tools/swap.ts` | registered, never run | untested |
+| bridge | partial | `src/tools/bridge.ts` | no multi-hop path | multi-hop unimplemented |
+| stake | in-progress | `src/tools/stake.ts` (WIP) | — | not yet reachable |
+| lend | planned | — | — | scheduled for v1 |
+| governance | deferred | — | — | parked until v2 |
 ```
 
-Clear any `> ⚠️ Audit due` flag a prior `sync` left at the top of the file. Then ensure `docs/STATE.md`'s topic index has **one** row pointing here, so the map keeps its page cap while a fresh agent still learns the registry exists. Do not copy capability rows into `STATE.md`.
+Use the repo's own noun for the first column's header (Intent / Command / Tool / Endpoint / Feature), not "Behavior," if the repo has one. Clear any `> ⚠️ Audit due` flag a prior `sync` left at the top of the file. Then ensure `docs/STATE.md`'s topic index has **one** row pointing here, so the map keeps its page cap while a fresh agent still learns the record exists. Do not copy readiness rows into `STATE.md`.
 
-Completion: `docs/capabilities.md` exists, every row has a level and evidence, every `partial` has a gap note, any audit-due flag is cleared, and `STATE.md` has exactly one pointer row.
+Completion: `docs/readiness.md` exists, every verified-rung row has a stage and evidence, every `partial` has a gap note, bottom-rung rows carry a stage with no forced evidence, any audit-due flag is cleared, and `STATE.md` has exactly one pointer row.
 
 ### 5. Partition the gaps
 
-The registry's payoff, and useful on its own. Split every non-`live` row into two lists, because they answer different questions:
+The record's payoff, and useful on its own. Split every not-`live` row into two lists, because they answer different questions:
 
 - **Blocks testability** — the user cannot exercise the product at all until this is done. Deployment, config, wiring, auth, a missing entry point.
-- **Blocks completeness** — the capability is missing or partial, but the rest of the product is testable without it.
+- **Blocks completeness** — the behavior is missing, planned, or partial, but the rest of the product is testable without it.
 
 Conflating these is how "get it deployed so I can test" silently becomes "finish everything." Order the testability list by dependency and state the shortest path to a running, exercisable product.
 
@@ -385,7 +400,7 @@ Completion: two ordered lists, and a named shortest path to something the user c
 
 1. **Fresh-chat test passes** (bootstrap) — a clean-context agent orients from STATE.md and answers a real topical question without asking the user for context.
 2. **Currency is legible in seconds** — any doc's status (current / historical / dated artifact / research) is determinable from its location, name, or status header alone, without reading its body.
-3. **Understanding-changing sessions update the map in the same commit** — enforced by the `AGENTS.md` wiring and honored in practice; a moved capability row is downgraded and the registry flagged in the same commit.
+3. **Understanding-changing sessions update the map in the same commit** — enforced by the `AGENTS.md` wiring and honored in practice; a moved verified readiness row is downgraded and the record flagged in the same commit.
 4. **Plain markdown + `AGENTS.md` only** — the convention requires no tool-specific machinery. Any agent that can read files and honor `AGENTS.md` can use and maintain it.
 
 **status** — the briefing is done only when:
@@ -399,25 +414,25 @@ Completion: two ordered lists, and a named shortest path to something the user c
 **audit** — the run is done only when:
 
 1. **The set is sourced, not invented** — either derived from a cited file, or explicitly marked unconfirmed pending a human decision.
-2. **Every `wired`/`live` row cites evidence** — who checked reachability, who drove it and observed what.
+2. **Every verified-rung (`partial`/`wired`/`live`) row cites evidence** — who checked reachability, who drove it and observed what. Bottom-rung declarations carry a stage and need none.
 3. **Every `partial` row has a gap note** — "partial" with no gap is not a finding.
-4. **`STATE.md` has exactly one pointer row** — detail stays in `docs/capabilities.md`, the map stays a map.
+4. **`STATE.md` has exactly one pointer row** — detail stays in `docs/readiness.md`, the map stays a map.
 5. **Gaps are partitioned** — testability-blocking separated from completeness-blocking, with a shortest path to something runnable.
 
 ## Failure modes
 
 - **Map-as-truth** — editing based on a STATE.md row without opening the source. Fix: the row is a pointer; read the source first.
-- **Doc sprawl** — bootstrapping by writing a stack of new summary docs. Fix: maintain one map plus the capability record, reorganize what exists, write nothing new but those.
+- **Doc sprawl** — bootstrapping by writing a stack of new summary docs. Fix: maintain one map plus the readiness record, reorganize what exists, write nothing new but those.
 - **Inherited verdict** — transcribing the pile's existing "current status" into the map without checking it against the code and docs. Fix: re-derive.
 - **Deleted history** — cleaning up by removing old docs. Fix: demote to `docs/log/`, never delete.
 - **Bloated map** — a STATE.md that has grown past re-reading in one sitting, so nobody re-verifies it. Fix: hard page cap; push detail into sources.
 - **Stale verified-live** — a row still claiming first-hand verification over code that has since changed. Fix: downgrade the tier on every sync where the code moved.
 - **Late map** — updating STATE.md in a follow-up commit, or promising to "later." Fix: same commit as the work, or it does not count.
-- **Audit in sync's clothing** — doing verification work in `sync` because the capability record looked stale. Fix: `sync` only downgrades and flags; the verification is `audit`, run when the flag says so.
-- **Declaration as verification** (audit) — marking a capability supported because a handler exists. Fix: check reachability, then check someone drove it.
-- **Invented set** (audit) — manufacturing the capability list, then grading coverage against it. Fix: name case three and stop; the list is a product decision.
-- **All green** (audit) — every row `live` on first run. Fix: you trusted declarations; go back to step 3 and try to disprove each one.
-- **Planned rows in the registry** (audit) — recording work that doesn't exist yet as a capability. Fix: current-state only; planned work is tickets and STATE.md's milestone section.
+- **Audit in sync's clothing** — running full verification in `sync` because the readiness record looked stale. Fix: `sync` only downgrades verified rungs, cheaply moves bottom-rung declarations, and flags; the verification is `audit`, run when the flag says so.
+- **Declaration graded as verification** (audit) — putting a behavior on a verified rung (`partial`/`wired`/`live`) because a handler exists, or promoting a `planned`/`in-progress` row without evidence. Fix: the trust boundary sits between `in-progress` and `partial` — check reachability, then check someone drove it, before crossing it.
+- **Invented set** (audit) — manufacturing the list of behaviors, then grading it against your own invention. Fix: name case three and stop; the list is a product decision.
+- **All live** (audit) — every row `live` on first run. Fix: you trusted declarations; go back to step 3 and try to disprove each one.
+- **Readiness as the noun** (audit) — labeling rows "readiness" instead of the repo's own noun (intent / command / tool / endpoint / feature). Fix: readiness is the axis; the rows are the repo's things.
 - **Git-log fiction** (status) — a confident briefing in a repo with no STATE.md, built from commit messages. Fix: declare the repo unbootstrapped and label the output as inference.
 - **Manufactured queue** (status) — inventing "blocked on you" items to avoid an empty section. Fix: empty is a valid, useful answer.
 - **Helpful mutation** (status) — fixing the stale map mid-briefing. Fix: report and hand off to `sync`; status never writes.
