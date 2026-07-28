@@ -74,9 +74,9 @@ Completion: repo root is down to README/AGENTS/CLAUDE + config; every moved file
 Use `references/state-template.md` as the skeleton. Five sections, nothing more:
 
 1. **What this is** — three sentences. What the project is, who it is for, what stage it is at.
-2. **Where we are** — current phase, current priorities, what is proven versus what is open.
+2. **Where we are** — current phase, current priorities, what is proven versus what is open, and what is deferred (v1+ work parked with a revisit trigger, or a pointer to deferred entries in the decision log).
 3. **Standing constraints** — the rules that must survive into any future work regardless of how old the doc they came from is (e.g. "never place session artifacts at repo root," "IBKR adapter is the only live-verified execution path"). These are the load-bearing invariants a fresh agent must not violate.
-4. **Topic index** — a table, one row per topic: `topic | thinking/decision doc | code that implements it | verified-by`, and each row tagged with an evidence tier. Superseded docs appear as `historical, behind <successor>`. This is the heart of the map: it connects each area of the project to the doc that decides it, the code that implements it, and the evidence that it works.
+4. **Topic index** — a table, one row per topic: `topic | thinking/decision doc | code that implements it | verified-by`, and each row tagged with an evidence tier. Superseded docs appear as `historical, behind <successor>`. This is the heart of the map: it connects each area of the project to the doc that decides it, the code that implements it, and the evidence that it works. When the project has a decision log (`docs/DECISIONS.md`) or distilled taste (`docs/taste.md`) — the artifacts `review-capture` maintains — they get standard rows here, so a fresh agent learns they exist from the map.
 5. **Maintenance rule** — the contract from "Mode: sync" below, stated in-doc so any agent that reads STATE.md learns how to keep it alive.
 
 Keep it under the ~1–2 page cap. If it overflows, you are putting detail in the map that belongs in a source doc.
@@ -121,6 +121,7 @@ Compare what this session changed — `git diff`, plus what you know from the co
 
 - Move or rewrite rows whose thinking or code changed.
 - Add rows for genuinely new topics (do not invent topics for trivia).
+- **Fold in review rounds**: if `review-capture` ran this session, confirm `docs/DECISIONS.md` and `docs/taste.md` have topic-index rows, surface newly-deferred items (with their revisit triggers) under "Where we are — Deferred" and open questions needing the human under "Open", and mirror any new load-bearing invariants as one-liners under "Standing constraints" citing their D-IDs. The log holds the detail; the map only points.
 - **Downgrade evidence tiers**: any `verified-live` row whose code changed this session drops until re-verified.
 - Mark newly-superseded docs historical in **two** places: the topic index (`historical, behind <successor>`) and a status header at the top of the doc itself pointing to its successor.
 - Keep it within the page cap. If the map grew, prune detail down into source docs rather than letting the map bloat.
