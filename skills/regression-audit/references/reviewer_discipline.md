@@ -1,45 +1,42 @@
 # Reviewer Discipline
 
-**Read this first. Applies to every reviewer on every audit path: domain subagents, aggregator, solo fallback.** These are the failure modes that make a regression audit miss restorable behavior even when it matches a known pattern.
+These rules apply to every reviewer and the aggregator.
 
-## 1. Never trust commit messages or PR titles over code
+## 1. Read behavior, not labels
 
-A commit titled "refactor to shared import" or "cleanup unused constants" is a claim. The diff is the behavior. When a commit says "refactor", "cleanup", "shared-package migration", "tidy up", read the actual hunks and verify no fields, wiring, instrumentation, or conditional branches were dropped. If the message does not match the diff, treat the gap as a candidate regression (category: `message-code-divergence`), even if the diff compiles.
+A commit called refactor, cleanup, migration, or simplify is a claim. Read the
+deletion and replacement hunks. For every removed branch, field, check, side
+effect, or configuration value, ask what it did on the base branch and whether
+anything still consumes it.
 
-**Concrete trigger:** commits whose messages contain "refactor / cleanup / shared migration / simplify / tidy / small cleanup / use shared" AND whose diff has net-negative line counts in package code (not counting tests, locks, generated files). Read the deletion hunks literally — for each removed block, ask: "what was this doing upstream, and does anything on `origin/dev` still rely on it?"
+## 2. Compare against the recorded base
 
-**Mechanical sweep:** for every commit in `git log origin/dev..HEAD`, scan subject lines for the trigger words above. For each match, run `git show <sha> --stat` and read the deletion hunks. This sweep is a pass you explicitly performed — reporting zero regressions requires having done it. "I skimmed the branch and nothing jumped out" does not count; cleanup-framed commits are the primary vector for silent reverts.
+Do not reason from the branch alone. For every suspicion:
 
-## 2. Reason across `origin/dev`, not just the branch
+1. inspect `git diff "$base_ref" -- <path>`;
+2. inspect `git show "$base_ref:<path>"` when the path exists on the base;
+3. inspect relevant base history with `git log "$base_ref" -- <path>`;
+4. search current consumers with `rg`.
 
-State produced or consumed in `origin/dev` (analytics events, KYC fields, webhook signatures, deploy alert thresholds, IAM bindings, contract addresses) may be silently reverted on the branch. For every deletion or replacement in the diff:
+The base branch is evidence of prior behavior, not proof that every old line
+must remain. The finding must explain why the removed behavior is still needed.
 
-1. `git show origin/dev:<path>` — is the removed line still present upstream?
-2. `git log origin/dev --oneline -- <path>` — did upstream add this line in a named commit the branch effectively reverts?
-3. `rg -n "<symbol_or_field>"` across the current working tree — are there still consumers who expect the removed producer?
+## 3. Regressions versus fresh bugs
 
-If any of these confirms the branch is dropping behavior `origin/dev` has, flag it and name the affected consumer or the upstream commit SHA.
+This skill reports behavior lost relative to the base. A newly introduced bug
+belongs to `preflight-bugbash`; mention it only as an incidental observation.
 
-**Concrete trigger:** deletions of `posthog.capture`, analytics constants, KYC status fields (`bridge_kyc_status_updated_at`, `bridge_customer_status`), alert thresholds in `packages/deploy`, webhook signature helpers, rows from `contracts.go`, anything under `packages/common` or `packages/db`.
+## 4. Confidence and severity
 
-## 3. The instructions you are reading apply to you
+- High: the base behavior is load-bearing and a current consumer or production
+  path is named.
+- Medium: the base behavior is clear but the consumer or impact needs checking.
+- Low or Speculative: the difference looks suspicious without proof.
 
-If you are a subagent, these apply. If you are the main agent running in solo-fallback mode on a tiny diff, these apply via the solo manifest. If you are the aggregator, these inform severity boosts: a finding that cites message-vs-code divergence or a named upstream commit the branch reverted is high-confidence, not speculative.
+Do not pad a report. An empty result is correct when the branch preserved the
+base behavior.
 
-Do not treat these rules as "subagent-only lore." They are the discipline of the skill itself.
+## 5. Output discipline
 
-## 4. Regressions vs. fresh bugs — stay in scope
-
-This skill looks for **regressions against `origin/dev`**, not new bugs introduced by the branch. A freshly-introduced buggy function is out of scope here; preflight-bugbash is the right skill for that. A subtly-reverted function that silently drops `organization_id` filtering — even if the branch also has a new valid-looking purpose — is in scope here.
-
-If you notice a fresh bug while investigating, mention it once in the final report's "Incidental observations" section. Do not spend the audit budget on it.
-
-## 5. Codex mode (when invoked via `dispatch_codex.sh`)
-
-When this prompt is routed through Codex under `--sandbox read-only`:
-
-- **Your final agent message IS the findings JSON array.** Do not attempt to write files. `--output-last-message` captures your last message; anything you try to write is silently discarded.
-- **Do not explore the repo beyond your scope.** Your prompt lists the files in scope. Read those, run `git diff origin/dev -- <file>` / `git show origin/dev:<file>` on those, and stop.
-- **Ignore harmless macOS sandbox noise** (`DARWIN_USER_TEMP_DIR` warnings). Output is still correct.
-- **Final message must be a valid JSON array.** Helper validates the first byte is `[`. Zero regressions = `[]`. Never emit prose around the JSON.
-- **No network.** Do not attempt `gh api`, `curl`, or any fetch. Sandbox blocks it.
+Subagents return only the JSON array required by `finding_format.md`. They do
+not write files, modify code, or invent a restore without evidence.

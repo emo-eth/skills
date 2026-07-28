@@ -74,6 +74,12 @@ If the repo already uses a flat PRD convention, keep the PRD path and place the 
 
 Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes enough that approval needs pressure-testing. Then ask the user to approve the `vibe.md` and PRD, or request amendments. Do not infer approval from silence.
 
+Once the user has approved the contract and explicitly chosen low-touch
+execution, hand downstream interpretation decisions to
+`confidence-gated-review`. That policy does not approve contract changes,
+irreversible actions, or a new category of decision; those still go to the
+user. A PRD alone is not consent to skip review.
+
 Completion criterion for formal contract work: requested contract files exist, have no placeholders, have no "Resolve Before Spec" questions, and are explicitly approved by the user.
 
 ### 4. Create The Spec From The Contract
