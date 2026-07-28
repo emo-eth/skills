@@ -1,14 +1,18 @@
 ---
 name: autonomous-pr
 disable-model-invocation: true
-description: Use when the user asks to drive a specific GitHub PR to ready-to-merge state without intervention — ship PR N, get this PR ready to merge, autonomously handle CI, review threads, Bugbot state, and mergeability. NEVER merges; human approval is always required to merge in this repo.
+description: Canonical autonomous push-fix-watch loop for a current branch or GitHub PR. Use when the user asks to get a branch or PR green, push and watch CI, address review threads, create or update a PR, or drive PR N to ready-to-merge state. Handles local preflight, remote checks, Bugbot state, mergeability, and settle polling. NEVER merges; human approval is always required to merge in this repo.
 ---
 
 # Autonomous PR
 
-Drive a single PR to **ready-to-merge** state without human intervention. This skill never merges. A human always merges in this repo. The skill exits only once all comments are addressed, all blocking checks are green, Bugbot is CLEAN at HEAD, and the PR is mergeable — verified across multiple settle polls so async bot findings (Bugbot especially) cannot land after exit.
-
-Builds on `ralph-ci`. Reuses its scripts in `.claude/skills/ralph-ci/scripts/` directly — do not reimplement them here.
+Drive the current branch or a single PR to **ready-to-merge** state without
+human intervention. This skill never merges. A human always merges in this
+repo. If the current branch has no PR, the skill creates one after local
+preflight and the initial push. The skill exits only once all comments are
+addressed, all blocking checks are green, Bugbot is CLEAN at HEAD, and the PR
+is mergeable — verified across multiple settle polls so async bot findings
+(Bugbot especially) cannot land after exit.
 
 ## Subagent backend
 
@@ -35,32 +39,57 @@ export AUTONOMOUS_PR_RUN_DIR="$run_dir"
 
 ## When to Use
 
-- User invokes `/autonomous-pr <PR_NUMBER>`
+- User invokes `/autonomous-pr [PR_NUMBER]`; without a number, use the current branch's PR or create one.
 - User says "drive PR N to ready-to-merge", "ship PR N autonomously", "get this PR ready to merge"
-- Target PR is open, not draft
+- User says "ralph it", "push and watch CI", "get this green", or "ship it and watch"
+- Target PR is open and not draft, or the current branch is ready to publish as a new PR
 
 ## When NOT to Use
 
-- PR is draft → Cursor BugBot skips drafts entirely. Mark ready-for-review first or switch to `ralph-ci`.
+- PR is draft → Cursor BugBot skips drafts entirely. Mark it ready-for-review first.
 - User wants the agent to actually merge → not supported. Human always merges in this repo.
 
 ## Prerequisites
 
 - `gh auth status` green, `jq` available
-- Checked out to the PR branch: `gh pr checkout <PR_NUMBER>`
+- Checked out to the target branch. With a PR number, use `gh pr checkout <PR_NUMBER>` first.
 - Repo exposes a preflight command. In this repo: `make preflight` (branch-wide, not `make preflight-staged`).
-- Ralph-ci skill installed in the same workspace at `.claude/skills/ralph-ci/`.
+- `jq` is available for the structured check and feedback scripts.
 
-## Scripts (reused from ralph-ci unless noted)
+## Scripts
 
-- `../ralph-ci/scripts/get-pr-feedback.sh [--summary] [--timeout-min N]` — authoritative feedback state. Summary includes `bugbot_state`, `unresolved_count`, `bugbot_unresolved_count`, `head_age_min`, `bugbot_timeout_min`.
-- `../ralph-ci/scripts/get-pr-checks.sh [--summary]` — authoritative CI state across GitHub Actions AND external providers (Cloud Build, etc.). `gh run list` is GHA-only; do not use it as the single source of truth.
-- `../ralph-ci/scripts/get-failed-logs.sh [--run-id ID]` — fetch failed CI logs.
-- `../ralph-ci/scripts/derive-local-parity.sh <check-name>` — map a failing PR check to the nearest local parity command.
-- `../ralph-ci/scripts/resolve-thread.sh <thread_id>` — EXISTS but this skill does NOT call it. Threads are left for bots/humans to close. Never invoke.
-- `../ralph-ci/scripts/reply-to-thread.sh <thread_id> <body>` — EXISTS but this skill does NOT call it. Replies are the user's job. Never invoke.
+- `scripts/get-pr-feedback.sh [--summary] [--timeout-min N]` — authoritative feedback state. Summary includes `bugbot_state`, `unresolved_count`, `bugbot_unresolved_count`, `head_age_min`, `bugbot_timeout_min`.
+- `scripts/get-pr-checks.sh [--summary]` — authoritative CI state across GitHub Actions and external providers. `gh run list` is supplemental only.
+- `scripts/get-failed-logs.sh [--run-id ID]` — fetch failed CI logs or external-check metadata.
+- `scripts/derive-local-parity.sh <check-name>` — map a failing PR check to the nearest local parity command.
+- `scripts/resolve-thread.sh <thread_id>` — retained for inspection only; this skill does NOT call it.
+- `scripts/reply-to-thread.sh <thread_id> <body>` — retained for inspection only; this skill does NOT call it.
 - `scripts/status-log.sh` — emit one structured JSON status line per iteration.
 - `scripts/poll-wait.sh <phase>` — phase-aware sleep that respects the 5-min prompt-cache TTL.
+
+## Branch Bootstrap And Local Gate
+
+Before entering the remote loop:
+
+1. Resolve the target PR from the explicit argument or `gh pr view` on the
+   current branch.
+2. If no PR exists, inspect the working tree. Do not discard uncommitted work.
+   If the requested scope is clear, run the local gate, commit the intended
+   changes, push the branch, and create a PR with `gh pr create --fill`.
+3. Run the repository's broad preflight before every push. Prefer `make
+   preflight`; use the repository's documented equivalent when that target does
+   not exist. Do not substitute a staged-only check when a branch-wide check is
+   available.
+4. If a check names a package or application, run the nearest local parity
+   command from `scripts/derive-local-parity.sh <check-name>` in addition to the
+   broad preflight.
+5. If local checks fail, fix them before pushing. Retry a given failure at most
+   three times, then escalate with the failing command and evidence.
+
+Use `act` when the repository's GitHub Actions surface is broader than its local
+preflight and `act` is available. If there is no canonical preflight, inspect
+the CI configuration and run the closest lint, type, build, and test commands
+manually.
 
 ## Core Flow
 
@@ -94,14 +123,14 @@ loop:
     output; none need an agent.
 
       feedback:
-        `../ralph-ci/scripts/get-pr-feedback.sh` → bugbot_state, unresolved
+        `scripts/get-pr-feedback.sh` → bugbot_state, unresolved
         threads list (with bodies, paths, thread_ids).
 
       checks:
-        `../ralph-ci/scripts/get-pr-checks.sh --summary` → any FAILING ?
+        `scripts/get-pr-checks.sh --summary` → any FAILING ?
         For each failing blocking check, fetch log via
-        `../ralph-ci/scripts/get-failed-logs.sh` and local parity via
-        `../ralph-ci/scripts/derive-local-parity.sh "<check-name>"`.
+        `scripts/get-failed-logs.sh` and local parity via
+        `scripts/derive-local-parity.sh "<check-name>"`.
 
       mergeability:
         `gh pr view <N> --json mergeable,mergeStateStatus,headRefOid,baseRefName`
@@ -162,7 +191,7 @@ loop:
         Go to 4.
 
     ## 4. WAIT FOR BUGBOT AT HEAD
-    Reuse ralph-ci §4c logic. Poll with `get-pr-feedback.sh --summary` reading
+    Poll with `scripts/get-pr-feedback.sh --summary` reading
     `bugbot_state`:
         BLOCKING → back to step 2
         CLEAN    → proceed to 5
@@ -428,7 +457,7 @@ The skill never runs `gh pr merge`. Auto-merge is also disallowed.
 
 - **This skill never merges.** Human approval is always required. Do NOT call `gh pr merge`, do NOT pass `--auto`, do NOT enable auto-merge through any other path. Exiting with the PR queued for auto-merge is forbidden — branch protection clearing would merge it without the human review.
 - **Exit criterion is hard.** READY-TO-MERGE requires: all blocking PR checks green AND every thread ID in `unresolved_threads` is in `addressed_thread_ids` AND `bugbot_state=="CLEAN"` AND PR mergeable=MERGEABLE + mergeStateStatus=CLEAN AND 3 consecutive settle polls. Never declare ready on anything weaker. We do NOT gate on `unresolved_count==0` since we never resolve threads.
-- **Wait for Bugbot like ralph-ci does.** Bugbot frequently posts new findings minutes after CI goes green. The polling loops in steps 4 and 5 MUST block the turn until `bugbot_state` reaches CLEAN at HEAD AND 3 consecutive settle polls confirm it. Do not exit early because "everything looks green right now".
+- **Wait for Bugbot at HEAD.** Bugbot frequently posts new findings minutes after CI goes green. The polling loops in steps 4 and 5 MUST block the turn until `bugbot_state` reaches CLEAN at HEAD AND 3 consecutive settle polls confirm it. Do not exit early because "everything looks green right now".
 - **Use `gh pr checks` not `gh run list`.** Blocking checks from Cloud Build / external analyzers don't show up in `gh run list`.
 - **Turn-persistence.** Blocking polling loops before declaring DONE. Early exit on async bot feedback is failure.
 - **`bugbot_state` is the gate, not `latest_review_matches_head`.** The latter is retained only for back-compat.
@@ -453,9 +482,13 @@ The skill never runs `gh pr merge`. Auto-merge is also disallowed.
 - About to `git reset --hard`, `git clean -fd`, `git stash drop`, `git branch -D` without explicit user ask → STOP. Diagnose what the dirty state is first; never discard unknown work.
 - Upstream has commits your local branch lacks + you were about to force-push → STOP. Fetch + merge first; those upstream commits are another contributor's or another agent's work.
 
-## Relation to ralph-ci
+## Canonical Workflow
 
-- `ralph-ci` = push + watch CI until green + address feedback, for any branch.
-- `autonomous-pr` = drive a specific existing PR all the way to **ready-to-merge**, with on-demand subagent dispatch + explicit mergeability + Bugbot-settle gate. Human always merges.
+This skill replaces the former `ralph-ci` entry point. It owns both modes:
 
-Both stop short of `gh pr merge`. autonomous-pr adds: targeted PR-number scope, mergeability recheck against base, on-demand subagent dispatch for judgment-heavy work (bugbot classification, large-log CI diagnosis, non-trivial conflict resolution), and a final ready-to-merge report for the human reviewer.
+- current branch with no PR yet: run local checks, push, create the PR, and
+  watch it;
+- existing PR: sync the base, fix CI and review feedback, wait for Bugbot and
+  settle polls, then stop at ready-to-merge.
+
+Both modes stop short of `gh pr merge`. Human approval is always required.
