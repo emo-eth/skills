@@ -56,7 +56,7 @@ where the gaps are, and it is what answers "what shipped," "what's left,"
 | `phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
 | `session-handoff` | `docs/log/YYYY-MM-DD-handoff.md` | ending a session with unfinished work | you, or session end |
 | `comeback-recovery` | nothing — read-only | resuming an in-flight task after a gap | you |
-| **capability registry** | `docs/capabilities.md` | **does not exist yet** — see Gap | — |
+| `capability-registry` | `docs/capabilities.md` | after features exist; re-sync when code moves | you |
 
 Read the trigger column twice. `review-capture` is never yours to type; it runs
 itself every round. `phase-tracker` fires inside a task, not at its start. Most
@@ -133,22 +133,30 @@ Kept as a record of why the layout is what it is.
 3. **Unpublished members** — `phase-tracker`, `session-handoff`, and
    `comeback-recovery` lived on one machine only. Now in this repo.
 
-## Gap: the capability registry
+## The domain record
 
-Nothing in the set enumerates **what the product does**. Every artifact above
-records *process* — where we are, why we chose, what happened when — or is a
-frozen contract. None answers "which features exist, and which are actually
-supported end-to-end."
+Every artifact above records *process* — where we are, why we chose, what
+happened when — or is a frozen contract. None answers "which features exist, and
+which actually work end to end." That is a **domain** record, and it is a
+different kind of thing.
 
-That is a domain record, and it cannot be retrofitted into the others:
-`STATE.md` has a 1–2 page cap that dozens of feature rows destroy, and the PRD
-is immutable after approval while features accrete.
+It cannot be retrofitted into the others: `STATE.md` has a 1–2 page cap that
+dozens of feature rows destroy, and the PRD is immutable after approval while
+features accrete. So it gets its own file, `docs/capabilities.md`, maintained by
+`capability-registry` and pointed at by exactly one `STATE.md` row.
 
-The missing artifact: `docs/capabilities.md`, one row per capability →
-implementing code → support level → evidence tier → gap note. Support levels
-align to the tiers already used in `STATE.md`: `absent` / `partial` (gap note
-required) / `wired` (= documented) / `live` (= verified-live). Derived from code
-wherever a registry or enum exists — a hand-maintained inventory of dozens of
-rows rots faster than the map, and a rotted registry is worse than none because
-its size reads as authority. One `STATE.md` topic row points at it, keeping the
-map within its cap.
+Two properties make it worth having rather than being a table that lies:
+
+- **Support is verified, not declared.** `absent` / `partial` (gap note required)
+  / `wired` (reachable, untested) / `live` (driven and observed), mapping onto the
+  same evidence tiers `STATE.md` uses, and downgraded when code moves. The
+  `partial` → `wired` line — code exists vs. code is actually reachable — is
+  where most real gaps hide, because an unregistered handler looks complete in a
+  grep.
+- **Gaps are partitioned** into blocks-testability vs blocks-completeness. That
+  split is what makes "what do we need to deploy so I can test it" answerable
+  without it expanding into "finish everything."
+
+The registry uses the repo's own noun — intents, commands, tools, endpoints,
+features — rather than imposing "capability" on a codebase with its own
+vocabulary.
