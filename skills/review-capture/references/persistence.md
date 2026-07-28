@@ -13,11 +13,19 @@ superseded entries keep their text and get a new status line.
 ## D14 — 2026-07-28 — Bundle copies must keep original filenames
 Decision: review bundles copy docs with original names, never 01-a.md renames.
 Why: "renaming silently kills the diff view and I wasted a round" — annotation on docs/spec.md, round 3.
+Alternatives: numbered prefixes for ordering (rejected — breaks diffs); a sidecar manifest mapping numbers to originals (rejected — one more thing to desync).
+Consequences: bundle order must be carried out-of-band, so the bundle index doc becomes load-bearing.
 Source: plannotator round on docs/spec.md, 2026-07-28
 Status: active
 Scope: v0
 Load-bearing: yes
 ```
+
+This log **is** the ADR — there is no separate `docs/adr/` directory. A single
+append-only file stays greppable in one read, keeps monotonic IDs that
+`taste.md` can cite, and puts every status transition in one place; a directory
+of eighty ADR files does none of that. What the ADR format does better is
+depth, so the two fields that carry it are folded in above.
 
 ### Fields
 
@@ -29,6 +37,12 @@ Load-bearing: yes
   follow or violate.
 - **Why** — the rationale, anchored by a verbatim quote of the annotation
   (or the human's chat message) that forced it.
+- **Alternatives** — the options genuinely considered and why each lost.
+  **Required when `Load-bearing: yes`**, omit otherwise. This is the field a
+  future reader needs most and the one that is never reconstructible later:
+  once a decision is made, the roads not taken vanish from the record entirely.
+- **Consequences** — what this decision forces or forecloses downstream.
+  **Required when `Load-bearing: yes`**, omit otherwise.
 - **Source** — which round / doc / date produced it.
 - **Status** — one of:
   - `active` — in force.

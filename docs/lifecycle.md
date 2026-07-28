@@ -12,9 +12,15 @@ That is the whole discriminator. `code-review` finds bugs and owns nothing —
 its output dies with the conversation. `project-state` owns `docs/STATE.md`,
 which is still there next week. Only the second kind is lifecycle management.
 
-Applied to ~107 installed skills, this leaves **eight**. Everything else is
-build / verify / review tooling: useful, invoked ad hoc, irrelevant to the
-question "how does the project remember things."
+Applied to ~107 installed skills, this leaves **nine** — eight that own a file,
+plus two read-only members (`project-status`, `comeback-recovery`) that own
+nothing but exist only to read this set. Everything else is build / verify /
+review tooling: useful, invoked ad hoc, irrelevant to the question "how does the
+project remember things."
+
+The two readers answer different questions, and conflating them is easy:
+`comeback-recovery` resumes **the task you were on**; `project-status` briefs on
+**the project** — what shipped, what is left, what is blocked on you.
 
 ## Two chains, not one
 
@@ -47,8 +53,9 @@ where the gaps are, and it is what answers "what shipped," "what's left,"
 | `project-state` | `docs/STATE.md` (the map) | bootstrap once per repo, then sync every session | you, or session end |
 | `project-status` | nothing — read-only | you want a briefing | you |
 | `ticketize` | tracker items (Notion / Linear / Issues) | a settled plan must become assigned work | you |
-| `phase-tracker` | `PROGRESS.md` | inside one task of 3+ sequential phases | auto, mid-task |
-| `session-handoff` | `HANDOFF.md` | ending a session with unfinished work | you, or session end |
+| `phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
+| `session-handoff` | `docs/log/YYYY-MM-DD-handoff.md` | ending a session with unfinished work | you, or session end |
+| `comeback-recovery` | nothing — read-only | resuming an in-flight task after a gap | you |
 | **capability registry** | `docs/capabilities.md` | **does not exist yet** — see Gap | — |
 
 Read the trigger column twice. `review-capture` is never yours to type; it runs
@@ -68,24 +75,39 @@ things you invoke at all.
 - **Ending mid-task** → `session-handoff`.
 - **A review round came back** → nothing. `review-capture` handles it.
 
-## Known collisions
+## Where session state goes
 
-Unresolved conflicts between skills in this set. Settle these before adding a
-ninth artifact.
+Two homes, chosen by the nature of the file — not one catch-all directory.
 
-1. **Root-vs-`docs/log/`.** `phase-tracker` writes `PROGRESS.md` and
-   `session-handoff` writes `HANDOFF.md`, both at repo root. `project-state`'s
-   standing rule is that root holds only README / AGENTS / config, and dated
-   session artifacts go to `docs/log/YYYY-MM-DD-<name>.md`. Two skills in this
-   set violate a third's invariant.
-2. **Two decision logs.** `review-capture` writes `docs/DECISIONS.md` and states
-   "the log is the ADR." `domain-modeling` (not in this repo) writes
-   `docs/adr/NNNN-*.md` for the same purpose. Consolidate on `DECISIONS.md`;
-   leave `CONTEXT.md` owning vocabulary only.
-3. **Unpublished members.** `phase-tracker`, `session-handoff`, and
-   `comeback-recovery` are not in this repo and not in
-   `~/.agents/.skill-lock.json` — they exist on one machine only, and drift from
-   every other one. Three of the eight are outside the source of truth.
+| | `.context/` | `docs/log/` |
+| --- | --- | --- |
+| Nature | mutable working state for one task | dated artifact, written once |
+| Lifespan | discarded when the task ends | permanent; never pruned |
+| Committed | no — gitignored | yes |
+| Example | `.context/progress.md` | `docs/log/2026-07-28-handoff.md` |
+
+The repo root holds only README, AGENTS/CLAUDE, and config. Nothing in this set
+writes there.
+
+## Resolved conflicts
+
+Kept as a record of why the layout is what it is.
+
+1. **Root-vs-`docs/log/`** — `phase-tracker` and `session-handoff` both wrote to
+   repo root, violating `project-state`'s invariant. Resolved by the split
+   above: the progress checklist is runtime state (`.context/`, gitignored,
+   because a checklist shipping in commits causes cross-machine churn), the
+   handoff is durable dated history (`docs/log/`, committed). `session-handoff`'s
+   old prune-after-two-sessions rule was also removed — it deleted history.
+2. **Two decision logs** — resolved in favour of `docs/DECISIONS.md`. One
+   append-only file stays greppable in a single read, keeps the monotonic IDs
+   `taste.md` cites, and holds every status transition in one place; a directory
+   of ADR files does none of that. ADR's real advantage was *depth*, so
+   `Alternatives:` and `Consequences:` were added to the entry template, required
+   when `Load-bearing: yes`. `CONTEXT.md` keeps vocabulary only; `docs/adr/` is
+   not used.
+3. **Unpublished members** — `phase-tracker`, `session-handoff`, and
+   `comeback-recovery` lived on one machine only. Now in this repo.
 
 ## Gap: the capability registry
 
