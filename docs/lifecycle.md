@@ -89,6 +89,30 @@ Two homes, chosen by the nature of the file — not one catch-all directory.
 The repo root holds only README, AGENTS/CLAUDE, and config. Nothing in this set
 writes there.
 
+## Cross-tool portability
+
+The artifacts are fully portable by design — `STATE.md`, `DECISIONS.md`,
+`docs/log/`, `.context/progress.md` are plain markdown, and `project-state`'s
+definition of done requires no tool-specific machinery. Codex, Cursor, and
+opencode read them natively.
+
+The skills are mostly portable. Six own nothing but file I/O and work anywhere:
+`project-status`, `north-star`, `ticketize`, `phase-tracker`, `session-handoff`,
+`comeback-recovery`. Three degrade rather than break:
+
+- `project-state` — the step-5 fresh-chat test spawns `fresh-eyes`, which needs
+  subagents. Without them, open a literal fresh session in another tool and ask
+  it the question. That is a *stronger* test than the subagent version, since it
+  also proves a non-Claude tool can orient from the map.
+- `review-capture` — one subagent hop for applying feedback; do it inline instead.
+- `contract-audit` — not in this set, but bundles `agents/*.agent.md` and is
+  effectively Claude-only.
+
+**Wire `AGENTS.md`, not only `CLAUDE.md`.** The `@`-import direction decides
+whether other tools see the convention at all: `CLAUDE.md` importing `AGENTS.md`
+works everywhere, the reverse hides the map from every non-Claude tool. When
+`project-state` bootstraps a repo, the three directives go in `AGENTS.md`.
+
 ## Resolved conflicts
 
 Kept as a record of why the layout is what it is.
