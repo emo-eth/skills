@@ -136,6 +136,10 @@ The map update ships in the same commit as the work that made it necessary. A ma
 
 Completion: STATE.md reflects the session's changes; stale `verified-live` tiers are downgraded; newly-superseded docs are marked in both places; new artifacts are in `docs/log/`; all of it is staged in the same commit as the work.
 
+### Reading the map back
+
+This skill maintains the map; it does not brief anyone from it. To *read* current state — what shipped, what's left for a milestone, what's blocked on the human, what's most pressing — use `project-status`, which is read-only and will tell the user when this map has gone stale.
+
 ---
 
 ## Definition of done
