@@ -93,3 +93,5 @@ npx skills add emo-eth/skills --skill <name> [<name>...] -g -y \
 ```
 
 (The `--agent` list mirrors `lastSelectedAgents` in `~/.agents/.skill-lock.json`; adjust per machine.)
+
+To install **every** skill in the repo, use the undocumented wildcard — quoted, so zsh doesn't glob it: `--skill '*'`. (The interactive picker has no select-all; that's an upstream gap, [vercel-labs/skills#439](https://github.com/vercel-labs/skills/issues/439).)
