@@ -33,4 +33,4 @@ Return exactly one JSON object with this shape and no Markdown fence:
 }
 ```
 
-`continue` and `block` use `steering_prompt: null`. `steer` returns one evidence-backed compact paragraph of at most 1200 characters, usually 1–6 concise sentences, for the root agent. Every result includes at least one evidence item. A low-confidence result is not permission to guess.
+`continue` requires `steering_prompt: null` and `missing_context: []`. `steer` requires one non-empty compact-paragraph prompt of at most 1200 characters and `missing_context: []`. `block` requires `steering_prompt: null` and at least one `missing_context` item. Every result needs 1–5 non-empty evidence items, and every evidence or `missing_context` item is at most 600 characters. The validator rejects extra fields, malformed types, and structural limit violations; semantic grounding remains the controller's responsibility. A low-confidence result is not permission to guess.

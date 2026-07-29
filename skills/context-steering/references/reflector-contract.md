@@ -76,8 +76,11 @@ Rules:
 - `continue` means the packet is aligned enough for the next planned step. `steering_prompt` must be `null` and `missing_context` must be empty.
 - `steer` means one material correction is needed. `steering_prompt` must be one compact paragraph of at most 1200 characters, usually 1–6 concise sentences, specific to the packet, and grounded in the evidence. It is a prompt for the root agent, not an implementation patch.
 - `block` means mutation is unsafe or the packet contains a material contradiction or missing fact. `steering_prompt` must be `null`; `missing_context` names the exact evidence or decision needed.
-- Every result needs at least one evidence item. Do not use confidence as a substitute for evidence.
+- Every result needs at least one evidence item. Evidence and `missing_context` contain at most five non-empty strings, each at most 600 characters. The validator enforces these structural limits; semantic grounding, observability, and sentence quality remain controller responsibilities.
+- The object must contain exactly the five schema fields shown above. Extra metadata belongs in the controller's receipt, not the reflector result.
 - A low-confidence result may still be `block`; uncertainty is a reason to pause, not permission to guess.
+
+If validation fails, the controller must not consume or inject the result. Retry once with the same packet and a format reminder. If the retry fails or validation is unavailable, block the next mutation and record the failure rather than falling back to prose.
 
 ## Example: continue
 
@@ -101,7 +104,7 @@ Rules:
 
 - **Native fork/delegation:** dispatch the bundled role with the packet, collect its final JSON, validate it, and let the root controller consume it. The reflector never writes to the shared worktree.
 - **Interactive steering only:** treat `steering_prompt` as text to inject or queue according to the host's documented semantics. Record whether injection was immediate, queued, or unavailable; never claim it was applied without a receipt.
-- **Headless loop:** write the validated JSON to the run's checkpoint directory and feed only the decision plus prompt into the next controller turn. Keep the packet and raw transcript out of user-facing output unless needed for audit.
-- **No isolation primitive:** use a fresh context if the host supports one. Otherwise perform only a clearly labelled fallback self-check for low-risk work and use `block`/escalation for high-risk work.
+- **Headless loop:** return the validated JSON to the controller by default. Write it to a caller-provided existing checkpoint directory only when that store supplies retention and cleanup; never invent a path or write into the skill/project tree.
+- **No isolation primitive:** use a fresh context if the host supports one. Otherwise perform only a clearly labelled fallback self-check for low-risk work and use `block` for high-risk work, naming the required owner decision or approved independent verifier before resuming.
 
 The reflector is a sensor. The controller remains responsible for reconciling its output with the user goal, source truth, deterministic checks, and effect gates.

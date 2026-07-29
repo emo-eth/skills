@@ -1,6 +1,6 @@
 ---
 name: context-steering
-description: "Run an isolated, read-only reflection checkpoint that checks a long-running agent's root context for goal drift, missing constraints, compaction damage, and verification gaps, then returns at most one concise steering prompt. Use before major mutations, after context resets or repeated retries, when a phase changes, or whenever a delegated worker may be solving the wrong problem."
+description: "Run an opt-in, read-only reflection checkpoint for a multi-step agent task when the user requests steering or strong drift signals appear—compaction, repeated retries, scope correction, or a high-risk action—then return at most one concise steering prompt."
 ---
 
 # Context Steering
@@ -10,7 +10,7 @@ Use this as a small control loop around long-running agent work. The root agent 
 ## Quick start
 
 1. Build a compact root-context packet from the user goal, source-of-truth requirements, standing constraints, done/proof conditions, current plan, current evidence, open decisions, and the next mutation. Do not paste the full transcript or secrets.
-2. Fork one isolated `context-reflector` subagent with the packet. It answers only: **does the root context need a steering prompt before the next mutation?** Native fork/delegation hosts can use the contract directly. If the host resolves installed agent files, run `scripts/install-agents.sh` once from the installed skill directory; the bridge selects Codex TOML, OpenCode Markdown, or the generic Claude-style adapter (`--copy` freezes the prompt; the default symlink tracks updates).
+2. Fork one isolated `context-reflector` subagent with the packet. It answers only: **does the root context need a steering prompt before the next mutation?** Native fork/delegation hosts can use the contract directly. If the host resolves installed agent files, run `scripts/install-agents.sh` once from the installed skill directory; the bridge selects Codex TOML, OpenCode Markdown, or the generic Claude-style adapter (`--copy` freezes the prompt, `--force` replaces a collision with a backup, and the default symlink tracks updates).
 3. Require the JSON contract in [references/reflector-contract.md](references/reflector-contract.md).
 4. Validate the result before consuming it. Resolve the helper from the installed skill's resource path; do not assume the project working directory is the skill directory:
 
@@ -20,6 +20,8 @@ Use this as a small control loop around long-running agent work. The root agent 
 
    When already in the installed skill directory, `python3 scripts/validate-reflection.py < reflection.json` is equivalent. If the host cannot expose helper files, enforce the same contract in the root turn; do not silently skip validation.
 
+   If validation fails, never inject the result. Retry once with the same packet and a format reminder; if the retry fails or validation is unavailable, block the next mutation, record the failure, and gather evidence or ask a focused question.
+
 5. Apply exactly one result:
    - `continue`: proceed; do not manufacture a prompt.
    - `steer`: inject the returned prompt into the next root/worker turn, then continue the planned work.
@@ -27,24 +29,24 @@ Use this as a small control loop around long-running agent work. The root agent 
 
 ## When to checkpoint
 
-Use a checkpoint at a meaningful boundary, not on every turn:
+Use a checkpoint at a meaningful boundary only when the user requested steering or the controller explicitly enabled this mode:
 
-- after reconnaissance and before the first consequential edit;
 - after compaction, `/clear`, a fresh-context handoff, or a lost-context warning;
 - after two failed retries or repeated work on the same symptom;
 - when the user corrects scope, priorities, constraints, or the definition of done;
-- before a high-impact phase transition or irreversible/external action;
-- every 3–5 iterations in a long loop when no other trigger fires.
+- before a specifically high-risk, irreversible, or external action;
+- before the first consequential edit when the task is high-risk and steering was explicitly enabled;
+- every 3–5 iterations only in an explicitly enabled periodic mode.
 
-Skip it for a tiny, deterministic one-command task. After applying a steering prompt, perform one material work step before running another checkpoint unless new contradictory evidence appears.
+Do not checkpoint ordinary phase changes or every major mutation by default. Skip it for a tiny, deterministic one-command task. After applying a steering prompt, perform one material work step before running another checkpoint unless new contradictory evidence appears.
 
 ## Fork and safety policy
 
 - One reflector is the default. Use two independent reflectors for high-risk work (alignment and proof), and three only when their evidence sources are genuinely different.
 - Give reflectors read-only access. They may inspect packet-named files, diffs, or logs, but must not edit files, run external side effects, contact the user, or dispatch more agents.
+- Aggregate multiple results deterministically: any `block` wins and unions the evidence/missing context; if all results are `continue`, continue; if any result is `steer`, reduce only compatible steers describing the same bounded correction to one prompt. A material `continue`/`steer` disagreement or incompatible steers becomes `block` with `reconcile reflector disagreement` as missing context. Never choose by majority or confidence alone.
 - A reflector may recommend a prompt, not silently change the plan. The root agent checks it against direct user instructions, source-of-truth documents, and safety rules before applying it.
-- If reflectors disagree about a material constraint, return `block`; do not average contradictory requirements into mush.
-- If the host cannot provide an isolated fork, use a fresh context for the reflector. For high-risk work, do not substitute an unmarked same-context self-review and call it independent.
+- If the host cannot provide an isolated fork, use a fresh context for the reflector. For high-risk work without either primitive, block and obtain an owner/user decision or an approved independent verifier; resume only after that receipt. Do not substitute an unmarked same-context self-review and call it independent.
 
 ## What a good steering prompt contains
 
@@ -52,7 +54,7 @@ A useful prompt is short, evidence-backed, and corrective: name the observed dri
 
 ## Durable receipt
 
-For long-running or unattended work, save a small checkpoint receipt outside the agent's prose: run/checkpoint ID, root-context reference or hash, reflector count, decision, evidence inspected, prompt applied (if any), and the next verification. Do not persist raw transcript content or secrets. A `block` receipt needs an owner for resolving the missing input.
+For long-running or unattended work, return a small structured checkpoint receipt to the controller by default: run/checkpoint ID, root-context reference or hash, reflector count, decision, evidence inspected, prompt applied (if any), and the next verification. Persist it only when the caller supplies an existing run/checkpoint store with its own retention and cleanup policy. Never invent a path or write runtime state into the skill or project repository. Do not persist raw transcript content or secrets. A `block` receipt needs an owner for resolving the missing input.
 
 ## Related boundary
 
