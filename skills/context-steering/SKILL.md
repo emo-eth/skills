@@ -12,11 +12,13 @@ Use this as a small control loop around long-running agent work. The root agent 
 1. Build a compact root-context packet from the user goal, source-of-truth requirements, standing constraints, done/proof conditions, current plan, current evidence, open decisions, and the next mutation. Do not paste the full transcript or secrets.
 2. Fork one isolated `context-reflector` subagent with the packet. It answers only: **does the root context need a steering prompt before the next mutation?** Native fork/delegation hosts can use the contract directly. If the host resolves agent files from a shared directory, run `scripts/install-agents.sh` once from the installed skill directory (`--copy` freezes the prompt; the default symlink tracks updates).
 3. Require the JSON contract in [references/reflector-contract.md](references/reflector-contract.md).
-4. Validate the result before consuming it:
+4. Validate the result before consuming it. Resolve the helper from the installed skill's resource path; do not assume the project working directory is the skill directory:
 
    ```sh
-   python3 scripts/validate-reflection.py < reflection.json
+   python3 /absolute/path/to/context-steering/scripts/validate-reflection.py < reflection.json
    ```
+
+   When already in the installed skill directory, `python3 scripts/validate-reflection.py < reflection.json` is equivalent. If the host cannot expose helper files, enforce the same contract in the root turn; do not silently skip validation.
 
 5. Apply exactly one result:
    - `continue`: proceed; do not manufacture a prompt.
