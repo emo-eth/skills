@@ -10,7 +10,7 @@ Use this as a small control loop around long-running agent work. The root agent 
 ## Quick start
 
 1. Build a compact root-context packet from the user goal, source-of-truth requirements, standing constraints, done/proof conditions, current plan, current evidence, open decisions, and the next mutation. Do not paste the full transcript or secrets.
-2. Fork one isolated `context-reflector` subagent with the packet. It answers only: **does the root context need a steering prompt before the next mutation?** Native fork/delegation hosts can use the contract directly. If the host resolves agent files from a shared directory, run `scripts/install-agents.sh` once from the installed skill directory (`--copy` freezes the prompt; the default symlink tracks updates).
+2. Fork one isolated `context-reflector` subagent with the packet. It answers only: **does the root context need a steering prompt before the next mutation?** Native fork/delegation hosts can use the contract directly. If the host resolves installed agent files, run `scripts/install-agents.sh` once from the installed skill directory; the bridge selects Codex TOML, OpenCode Markdown, or the generic Claude-style adapter (`--copy` freezes the prompt; the default symlink tracks updates).
 3. Require the JSON contract in [references/reflector-contract.md](references/reflector-contract.md).
 4. Validate the result before consuming it. Resolve the helper from the installed skill's resource path; do not assume the project working directory is the skill directory:
 
@@ -62,5 +62,6 @@ For long-running or unattended work, save a small checkpoint receipt outside the
 
 - [Reflector contract and host adapters](references/reflector-contract.md)
 - [Source notes and adoption boundary](references/source-notes.md)
-- [Bundled read-only agent](agents/context-reflector.agent.md)
-- [Optional agent installation bridge](scripts/install-agents.sh)
+- [Bundled host adapters](agents/context-reflector.agent.md), [Codex TOML](agents/context-reflector.toml), and [OpenCode Markdown](agents/context-reflector.opencode.md)
+- [Host-format receipts](references/host-format-receipts.md)
+- [Optional native agent installation bridge](scripts/install-agents.sh)
