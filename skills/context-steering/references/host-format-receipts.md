@@ -6,7 +6,7 @@ The reflection protocol is transport-agnostic, but host agent files are not:
 - OpenCode's current agent documentation supports Markdown under `~/.config/opencode/agents/` (global) or `.opencode/agents/` (project), with `mode: subagent` and permissions. This skill bundles `agents/context-reflector.opencode.md` and denies `edit` and `bash`.
 - Claude-style hosts use the bundled `agents/context-reflector.agent.md` adapter. The installer only targets a directory explicitly supplied with `--target` for this generic Markdown adapter, or the detected Claude directory in auto mode.
 
-These formats and paths are host facts, not part of the reflection JSON contract. Re-check the host's current documentation if its agent format changes.
+These formats and paths are host facts, not part of the reflection JSON contract. The bridge installs configuration but cannot prove that a host honored its read-only permissions; high-risk controllers must record that capability or block. Re-check the host's current documentation if its agent format changes.
 
 References:
 

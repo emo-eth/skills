@@ -62,9 +62,12 @@ def main() -> None:
 
     decision = result["decision"]
     confidence = result["confidence"]
-    if decision not in DECISIONS:
+    extra = sorted(set(result) - required)
+    if extra:
+        fail(f"unexpected field(s): {', '.join(extra)}")
+    if not isinstance(decision, str) or decision not in DECISIONS:
         fail(f"decision must be one of: {', '.join(sorted(DECISIONS))}")
-    if confidence not in CONFIDENCES:
+    if not isinstance(confidence, str) or confidence not in CONFIDENCES:
         fail(f"confidence must be one of: {', '.join(sorted(CONFIDENCES))}")
 
     prompt = result["steering_prompt"]
