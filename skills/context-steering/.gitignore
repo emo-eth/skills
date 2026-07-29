@@ -1,0 +1,2 @@
+# This skill has no runtime state. Keep any local smoke-test output out of git.
+*.json
