@@ -1,9 +1,8 @@
----
-name: feature-video-demo
-description: This skill should be used when creating Playwright-based video demos of user flows for features, bug reproductions, or compliance demos. It produces deterministic WebM recordings with fake cursors showing realistic user interactions — no QuickTime or OBS required.
----
+# Playwright Video Evidence
 
-# Feature Video Demo
+Use this reference when the user explicitly selects a deterministic Playwright
+video for a feature, bug reproduction, or compliance demo. It is the
+Playwright-video capture tier of `demo-reel`.
 
 Create programmatic video recordings of user flows using Playwright. Each demo is a `.demo.ts` spec that Playwright runs with video capture enabled, producing a WebM file showing a realistic user interaction.
 
@@ -18,7 +17,7 @@ Create programmatic video recordings of user flows using Playwright. Each demo i
 
 ### 1. Create `playwright.demo.config.ts`
 
-Each package that needs demos gets its own config. Use the template in `assets/playwright.demo.config.template.ts` as a starting point. Update the default port to match the package's convention (check existing `playwright.config.ts` or `package.json` scripts).
+Each package that needs demos gets its own config. Use the template in `references/playwright-video/playwright.demo.config.template.ts` as a starting point. Update the default port to match the package's convention (check existing `playwright.config.ts` or `package.json` scripts).
 
 **Critical**: Do NOT use `testMatch: "**/*.spec.ts"` with `testIgnore` for demos. The `testIgnore` pattern blocks files even when explicitly targeted. A separate config with `testMatch: "**/*.demo.ts"` is the only reliable approach.
 
@@ -26,7 +25,7 @@ Each package that needs demos gets its own config. Use the template in `assets/p
 
 ```
 packages/<app>/e2e/demos/
-├── demo-helpers.ts      ← copy from assets/demo-helpers.template.ts
+├── demo-helpers.ts      ← copy from references/playwright-video/demo-helpers.template.ts
 └── my-feature.demo.ts   ← demo specs import from demo-helpers
 ```
 

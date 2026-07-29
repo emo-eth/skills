@@ -83,3 +83,15 @@ Later, to sync the latest:
 ```sh
 npx skills update
 ```
+
+Note: `update` only refreshes skills already installed on that machine. Skills **newly added** to this repo are not pulled by `update` — install them explicitly (or re-run `add` interactively and pick them):
+
+```sh
+npx skills add emo-eth/skills --skill <name> [<name>...] -g -y \
+  --agent amp antigravity antigravity-cli cline codex cursor deepagents \
+          gemini-cli github-copilot kimi-code-cli opencode warp zed claude-code pi
+```
+
+(The `--agent` list mirrors `lastSelectedAgents` in `~/.agents/.skill-lock.json`; adjust per machine.)
+
+To install **every** skill in the repo, use the undocumented wildcard — quoted, so zsh doesn't glob it: `--skill '*'`. (The interactive picker has no select-all; that's an upstream gap, [vercel-labs/skills#439](https://github.com/vercel-labs/skills/issues/439).)

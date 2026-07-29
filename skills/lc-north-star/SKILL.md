@@ -1,5 +1,6 @@
 ---
-name: north-star
+name: lc-north-star
+disable-model-invocation: true
 description: "Vibe-first north-star clarification. Use when the user wants to word-dump an ideal reality, suss out vibes, name a north star, explore product taste, write a vibe.md, or translate a settled vibe into a PRD; also use when product feel, failure modes, users, success criteria, or scope boundaries are vague. Does not require a PRD unless the user asks for one or downstream execution needs one. Do not override an explicit downstream skill invocation such as plan; mention vibe/PRD risk only if material."
 ---
 
@@ -72,6 +73,12 @@ For formal contract work, prefer vibe first, then PRD:
 If the repo already uses a flat PRD convention, keep the PRD path and place the source `vibe.md` beside it when possible. Use stable vibe IDs (`V1`, `V2`, ...) and PRD requirement IDs (`R1`, `R2`, ...). Keep both product-facing and free of implementation choreography.
 
 Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes enough that approval needs pressure-testing. Then ask the user to approve the `vibe.md` and PRD, or request amendments. Do not infer approval from silence.
+
+Once the user has approved the contract and explicitly chosen low-touch
+execution, hand downstream interpretation decisions to
+`confidence-gated-review`. That policy does not approve contract changes,
+irreversible actions, or a new category of decision; those still go to the
+user. A PRD alone is not consent to skip review.
 
 Completion criterion for formal contract work: requested contract files exist, have no placeholders, have no "Resolve Before Spec" questions, and are explicitly approved by the user.
 
