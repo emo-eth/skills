@@ -33,4 +33,4 @@ Return exactly one JSON object with this shape and no Markdown fence:
 }
 ```
 
-`continue` and `block` use `steering_prompt: null`. `steer` returns one evidence-backed 2–6 sentence correction for the root agent. Every result includes at least one evidence item. A low-confidence result is not permission to guess.
+`continue` and `block` use `steering_prompt: null`. `steer` returns one evidence-backed compact paragraph of at most 1200 characters, usually 1–6 concise sentences, for the root agent. Every result includes at least one evidence item. A low-confidence result is not permission to guess.

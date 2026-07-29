@@ -74,7 +74,7 @@ Return only one JSON object matching the schema below. Do not wrap it in Markdow
 Rules:
 
 - `continue` means the packet is aligned enough for the next planned step. `steering_prompt` must be `null` and `missing_context` must be empty.
-- `steer` means one material correction is needed. `steering_prompt` must be 2–6 sentences, specific to the packet, and grounded in the evidence. It is a prompt for the root agent, not an implementation patch.
+- `steer` means one material correction is needed. `steering_prompt` must be one compact paragraph of at most 1200 characters, usually 1–6 concise sentences, specific to the packet, and grounded in the evidence. It is a prompt for the root agent, not an implementation patch.
 - `block` means mutation is unsafe or the packet contains a material contradiction or missing fact. `steering_prompt` must be `null`; `missing_context` names the exact evidence or decision needed.
 - Every result needs at least one evidence item. Do not use confidence as a substitute for evidence.
 - A low-confidence result may still be `block`; uncertainty is a reason to pause, not permission to guess.

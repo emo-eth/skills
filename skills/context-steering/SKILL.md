@@ -1,7 +1,6 @@
 ---
 name: context-steering
 description: "Run an isolated, read-only reflection checkpoint that checks a long-running agent's root context for goal drift, missing constraints, compaction damage, and verification gaps, then returns at most one concise steering prompt. Use before major mutations, after context resets or repeated retries, when a phase changes, or whenever a delegated worker may be solving the wrong problem."
-argument-hint: "[checkpoint or run context]"
 ---
 
 # Context Steering
@@ -47,7 +46,7 @@ Skip it for a tiny, deterministic one-command task. After applying a steering pr
 
 ## What a good steering prompt contains
 
-A useful prompt is short, evidence-backed, and corrective: name the observed drift or missing constraint, state the priority to restore, and name the next verification. It must not invent requirements, reopen settled decisions without evidence, or include a second plan disguised as a correction. Keep it to 2–6 sentences.
+A useful prompt is short, evidence-backed, and corrective: name the observed drift or missing constraint, state the priority to restore, and name the next verification. It must not invent requirements, reopen settled decisions without evidence, or include a second plan disguised as a correction. Keep it to one compact paragraph and at most 1200 characters; usually 1–6 sentences.
 
 ## Durable receipt
 
