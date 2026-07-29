@@ -23,4 +23,4 @@ This repo adopts the mechanism as an agent-agnostic, opt-in control skill:
 4. Apply at most one evidence-backed steering prompt, or block when context is insufficient.
 5. Keep deterministic verification and human/effect gates authoritative.
 
-The skill deliberately does not copy a Codex-specific command, assume automatic mid-turn injection, or treat reflection as completion proof. A nearby public `Codex-Reflect-Skill` focuses on mining historical Codex sessions; it is a different mechanism from live root-context steering and is not a dependency here.
+The skill deliberately does not copy a Codex-specific command, assume automatic mid-turn injection, or treat reflection as completion proof. Host-specific file formats and paths are recorded separately in [host-format-receipts.md](host-format-receipts.md). A nearby public `Codex-Reflect-Skill` focuses on mining historical Codex sessions; it is a different mechanism from live root-context steering and is not a dependency here.

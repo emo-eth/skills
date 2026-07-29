@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Install context-steering's bundled read-only agent into detected host agent dirs.
+# Install context-steering's bundled read-only agent in the host's native format.
 # Run explicitly from the installed skill directory. Symlinks are the default so
-# `npx skills update` refreshes the installed prompt; use --copy to freeze it.
+# updates refresh the prompt; use --copy to freeze it.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-src="$here/agents/context-reflector.agent.md"
+claude_src="$here/agents/context-reflector.agent.md"
+codex_src="$here/agents/context-reflector.toml"
+opencode_src="$here/agents/context-reflector.opencode.md"
 mode="symlink"
 target=""
+host="auto"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -17,8 +20,13 @@ while [ "$#" -gt 0 ]; do
       target="$2"
       shift
       ;;
+    --host)
+      [ "$#" -ge 2 ] || { echo "--host needs codex, claude, opencode, or generic" >&2; exit 2; }
+      host="$2"
+      shift
+      ;;
     -h|--help)
-      printf 'Usage: %s [--copy] [--target AGENTS_DIR]\n' "$0"
+      printf 'Usage: %s [--copy] [--target AGENTS_DIR] [--host codex|claude|opencode|generic]\n' "$0"
       exit 0
       ;;
     *)
@@ -29,30 +37,49 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-[ -f "$src" ] || { echo "Missing bundled agent: $src" >&2; exit 1; }
+case "$host" in
+  auto|codex|claude|opencode|generic) ;;
+  *) echo "Unknown host: $host" >&2; exit 2 ;;
+esac
+
+[ -f "$claude_src" ] || { echo "Missing bundled Claude-style agent: $claude_src" >&2; exit 1; }
+[ -f "$codex_src" ] || { echo "Missing bundled Codex agent: $codex_src" >&2; exit 1; }
+[ -f "$opencode_src" ] || { echo "Missing bundled OpenCode agent: $opencode_src" >&2; exit 1; }
+
+md_targets=()
+codex_targets=()
+opencode_targets=()
 
 if [ -n "$target" ]; then
-  targets=("$target")
+  case "$host" in
+    codex) codex_targets=("$target") ;;
+    opencode) opencode_targets=("$target") ;;
+    auto|claude|generic) md_targets=("$target") ;;
+  esac
 else
-  candidates=(
-    "$HOME/.codex/agents"
-    "$HOME/.claude/agents"
-    "$HOME/.config/opencode/agents"
-  )
-  targets=()
-  for candidate in "${candidates[@]}"; do
-    [ -d "$(dirname "$candidate")" ] && targets+=("$candidate")
-  done
+  case "$host" in
+    auto)
+      [ -d "$HOME/.codex" ] && codex_targets+=("$HOME/.codex/agents")
+      [ -d "$HOME/.claude" ] && md_targets+=("$HOME/.claude/agents")
+      [ -d "$HOME/.config/opencode" ] && opencode_targets+=("$HOME/.config/opencode/agents")
+      ;;
+    codex) codex_targets=("$HOME/.codex/agents") ;;
+    claude) md_targets=("$HOME/.claude/agents") ;;
+    opencode) opencode_targets=("$HOME/.config/opencode/agents") ;;
+    generic) md_targets=("$HOME/.claude/agents") ;;
+  esac
 fi
 
-if [ "${#targets[@]}" -eq 0 ]; then
-  echo "No known host agent directory detected. Use --target AGENTS_DIR if needed."
+if [ "${#md_targets[@]}" -eq 0 ] && [ "${#codex_targets[@]}" -eq 0 ] && [ "${#opencode_targets[@]}" -eq 0 ]; then
+  echo "No known host agent directory detected. Use --target AGENTS_DIR and --host codex|claude|opencode if needed."
   exit 0
 fi
 
-for dest in "${targets[@]}"; do
+install_one() {
+  local src="$1"
+  local dest="$2"
+  local name="$3"
   mkdir -p "$dest"
-  name="$(basename "$src")"
   rm -f "$dest/$name"
   if [ "$mode" = "copy" ]; then
     cp "$src" "$dest/$name"
@@ -60,4 +87,14 @@ for dest in "${targets[@]}"; do
     ln -s "$src" "$dest/$name"
   fi
   printf 'Installed %s (%s) -> %s\n' "$name" "$mode" "$dest"
+}
+
+for dest in "${codex_targets[@]}"; do
+  install_one "$codex_src" "$dest" "context-reflector.toml"
+done
+for dest in "${md_targets[@]}"; do
+  install_one "$claude_src" "$dest" "context-reflector.agent.md"
+done
+for dest in "${opencode_targets[@]}"; do
+  install_one "$opencode_src" "$dest" "context-reflector.md"
 done
