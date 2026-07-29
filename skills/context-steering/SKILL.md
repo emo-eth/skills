@@ -55,7 +55,7 @@ For long-running or unattended work, save a small checkpoint receipt outside the
 
 ## Related boundary
 
-`project-state` preserves durable project orientation across fresh contexts. `context-steering` checks whether the *current* root is still aligned before work continues. It is a complement, not a replacement, for project state, tests, or external verification.
+`lc-project-state` preserves durable project orientation across fresh contexts. `fresh-eyes` cold-reads prose artifacts before they ship. `context-steering` checks whether the *current* root is still aligned before work continues. It is a complement, not a replacement, for project state, cold-reader validation, tests, or external verification.
 
 ## References
 
