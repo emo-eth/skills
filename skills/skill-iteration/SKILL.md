@@ -7,6 +7,8 @@ disable-model-invocation: true
 
 The failure this defends against: running a new skill without watching it, so the only feedback loop is "did the output look fine," and every rough edge it hit along the way goes unrecorded and unfixed.
 
+Boundary: this skill is the field test — does the skill survive a real task under load? For the cheaper pre-flight — does the skill's *text* survive a cold reader — run `fresh-eyes` first. A skill that hasn't passed fresh-eyes isn't worth the field test yet.
+
 ## 1. Open an iteration log
 
 Before the target skill's first step runs, start a scratch note for friction. Nothing goes in it yet — it just has to exist before work begins, so friction gets logged live instead of reconstructed from memory afterward.

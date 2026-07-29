@@ -12,6 +12,7 @@
 - **Priorities now:** <!-- the 1–3 things in flight -->
 - **Proven:** <!-- what is actually working and verified -->
 - **Open:** <!-- what is undecided or unverified -->
+- **Deferred:** <!-- v1+ work parked with a revisit trigger, or a pointer to deferred entries in docs/DECISIONS.md -->
 
 ## Standing constraints
 
@@ -29,6 +30,8 @@ Evidence tier per row: **verified-live** (ran it first-hand) · **documented** (
 | --- | --- | --- | --- | --- |
 | <!-- e.g. Order execution --> | `docs/execution.md` | `packages/execution/src/executor.ts` | ran live IBKR order 2026-06-30 | verified-live |
 | <!-- e.g. Venue selection --> | `docs/log/2026-06-01-venue-canvass.md` (historical, behind `docs/execution.md`) | — | — | documented |
+| <!-- Decision log, if the project has one --> | `docs/DECISIONS.md` (append-only; deferred entries carry revisit triggers) | — | — | documented |
+| <!-- Distilled taste, if the project has one --> | `docs/taste.md` (principles citing decision IDs) | — | — | documented |
 
 ## Maintenance rule
 

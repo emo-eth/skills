@@ -1,6 +1,6 @@
 ---
 name: confidence-gated-review
-description: Replace review-everything with confidence-gated exception handling. Use when working under a product owner who doesn't want to review every doc/decision - rate each decision by how well you understand their intent, proceed above threshold with a logged call, and bring them only the low-confidence residue plus actions only they can take. Requires a written product contract (vibe/PRD or equivalent) to score against.
+description: Replace review-everything with confidence-gated exception handling after the user has adopted that policy for a project. Use when a written product contract exists and downstream decisions can proceed above a stated confidence threshold, while low-confidence decisions and irreversible actions still go to the owner. Do not infer permission to change the review policy merely because a PRD exists.
 ---
 
 # Confidence-Gated Review
@@ -70,4 +70,4 @@ Confidence measures your SENSE of understanding, not truth — you can be
 When something does go to the owner, keep the surface tiny: one short
 item (or diff) per decision, the recommendation stated first, and — if
 using an annotation tool — one standing session, never replaced under
-them (see plannotator-review's prime rule).
+them (see annotation-review's prime rule).

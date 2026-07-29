@@ -1,5 +1,6 @@
 ---
 name: demo-reel
+disable-model-invocation: true
 description: "Capture a visual demo reel (GIF, terminal recording, screenshots) for PR descriptions. Use when shipping UI changes, CLI features, or any work with observable behavior that benefits from visual proof. Also use when asked to add a demo, record a GIF, screenshot a feature, show what changed visually, create a demo reel, capture evidence, add proof to a PR, or create a before/after comparison."
 argument-hint: "[what to capture, e.g. 'the new settings page' or 'CLI output of the migrate command']"
 ---
@@ -120,12 +121,18 @@ Present the available tiers to the user via the platform's blocking question too
 
 **Options** (show only tiers from the `available` list, order by recommendation):
 1. **Browser reel** -- Agent-browser screenshots stitched into animated GIF. Best for web apps.
-2. **Terminal recording** -- VHS terminal recording to GIF. Best for CLI tools with interaction/motion.
-3. **Screenshot reel** -- Styled terminal frames stitched into animated GIF. Best for discrete CLI steps.
-4. **Static screenshots** -- Individual PNGs. Fallback when other tools are unavailable.
-5. **No evidence needed** -- The diff speaks for itself. Best for text-only or config changes.
+2. **Playwright video** -- Deterministic WebM recording of a web flow with a visible fake cursor. Best for repeatable feature demos, bug reproductions, and compliance evidence.
+3. **Terminal recording** -- VHS terminal recording to GIF. Best for CLI tools with interaction/motion.
+4. **Screenshot reel** -- Styled terminal frames stitched into animated GIF. Best for discrete CLI steps.
+5. **Static screenshots** -- Individual PNGs. Fallback when other tools are unavailable.
+6. **No evidence needed** -- The diff speaks for itself. Best for text-only or config changes.
 
 If the question tool is unavailable (background agent, batch mode), present the numbered options and wait for the user's reply before proceeding.
+
+When the requested evidence is a deterministic Playwright WebM, include
+**Playwright video** as an available option even if the recommendation script
+does not list it. Confirm that the workspace has Playwright before selecting
+it.
 
 ## Step 7: Execute Selected Tier
 
@@ -134,6 +141,7 @@ Carry the capture hypothesis from Step 0 and the feature exercise results from S
 Load the appropriate reference file for the selected tier:
 
 - **Browser reel** -> Read `references/tier-browser-reel.md`
+- **Playwright video** -> Read `references/playwright-video.md`
 - **Terminal recording** -> Read `references/tier-terminal-recording.md`
 - **Screenshot reel** -> Read `references/tier-screenshot-reel.md`
 - **Static screenshots** -> Read `references/tier-static-screenshots.md`
@@ -151,7 +159,7 @@ Return these values to the caller (e.g., commit-push-pr):
 
 ```
 === Evidence Capture Complete ===
-Tier: [browser-reel / terminal-recording / screenshot-reel / static / skipped]
+Tier: [browser-reel / playwright-video / terminal-recording / screenshot-reel / static / skipped]
 Description: [1 sentence describing what the evidence shows]
 URL: [public URL or "none" (multiple URLs comma-separated for static screenshots)]
 Path: [local file path or "none" (multiple paths comma-separated for static screenshots)]
@@ -166,7 +174,7 @@ The `Description` is a 1-line summary derived from the capture hypothesis in Ste
 - For all non-skipped tiers, exactly one of `URL` or `Path` contains a real value; the other is `"none"`.
 
 **Label convention:**
-- Browser reel, terminal recording, screenshot reel: label as "Demo"
+- Browser reel, Playwright video, terminal recording, screenshot reel: label as "Demo"
 - Static screenshots: label as "Screenshots"
 - The caller applies the label when formatting. demo-reel does not generate markdown.
 - Test output is never labeled "Demo" or "Screenshots"
