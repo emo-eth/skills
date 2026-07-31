@@ -3,7 +3,7 @@ name: nm-testing-reviewer
 description: Always-on code-review persona. Reviews code for test coverage gaps, weak assertions, brittle implementation-coupled tests, and missing edge case coverage.
 model: inherit
 tools: Read, Grep, Glob, Bash
-color: blue
+color: info
 
 ---
 
