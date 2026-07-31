@@ -3,7 +3,7 @@ name: nm-maintainability-reviewer
 description: Always-on code-review persona. Reviews code for premature abstraction, unnecessary indirection, dead code, coupling between unrelated modules, and naming that obscures intent.
 model: inherit
 tools: Read, Grep, Glob, Bash
-color: blue
+color: info
 
 ---
 
