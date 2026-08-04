@@ -31,3 +31,9 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-04T18:49:47.037Z** `codex`
   - cwd: `.`
   - note: Comparing multiline output from the bundled shell helper with Springfield format -> the first note line lacked the note prefix; only continuation lines should use the continuation indent.
+- **2026-08-04T18:52:40.524Z** `codex`
+  - cwd: `.`
+  - note: Refreshing installed skills -> npx skills update hit the GitHub API rate limit and reported stale deleted-skill warnings, but authenticated fallback completed the papercut update.
+- **2026-08-04T18:53:40Z** `codex`
+  - cwd: `.`
+  - note: Checking the installed wrapper receipt -> the test expected /tmp but macOS resolved the fixture as /private/tmp; compare against the physical path returned by pwd.
