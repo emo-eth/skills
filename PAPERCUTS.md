@@ -25,3 +25,9 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-04T17:55:33.585Z** `codex`
   - cwd: `.`
   - note: Searching the whole home directory for papercut references -> macOS protected Library paths produced permission errors and noisy truncated output; the search should have been limited to known config and source directories.
+- **2026-08-04T18:48:31.597Z** `codex`
+  - cwd: `.`
+  - note: Running the bundled shell helper with no related files -> Bash set -u treated an empty array expansion as unset; the helper needs explicit empty-array guards for optional arguments.
+- **2026-08-04T18:49:47.037Z** `codex`
+  - cwd: `.`
+  - note: Comparing multiline output from the bundled shell helper with Springfield format -> the first note line lacked the note prefix; only continuation lines should use the continuation indent.
