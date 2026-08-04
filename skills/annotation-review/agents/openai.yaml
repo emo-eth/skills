@@ -1,7 +1,7 @@
 interface:
   display_name: "Annotation Review"
-  short_description: "Open agent work in Plannotator for review"
-  default_prompt: "Use $annotation-review to open this plan or document in Plannotator for my review."
+  short_description: "Open agent documents in Plannotator"
+  default_prompt: "Use $annotation-review to open this document in Plannotator for my review."
 
 policy:
   allow_implicit_invocation: true
