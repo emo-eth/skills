@@ -46,3 +46,19 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-04T19:34:05Z** `codex`
   - cwd: `.`
   - note: Validating the papercut skill -> quick_validate rejected legacy version and author frontmatter fields; remove unsupported metadata before publishing.
+- **2026-08-04T19:35:13Z** `codex`
+  - cwd: `.`
+  - note: Updating the papercut skill -> a concurrent skills refresh restored SKILL.md before it could be staged; reapply the direct helper instructions and commit only that file.
+- **2026-08-04T19:36:29Z** `codex`
+  - cwd: `.`
+  - note: Removing the obsolete global papercut command -> the shell guard rejected a command containing an rm fallback even though macOS trash was available; use the explicit trash command.
+- **2026-08-04T20:22:32Z** `codex`
+  - cwd: `.`
+  - note: Looking up the referenced session -> the thread reader rejected a valid-looking turnLimit of 30 because its maximum is 10; the constraint was not visible in the call path.
+- **2026-08-04T20:24:19Z** `codex`
+  - cwd: `.`
+  - note: Launching the cold-reader validator -> the agent tool rejected a structured skill item combined with a plain message, even though both describe the same input; the call must use one input mode.
+- **2026-08-04T21:11:15Z** `codex`
+  - cwd: `.`
+  - files: `/tmp/plannotator-wallclock-review.out`
+  - note: Launching a detached Plannotator review -> the expected session glob had no matches even though the process was running, so URL discovery needed a separate process/output check.
