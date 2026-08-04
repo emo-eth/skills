@@ -62,3 +62,7 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `/tmp/plannotator-wallclock-review.out`
   - note: Launching a detached Plannotator review -> the expected session glob had no matches even though the process was running, so URL discovery needed a separate process/output check.
+- **2026-08-04T21:13:23Z** `codex`
+  - cwd: `.`
+  - files: `/Users/emo-nm/wallclock-review/wall-clock-plugin-research-brief.md`
+  - note: Creating the durable annotation brief -> a relative apply_patch path placed the file under /Users/emo-nm/dev instead of /Users/emo-nm, and the first re-add patch had a malformed terminator; path targets should be checked before launch.
