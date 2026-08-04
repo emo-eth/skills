@@ -22,3 +22,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-04T17:55:23.371Z** `gpt-5`
   - cwd: `.`
   - note: Running a no-input helper smoke test -> the command omitted ENV_FILE and wrote an empty .env in the repository root; disposable fixture tests must always set an explicit output path.
+- **2026-08-04T17:55:33.585Z** `codex`
+  - cwd: `.`
+  - note: Searching the whole home directory for papercut references -> macOS protected Library paths produced permission errors and noisy truncated output; the search should have been limited to known config and source directories.
