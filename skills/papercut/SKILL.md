@@ -1,7 +1,7 @@
 ---
 name: papercut
 description: Log small agent workflow frictions to a repo-local PAPERCUTS.md file with the papercut CLI.
-version: 0.1.0
+version: 0.2.0
 author: Emo / Springfield
 license: MIT
 ---
@@ -9,6 +9,8 @@ license: MIT
 # Papercut Logging
 
 Use this skill whenever you notice a small friction while working in a repository: a misleading command, flaky setup step, unclear documentation, cache surprise, missing helper, path mismatch, template drift, or another annoyance that was not worth stopping for but should be visible later.
+
+The `papercut` command is a thin host wrapper around the bundled `scripts/papercut.sh` helper. If the host wrapper is unavailable, run that helper from this skill directory.
 
 ## Command
 
