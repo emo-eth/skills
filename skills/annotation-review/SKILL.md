@@ -1,9 +1,25 @@
 ---
 name: annotation-review
-description: Launch a Plannotator annotation session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when sending docs/plans to a human for annotation review, when the user says "open X in plannotator", or when retrieving feedback after a session ("pull up the annotations"). Handles single files, multi-doc folder bundles, and diff-based re-review.
+description: Launch a Plannotator annotation session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when the user wants to review anything the agent produced, including a plan, proposal, specification, document, or implementation summary; when the user says "let me review the plan", "I want to review this", or "open this for review"; when sending docs/plans to a human for annotation review; when the user says "open X in plannotator"; or when retrieving feedback after a session ("pull up the annotations"). Handles single files, multi-doc folder bundles, and diff-based re-review.
 ---
 
 # Annotation Review
+
+## Human review requests
+
+When the user asks to review a plan or other agent-produced work, always use
+Plannotator as the review surface. For example, "let me review the plan"
+means:
+
+1. Locate the current plan or write the plan to a durable Markdown file if it
+   exists only in the conversation or console.
+2. Launch or reuse the appropriate Plannotator session for that file.
+3. Give the user the Plannotator URL.
+
+Do not make the user review pasted console output. The console may contain a
+short status message and the URL, but it is not the review surface. If the
+request names no file, infer the current plan or document from context before
+asking for clarification.
 
 Two load-bearing facts, learned the hard way:
 
