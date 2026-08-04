@@ -37,3 +37,12 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-04T18:53:40Z** `codex`
   - cwd: `.`
   - note: Checking the installed wrapper receipt -> the test expected /tmp but macOS resolved the fixture as /private/tmp; compare against the physical path returned by pwd.
+- **2026-08-04T19:32:55Z** `gpt-5`
+  - cwd: `.`
+  - note: While narrowing annotation-review from plans to substantial work, an intermediate patch used wording that did not match the current wrapped text; inspect the file before applying the follow-up edit.
+- **2026-08-04T19:33:52Z** `gpt-5`
+  - cwd: `.`
+  - note: Logging a review-skill patch issue -> the papercut wrapper unexpectedly modified tracked skills/papercut/SKILL.md while writing PAPERCUTS.md, so unrelated skill changes must be removed before commit.
+- **2026-08-04T19:34:05Z** `codex`
+  - cwd: `.`
+  - note: Validating the papercut skill -> quick_validate rejected legacy version and author frontmatter fields; remove unsupported metadata before publishing.

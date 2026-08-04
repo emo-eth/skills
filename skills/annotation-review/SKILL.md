@@ -1,24 +1,26 @@
 ---
 name: annotation-review
-description: Launch a Plannotator annotation session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when the user wants to review anything the agent produced, including a plan, proposal, specification, document, or implementation summary; when the user says "let me review the plan", "I want to review this", or "open this for review"; when sending docs/plans to a human for annotation review; when the user says "open X in plannotator"; or when retrieving feedback after a session ("pull up the annotations"). Handles single files, multi-doc folder bundles, and diff-based re-review.
+description: Launch a Plannotator annotation session that survives agent turns, retrieve submitted annotations reliably, and never destroy a human's unsubmitted comments. Use when the user wants to review any substantial document produced by the agent, including plans, proposals, specifications, research notes, design docs, implementation summaries, or other written deliverables; when the user says "let me review this", "I want to review this", or "open this for review"; when sending agent documents to a human for annotation review; when the user says "open X in plannotator"; or when retrieving feedback after a session ("pull up the annotations"). Handles single documents, multi-document bundles, and diff-based re-review. Do not trigger for code review unless the user explicitly asks for it.
 ---
 
 # Annotation Review
 
 ## Human review requests
 
-When the user asks to review a plan or other agent-produced work, always use
-Plannotator as the review surface. For example, "let me review the plan"
-means:
+When the user asks to review any substantial agent-produced document, always
+use Plannotator as the review surface. This includes plans, proposals,
+specifications, research notes, design docs, implementation summaries, and
+other written deliverables. Code review is out of scope unless the user
+explicitly asks for it. For example, "let me review this" means:
 
-1. Locate the current plan or write the plan to a durable Markdown file if it
+1. Locate the current work product or write it to a durable review file if it
    exists only in the conversation or console.
 2. Launch or reuse the appropriate Plannotator session for that file.
 3. Give the user the Plannotator URL.
 
 Do not make the user review pasted console output. The console may contain a
 short status message and the URL, but it is not the review surface. If the
-request names no file, infer the current plan or document from context before
+request names no file, infer the current document from context before
 asking for clarification.
 
 Two load-bearing facts, learned the hard way:
@@ -46,9 +48,9 @@ Two load-bearing facts, learned the hard way:
   content persists until the next same-target launch. Recover BEFORE
   relaunching anything.
 
-## Prepare docs for review: SELF-CONTAINED, always
+## Prepare documents for review: SELF-CONTAINED, always
 
-Every doc entering a session must stand alone — the reviewer will not
+Every document or document bundle entering a session must stand alone — the reviewer will not
 context-switch to other files, ever (assume they can't; that's the
 accommodation, not a preference):
 
