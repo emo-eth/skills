@@ -1,0 +1,7 @@
+interface:
+  display_name: "Wizard"
+  short_description: "Create guided TypeScript setup scripts"
+  default_prompt: "Use $wizard to create a guided TypeScript CLI for this manual procedure."
+
+policy:
+  allow_implicit_invocation: false
