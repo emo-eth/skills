@@ -1,8 +1,6 @@
 ---
 name: papercut
-description: Log small agent workflow frictions to a repo-local PAPERCUTS.md file with the papercut CLI.
-version: 0.2.0
-author: Emo / Springfield
+description: Log small agent workflow frictions to a repo-local PAPERCUTS.md file with the bundled shell helper.
 license: MIT
 ---
 
@@ -10,19 +8,45 @@ license: MIT
 
 Use this skill whenever you notice a small friction while working in a repository: a misleading command, flaky setup step, unclear documentation, cache surprise, missing helper, path mismatch, template drift, or another annoyance that was not worth stopping for but should be visible later.
 
-The `papercut` command is a thin host wrapper around the bundled `scripts/papercut.sh` helper. If the host wrapper is unavailable, run that helper from this skill directory.
+There is no global `papercut` command. Use the bundled `scripts/papercut.sh` helper directly.
 
-## Command
+## Resolve the helper
+
+Run this once in the shell where you will log the papercut. Set `PAPERCUT_SKILL_DIR` to the directory containing this `SKILL.md` when the skill system gives you that path. The other candidates cover the standard global skill locations.
 
 ```bash
-papercut -m <agent-or-model> "what you were doing -> what got in the way"
+papercut_skill_script=""
+for papercut_candidate in \
+  "${PAPERCUT_SKILL_DIR:-}/scripts/papercut.sh" \
+  "${CODEX_HOME:-$HOME/.codex}/skills/papercut/scripts/papercut.sh" \
+  "$HOME/.agents/skills/papercut/scripts/papercut.sh" \
+  "$HOME/.claude/skills/papercut/scripts/papercut.sh" \
+  "$HOME/dev/skills/skills/papercut/scripts/papercut.sh"
+do
+  if [[ -n "$papercut_candidate" && -f "$papercut_candidate" ]]; then
+    papercut_skill_script="$papercut_candidate"
+    break
+  fi
+done
+
+if [[ -z "$papercut_skill_script" ]]; then
+  echo "papercut skill: scripts/papercut.sh was not found" >&2
+  exit 127
+fi
 ```
 
-Examples:
+Use the resolved path directly:
 
 ```bash
-papercut -m gpt-5.6-luna "Running the smoke test -> the documented path was package-relative but the test expected repo-root paths."
-papercut --agent codex --file docs/setup.md "Following setup docs -> the command name had changed and the doc still used the old one."
+bash "$papercut_skill_script" -m <agent-or-model> "what you were doing -> what got in the way"
+bash "$papercut_skill_script" --agent codex --file docs/setup.md "Following setup docs -> the command name had changed and the doc still used the old one."
+```
+
+For repeated calls in one interactive shell, an optional shell-local function avoids repeating `bash` without installing a command globally:
+
+```bash
+papercut() { bash "$papercut_skill_script" "$@"; }
+papercut -m codex "what you were doing -> what got in the way"
 ```
 
 ## Rules
