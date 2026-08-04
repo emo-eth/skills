@@ -19,3 +19,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-04T00:20:10.459Z** `gpt-5`
   - cwd: `.`
   - note: Smoke-testing the wizard with piped input -> zsh rejected a generic status variable because it is read-only, and readline/promises can leave a pending question when piped EOF closes the interface after the first prompt; use task-specific shell variables and buffered scripted input for non-TTY runs.
+- **2026-08-04T17:55:23.371Z** `gpt-5`
+  - cwd: `.`
+  - note: Running a no-input helper smoke test -> the command omitted ENV_FILE and wrote an empty .env in the repository root; disposable fixture tests must always set an explicit output path.
