@@ -66,3 +66,11 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `/Users/emo-nm/wallclock-review/wall-clock-plugin-research-brief.md`
   - note: Creating the durable annotation brief -> a relative apply_patch path placed the file under /Users/emo-nm/dev instead of /Users/emo-nm, and the first re-add patch had a malformed terminator; path targets should be checked before launch.
+- **2026-08-05T15:54:12Z** `codex`
+  - cwd: `.`
+  - files: `plugins/wall-clock/src/controller.ts`
+  - note: Running the new TypeScript tests -> Node 22 strip-only mode rejected constructor parameter properties, so the implementation must use explicit fields and assignments.
+- **2026-08-05T15:59:38Z** `codex`
+  - cwd: `.`
+  - files: `plugins/wall-clock/src/host.ts`
+  - note: Loading the OMP adapter in RPC no-session mode -> the host supplied no session file, so the adapter needed an instance-local ephemeral identity instead of throwing during lifecycle events.

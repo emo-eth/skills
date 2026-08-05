@@ -41,10 +41,10 @@ It cannot universally stop arbitrary in-flight work or make a model finish early
 | Block a tool before execution | Yes: `tool_call` returns `{ block: true, reason }` | Yes: extension tool-call interception | Strong pre-action enforcement |
 | Observe tool completion | Yes: `tool_result`, `tool_execution_*` | Yes: tool lifecycle events | Record evidence and update state |
 | Persist session state | Yes: `sessionManager`, `appendEntry`, session lifecycle | Yes: session lifecycle and extension state mechanisms | Restore when the host restores the session |
-| Built-in child-task lifecycle | No built-in task extension API | Yes: `task:subagent:event`, `task:subagent:progress`, and `task:subagent:lifecycle` | OMP can observe native children directly |
+| Built-in child-task lifecycle | No built-in task extension API | Yes, through `omp.events.on(...)` with `task:subagent:event`, `task:subagent:progress`, and `task:subagent:lifecycle` | OMP can observe native children directly; progress payloads do not carry the child identifier |
 | Create child sessions from extension code | Public SDK exposes `createAgentSession()`; not a simple extension task API | Native `task` tool creates child sessions; no direct `ExtensionAPI.spawnTask()` | Use an adapter; do not assume universal child creation |
-| Set a different hard budget per native child | Not available as a native child-task setting | `task.maxRuntimeMs` is a host setting; it is not a per-call task input | Plugin can gate new work; per-child hard stop needs host support |
-| Abort in-flight child work | SDK `AgentSession.abort()` for an owned session | Task executor aborts on hard abort or budget; custom work depends on its signal | Only claim cancellation for an abort-aware executor |
+| Set a different hard budget per native child | Not available as a native child-task setting | `task.maxRuntimeMs` is not a public per-call task input; the internal executor has a private override | Plugin can gate new work; per-child hard stop needs a supported host seam |
+| Abort in-flight child work | SDK `AgentSession.abort()` for an owned session | Hard abort disposes the child; soft budget stops can leave a non-isolated child resumable; custom work depends on its signal | Only claim cancellation for an abort-aware executor |
 | Stop arbitrary remote work | No | No | Report as unknown or still running |
 
 ## Pi facts
@@ -75,7 +75,7 @@ The official [OMP task documentation](https://github.com/can1357/oh-my-pi/blob/m
 - child execution in `packages/coding-agent/src/task/executor.ts`;
 - `task.maxRuntimeMs` as a host-level maximum runtime setting;
 - child lifecycle states including started, completed, failed, and aborted;
-- parent event channels `task:subagent:event`, `task:subagent:progress`, and `task:subagent:lifecycle`;
+- event-bus channels `task:subagent:event`, `task:subagent:progress`, and `task:subagent:lifecycle`; lifecycle and raw-event payloads carry a stable child identifier, while progress payloads do not;
 - abort behavior that disposes a hard-aborted child session;
 - persisted child output and history artifacts.
 
@@ -93,14 +93,14 @@ Primary OMP sources:
 
 | Event or command | Behavior |
 |---|---|
-| `session_start` | Restore the session's deadline, plan, assignments, and reports. Re-arm only the in-memory status timer. |
+| `session_start` | Restore the session's deadline, plan, assignments, and reports. For OMP, also handle `session_switch`, `session_branch`, and `session_tree` as applicable. Re-arm only the in-memory status timer. |
 | `/wallclock start 30m` or `/wallclock start 5pm` | Parse local time, activate the current session, and persist an activation entry. |
 | Main-agent assignment tool | Create an assignment with scope, acceptance target, budget, wrap-up, and report contract. |
 | `before_agent_start` / `context` | Inject current phase, remaining time, assignment, and required report fields. |
 | `tool_call` | Classify the proposed action and block it when expired, when it cannot fit, or when wrap-up disallows it. |
 | `tool_result` | Record completion, failure, evidence, and elapsed time. |
 | OMP subagent lifecycle events | Attach child status and reports to the parent assignment when the event supplies a stable child identifier. |
-| `agent_end` / `agent_settled` | Ask the agent to report; do not treat a model response as proof of completed work. |
+| Pi `agent_settled` / OMP main-session `agent_end` | Ask the main agent to report; do not treat a model response as proof of completed work. For OMP child completion, use the lifecycle channel because `session_stop` is main-session-only. |
 | `session_shutdown` | Persist state and clear process-local timers. |
 
 ## Assignment and report contract
