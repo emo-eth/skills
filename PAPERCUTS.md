@@ -74,3 +74,24 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `plugins/wall-clock/src/host.ts`
   - note: Loading the OMP adapter in RPC no-session mode -> the host supplied no session file, so the adapter needed an instance-local ephemeral identity instead of throwing during lifecycle events.
+- **2026-08-06T18:38:52Z** `codex`
+  - cwd: `.`
+  - note: Installing a requested global skill from an Initial Commit page -> npx skills rejected the page because it was not a SKILL.md file or supported archive, and the page did not expose a permitted download path.
+- **2026-08-10T16:25:24Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Cold-reading the new standup skill -> the strict validator schema rejected a valid plain-string response, so the validation job failed before reporting its findings; use a string schema or no response schema for prose validators.
+- **2026-08-10T16:27:50Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Editing the new standup skill glossary -> an edit path accidentally used  instead of , so the tool treated the existing file as missing; corrected path is absolute.
+- **2026-08-10T16:28:23Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Editing the new standup skill glossary -> an edit path accidentally used a tilde-prefixed Users path instead of the absolute Users path, so the tool treated the existing file as missing; the corrected target is the absolute path.
+- **2026-08-10T16:34:47Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Updating the standup iteration log -> an edit call again used a tilde-prefixed absolute path instead of the absolute path, so the existing log was reported missing; the corrected target is under /Users/emo-nm/conductor.
+- **2026-08-10T16:35:39Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Updating the standup iteration log -> after removing the tilde, a relative path still resolved under the active worktree rather than the sibling workspace; use the full absolute path for cross-workspace edits.
+- **2026-08-10T16:37:43Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Launching the second standup cold-reader -> the task prompt omitted one skills directory segment in the ticket-contract path, so the validator had to glob and correct the path; prompts should use /Users/emo-nm/dev/skills/skills/standup/references/ticket-contract.md.
