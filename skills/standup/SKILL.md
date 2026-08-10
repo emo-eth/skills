@@ -158,13 +158,16 @@ Use this order:
    done-when.
 6. `Unattached work` - results with no goal path, each with its reason and
    proposed next action.
-7. `This week` - the weekly outcomes and their current status.
-8. `This month` - the monthly outcomes and what this week contributes.
-9. `Decisions and blockers` - only items that need an owner or external input.
-10. `Questions for owner` - one numbered list containing all bundled questions
-    for missing sources, unresolved ownership, or unattached work.
-11. `Follow-up` - links to operational detail, open questions, and proposed
-    ticket deltas.
+7. `Decisions and blockers` - only items that need an owner or external input.
+8. `Questions for owner` - one numbered list containing all bundled questions
+   for missing sources, unresolved ownership, or unattached work.
+9. `Follow-up` - links to operational detail, open questions, and proposed
+   ticket deltas.
+10. `This week` - the weekly outcomes and their current status, every item
+    carrying its ticket links and milestone links.
+11. `This month` - the monthly outcomes and what this week contributes,
+    linked the same way. The weekly and monthly priorities close the
+    standup so the daily detail resolves into where the project is going.
 12. `Sources used` - the goal, state, ticket, and evidence sources behind the
     claims. Put this last so it supports trust without crowding the summary.
 
@@ -177,6 +180,12 @@ Use plain words. Define a term once in the glossary or at first use. Name a
 count, ticket, model, or release only when the source is known. Keep details
 that help someone inspect the system in the follow-up document, not in the
 opening summary.
+
+Never name a ticket by bare number. Every ticket reference carries the
+ticket's title and a direct link to the destination, and the reference is
+written only after the ticket was verified to exist there — repo documents
+can carry stale or mangled numbers, and an unverifiable citation costs a
+review round.
 
 Completion: a teammate can repeat what changed, today's result, the owner
 decision, and the largest blocker after reading the first screen; every claim
