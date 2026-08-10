@@ -26,8 +26,9 @@ what the owner must decide.
 - Default to a high-level day view. Do not make an hour-by-hour schedule unless
   the user asks for one.
 - Keep routine feedback lightweight. Apply inline corrections in the current
-  standup and show a short change list. Do not launch Plannotator for a normal
-  daily edit. If a submitted Plannotator review comes back, run
+  standup and show a short change list. The rendered standup is opened in
+  Plannotator once per day (step 6); never launch a second session over it
+  for a normal daily edit. If a submitted Plannotator review comes back, run
   `lc-review-capture`; that review is the exception because its decisions must
   be retained.
 - `lc-ticketize` and `lc-review-capture` are sibling procedures in this skills
@@ -199,6 +200,14 @@ existing daily and follow-up files in place on the same date; do not create a
 second-round copy. Use the same filename and path on revision so review tools
 retain their history.
 
+After the files are written, open the standup for the owner in Plannotator:
+`plannotator annotate docs/log/YYYY-MM-DD-standup.md`, launched detached
+(`nohup ... & disown`), never as a harness-tracked background task, and
+report the local URL. One session per standup file: if a session already
+serves that file, do not relaunch — a relaunch resets the owner's
+unsubmitted draft, and updating the file in place is enough. Revisions on
+the same date reuse that session.
+
 If the project state or decisions changed, update `docs/STATE.md` and the
 append-only decision log named by the state map. If the state map names no
 decision log, mark that destination `GAP` and do not invent a filename.
@@ -207,7 +216,8 @@ Keep routine wording fixes out of the decision log.
 
 Completion: the standup, any follow-up, ticket delta, state map, and decision
 record agree; every source used in step 1 is either reflected or intentionally
-left unchanged with a reason.
+left unchanged with a reason; the standup is open in one Plannotator session
+and the owner has its URL.
 
 ## 7. Handle lightweight follow-up
 
