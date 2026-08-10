@@ -95,3 +95,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-10T16:37:43Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
   - note: Launching the second standup cold-reader -> the task prompt omitted one skills directory segment in the ticket-contract path, so the validator had to glob and correct the path; prompts should use /Users/emo-nm/dev/skills/skills/standup/references/ticket-contract.md.
+- **2026-08-10T16:41:49Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Installing the new standup skill globally -> npx skills reported universal installation complete but also failed the PromptScript adapter because it does not support global skill installation; the requested global targets were installed, but the mixed success output needs interpretation.
