@@ -98,3 +98,37 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-10T16:41:49Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
   - note: Installing the new standup skill globally -> npx skills reported universal installation complete but also failed the PromptScript adapter because it does not support global skill installation; the requested global targets were installed, but the mixed success output needs interpretation.
+- **2026-08-10T20:42:08Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Reproducing the identifier collision case -> the first evaluation passed the unresolved Promise from aliasText into restoreText, causing a TypeError; await the asynchronous aliasing step before calling the synchronous restore method.
+- **2026-08-10T20:59:38Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking identifier symbol references before editing -> the LSP device reported no language server for the TypeScript file, so references must be verified with scoped repository search instead.
+- **2026-08-10T21:03:14Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Editing the identifier helper -> a shortened home-directory path was auto-resolved from the earlier snapshot but emitted a warning; use the full absolute worktree path for future edits.
+- **2026-08-10T21:05:39Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Applying a second identifier edit -> escaping slashes in the absolute path made the edit tool issue another auto-resolution warning; pass the raw absolute path in future patch headers.
+- **2026-08-10T21:14:48Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Running the built durable smoke against a fresh local database -> the generated Prisma client lacked the current Message.build field, so the route returned 500 before starting the workflow; regenerate Prisma before a production smoke after schema changes.
+- **2026-08-10T21:23:10Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Removing the obsolete variable-length alias API -> the patch range included the closing function line already below it, so the edit tool auto-repaired a duplicated trailing delimiter; re-read showed the final function remained balanced.
+- **2026-08-10T21:27:30Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Updating the final progress count -> the edit tool again auto-resolved a shortened worktree path and emitted a warning; use the full absolute path even for .context files.
+- **2026-08-10T21:57:03Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Rolling the identifier handle back to a short digest -> the edit range retyped one documentation line that remained below the range, so the tool auto-repaired the boundary; the resulting source is correct.
+- **2026-08-10T21:58:36Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Updating collision regression tests for short handles -> the edit tool auto-repaired one boundary line and the shortened path warning recurred; the resulting test block was re-read and is balanced.
+
+- **2026-08-10T23:30:00Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Removing global skills -> the documented `-a '*'` wildcard was rejected as an invalid agent; omitting the agent selector removed the named skills successfully.
+- **2026-08-10T23:30:01Z** `openai-codex/gpt-5.6-luna`
+  - cwd: `.`
+  - note: Syncing the chezmoi lock -> `re-add` did not update a `create_` entry, while `add` renamed it and auto-push hit a non-fast-forward; fetch and merge remote changes before pushing.
