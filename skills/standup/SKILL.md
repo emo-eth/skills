@@ -107,6 +107,12 @@ Read, in this order:
 5. The current date and reporting timezone. If either source is missing, mark
    it `GAP` and ask one bundled question at the end.
 
+If the current standup file is missing and the user asks only for analysis or
+a proposal, keep the rendered standup as an explicitly unpersisted draft.
+Mark the missing file as `GAP`; do not create a same-day file or start a review
+session without that write being requested.
+
+
 List the sources at the bottom of the standup. A missing goal source or ticket
 destination stays visible as a gap. Never fill a missing source with a plausible
 plan.
@@ -149,11 +155,16 @@ comparison, measurement, or recommendation exists before its setup work does.
 
 ## 4. Prepare ticket changes
 
-Read `references/ticket-contract.md` when a ticket change is needed. The skill
-package includes that file. If it or the ticket destination fields are
-unavailable, mark the missing fields `GAP` and do not invent a ticket change.
-Use the existing ticket grain. A ticket should be one owner-sized result, not a
-whole uncertain project.
+Read `references/ticket-contract.md` when a ticket change is needed, if that
+file is present. If the file or the ticket destination fields are unavailable,
+mark the missing fields `GAP` and do not invent a ticket change.
+Use the existing ticket grain. A ticket should be one owner-sized result, not
+a whole uncertain project.
+
+If the contract reference is missing but a verified standup or ticket-delta
+exemplar proves the fields, use only those proven fields and keep the proposal
+`proposed, not created`. Do not treat a repository document as proof that a
+Linear write happened.
 
 When an existing ticket description lacks the exact environment, action,
 output, or proof, propose an `UPDATE` to that description before using it as
@@ -227,7 +238,12 @@ Update the existing file in place:
 
 Do not create `docs/log/YYYY-MM-DD-standup-follow-up.md` for a daily standup.
 Keep the daily document self-contained and short. Create a separate weekly
+
 planning document only when the owner asks for the longer planning session.
+If there is no current standup file and the user did not ask to create one,
+keep the output as a local or chat draft, label it `not persisted`, and skip
+the review-session step. Only start or reuse Plannotator after the standup
+file has been written.
 
 If state or a durable decision changed, update `docs/STATE.md`, the append-only
 decision log path named by `docs/STATE.md`, and `docs/taste.md` when the round
