@@ -96,10 +96,15 @@ if ((${#papercut_message_parts[@]} > 0)); then
 fi
 
 if [[ ! -t 0 ]]; then
-  papercut_stdin_message="$(cat)"
-  if [[ -n "$papercut_stdin_message" ]]; then
-    [[ -n "$papercut_message" ]] && papercut_message+=$'\n'
-    papercut_message+="$papercut_stdin_message"
+  papercut_stdin_first_line=""
+  if IFS= read -r -t 1 papercut_stdin_first_line || [[ -n "$papercut_stdin_first_line" ]]; then
+    papercut_stdin_message="$papercut_stdin_first_line"
+    papercut_stdin_rest="$(cat)"
+    [[ -n "$papercut_stdin_rest" ]] && papercut_stdin_message+=$'\n'"$papercut_stdin_rest"
+    if [[ -n "$papercut_stdin_message" ]]; then
+      [[ -n "$papercut_message" ]] && papercut_message+=$'\n'
+      papercut_message+="$papercut_stdin_message"
+    fi
   fi
 fi
 
@@ -189,7 +194,7 @@ papercut_append_entry() {
         else
           printf '    %s\n' "$papercut_line"
         fi
-        ((papercut_message_line_number += 1))
+        papercut_message_line_number=$((papercut_message_line_number + 1))
       done <<< "$papercut_message"
     else
       printf '  - note: %s\n' "$papercut_message"
@@ -204,7 +209,7 @@ if ((papercut_dry_run == 0)); then
     printf '%s' "$papercut_heading" > "$papercut_path"
   else
     papercut_existing="$(<"$papercut_path")"
-    if [[ -z "${papercut_existing//[[:space:]]/}" ]]; then
+    if [[ -z "$papercut_existing" ]]; then
       printf '%s' "$papercut_heading" > "$papercut_path"
     elif ! grep -Fq '## Entries' "$papercut_path"; then
       printf '\n\n## Entries\n\n' >> "$papercut_path"
