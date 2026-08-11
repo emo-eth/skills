@@ -32,6 +32,12 @@ joining an exemplar that schedules differently, mirror the exemplar.
 Completion: you can state the destination's fields, ID scheme, and grain — or
 you have declared the default because none exists.
 
+If the destination is Linear but no Linear reader is available, use the
+repository's latest verified standup or ticket-delta document as the exemplar.
+Mark the live destination read as `GAP`, preserve the proven fields and grain,
+and keep proposals `proposed, not created`. Do not use a GitHub issue reader for
+Linear IDs.
+
 ## 2. Gather the crystallized thinking
 
 Ticketize only what is already understood. Collect: the problem map / plan /
@@ -57,6 +63,12 @@ state that closes it. Rules, applied to every ticket:
 - **Epics split.** A description holding two deliverables is two tickets.
 - **Prior art travels.** When the repo already answers part of a ticket, the
   description says where in one line, so nobody re-researches what's known.
+
+When a parent ticket names an outcome but the current work only adds setup,
+make the setup a child ticket and leave the parent open. One PR may close
+multiple child tickets only when each child has its own satisfied done-when; a
+merge does not close a parent whose proof still needs live behavior or a
+measurement.
 
 Completion: every ticket has a done-when, a priority, a type, and one
 deliverable; no research ticket lacks a named artifact.
@@ -100,6 +112,11 @@ meeting. When writing to the tracker directly: one test row first, user
 sign-off, then the batch, then re-query the tracker to verify the full set has
 no duplicates or gaps. If the repo keeps a state map, update it in the same
 commit.
+
+When the user asks for a proposal only, or has not authorized external writes,
+stop after the proposed ticket set, back-map, and decisions-to-force list.
+Label every record `proposed, not created` or `proposed, not applied`; do not
+pretend that tracker verification or a state-map update happened.
 
 Completion: the back-map shows no uncovered area; the tracker (if written) is
 verified by re-query; the state map reflects where the tickets now live.
