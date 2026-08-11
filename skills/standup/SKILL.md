@@ -1,248 +1,216 @@
 ---
 name: standup
 disable-model-invocation: true
-description: "Create or revise a daily standup aligned to weekly and monthly goals; turn feedback into ticket and priority changes; present clear ownership, evidence, blockers, and decisions."
+description: "Create or revise one short daily standup that turns current work, goals, and ticket evidence into clear priorities, ownership, decisions, and proposed ticket changes."
 ---
 
 # Standup
 
-Read `GLOSSARY.md` before the first run. This skill is user-invoked because a
-standup changes planning state and may propose external ticket changes.
+A daily standup is one short decision document. It answers:
 
-A standup is a short decision surface, not a work diary. It answers four
-questions in order: what changed, what matters today, what is blocked, and
-what the owner must decide.
+1. What changed?
+2. What matters today?
+3. What is blocked?
+4. What must the owner decide?
+
+Do not read or create a glossary for a standup. Use normal words. Do not use
+`goal path`, `done-when`, `unattached work`, or `evidence state` in the
+standup. Say `why this matters`, `how we will prove it`, `open work`, and
+`current status` instead.
 
 ## Operating contract
 
-- Treat the existing goal and ticket sources as authoritative. Do not invent a
-  monthly goal, weekly priority, owner, due date, or completion claim.
+- Use current goal, state, ticket, and code sources. Do not invent a goal,
+  priority, owner, due date, or completion claim.
+- Do not call work finished, complete, or closed unless the reporting owner has
+  signed off. Use `implemented`, `merged`, `deployed`, `measured`, or `awaiting
+  owner sign-off` when that is what the source proves. A destination status of
+  Done is a fact; it does not prove live behavior unless the owner signed off
+  the required proof.
 - Separate the reporting owner's work, other people's work, and shared work.
-  Attribute work to a person or workstream when the source supports it. If
-  ownership is unknown, say `owner unknown`.
-- Keep evidence states distinct: planned, in progress, merged, deployed,
-  measured, and verified-live are different claims. Report the strongest state
-  supported by evidence, not the state that sounds most complete.
-- Default to a high-level day view. Do not make an hour-by-hour schedule unless
-  the user asks for one.
-- Keep routine feedback lightweight. Apply inline corrections in the current
-  standup and show a short change list. The rendered standup is opened in
-  Plannotator once per day (step 6); never launch a second session over it
-  for a normal daily edit. If a submitted Plannotator review comes back, run
-  `lc-review-capture`; that review is the exception because its decisions must
-  be retained.
-- `lc-ticketize` and `lc-review-capture` are sibling procedures in this skills
-  repository. If either is not installed in the current agent, use the ticket
-  contract directly; for submitted review feedback, first copy the raw
-  comments to a dated log, answer every comment by number, and record durable
-  decisions before applying changes. Never claim an external write or a
-  captured review that did not happen.
+  Use `owner unknown` only when the sources do not identify an owner.
+- Keep the daily plan to three to five results. Each result names its owner,
+  why it matters now, the ticket when one exists, the current status, and how
+  we will prove it.
+- When the route to an outcome is vague, decompose it into small proposed
+  tickets before claiming that the outcome is today's work. A model-routing
+  result, for example, needs separate work to define the evaluation set, run
+  the current-model baseline, choose a candidate, compare the results, and
+  change routing.
+- A due date is a planning signal. It can change during planning. Do not ask
+  the owner to confirm that due dates are the weekly source. If no weekly plan
+  exists, create a short `Working week` view from current priorities and due
+  dates, and label it as a working plan.
+- Keep the daily document short enough to read and discuss in ten minutes.
+  Do not create a same-day follow-up document. Put the small amount of
+  inspection detail needed for today's work in the daily document. A separate
+  weekly planning document is allowed when the owner asks for one.
+- Use Railway's service observability page for deploy health, service logs,
+  CPU, memory, and request-level service signals. Use the application's
+  `/admin` view for per-turn, inference, tool, and workflow-step data. Do not
+  replace one with the other. The `ADMIN_PASSWORD` is the secret value in the
+  deployed service environment for the `/admin` sign-in; never print it in a
+  standup.
+- A fresh worktree may hold each day's standup. The next day's run reads the
+  current state and ticket sources again. It does not treat an archived
+  worktree as current evidence.
+- Routine edits update the same standup file in place. A submitted Plannotator
+  round runs `lc-review-capture`: snapshot raw comments, answer every comment
+  by number, record durable decisions, apply the changes, and reuse the active
+  review session.
 - Never silently change an external ticket or release plan. Show a ticket
-  delta first. Apply it only after the user explicitly asks to create, update,
-  close, or reprioritize the named items.
+  delta first. A clear owner instruction in chat or submitted review feedback
+  to create, update, assign, close, or reprioritize a named ticket is explicit
+  approval for that named change. Apply it, then verify the destination state.
 
 ## 1. Load the planning spine
 
 Read, in this order:
 
-1. The current standup and its last follow-up, if they exist.
+1. The current standup file, if it exists.
 2. The project state map (`docs/STATE.md` or its equivalent).
-3. The monthly goal source and the weekly goal source. Find them from the
-   state map or the user's supplied context; do not assume filenames. If no
-   separate weekly file exists but the current standup or supplied context has
-   explicit weekly outcomes, use it as a `provisional weekly source` and label
-   it that way.
+3. The monthly goal source and the current working-week source. Find them from
+   the state map or supplied context. If no weekly file exists, use current
+   priorities and ticket due dates as a `Working week` view; do not invent a
+   formal weekly goal.
 4. The ticket destination and a small set of recent tickets. Read its fields,
-   status names, priority scale, ownership rules, and existing grain before
-   proposing a ticket. If the destination is named but its adapter or fields
-   are unavailable, record `destination known, fields unverified` and do not
-   claim current ticket status.
-5. The current date and reporting timezone. Use the repository or user
-   setting; do not infer a timezone from a timestamp. If either source is
-   missing, mark it `GAP` and ask for it.
-Write down the sources used. If a goal or ticket destination is missing, keep
-that gap visible and ask one bundled question at the end instead of filling it
-with a plausible plan. Put all missing-source questions in one numbered
-`Questions for owner` list under `Decisions and blockers`; one item may cover
-several missing sources. A provisional weekly source is not a missing source,
-but it stays labeled until the owner names the authoritative weekly source.
+   status names, priority scale, ownership rules, and existing ticket grain
+   before proposing a change.
+5. The current date and reporting timezone. If either source is missing, mark
+   it `GAP` and ask one bundled question at the end.
 
-Completion: the monthly, weekly, and current-day sources are named, or each
-missing source is marked `GAP`; a provisional weekly source is labeled; and
-the ticket destination's fields and grain are known or marked unverified.
+List the sources at the bottom of the standup. A missing goal source or ticket
+destination stays visible as a gap. Never fill a missing source with a plausible
+plan.
 
-## 2. Reconcile new context and feedback
+## 2. Reconcile new context
 
-Process every new statement before drafting the standup. Classify it as one of:
+Process every new statement before drafting. Classify it as a fact correction,
+new fact, ownership correction, priority or due-date change, ticket request,
+decision, or open question.
 
-- fact correction
-- new fact
-- ownership correction
-- priority or due-date change
-- ticket request
-- decision
-- open question
+For each correction, replace the old claim. Keep a short change record in the
+review answers document when the change came from Plannotator. Do not leave the
+old claim in the standup for politeness. Move work between `My update`, `Other
+work`, and `Shared work` when ownership changes.
 
-For each item, record the old claim, the corrected claim, and the source. Remove
-superseded claims from the standup; do not leave both versions for politeness.
-When an ownership correction changes who did the work, move the item between
-`My update`, `Other work`, and `Shared work`; keep the old attribution only in
-the change record.
-Do not turn doubt into a failure: use `unmeasured`, `unverified`, or `owner
-decision needed` when that is what the evidence says.
+Use `unmeasured`, `unverified`, or `awaiting owner sign-off` when the source
+supports no stronger claim.
 
-Completion: every user correction or context item appears in the change list or
-in the open-questions list, and no corrected claim remains in the draft.
+## 3. Build today's plan
 
-## 3. Build the goal alignment
+For each of three to five results, write:
 
-Build a three-level chain:
+- the result in plain language;
+- the owner;
+- why it matters now;
+- the existing ticket, if any;
+- the current status;
+- how we will prove it.
 
-`monthly outcome -> weekly outcome -> today's result`
-Each item in today's result list must point to one weekly outcome and one
-monthly outcome. If it does not, place it under `unattached work` and ask
-whether to remove it, link it, or create a goal. Do not use a date as a
-substitute for a goal. Keep it in the rendered `Unattached work` section; link
-it from `Questions for owner` when it needs an answer and from `Follow-up` when
-it needs operational detail. Never drop it from the saved standup.
+Link the result to the monthly outcome and the current working-week priority in
+plain words. Do not call this a goal path. If a result has no such reason,
+place it under `Open work` with a reason and a proposed next action. Do not
+silently drop it.
 
-Keep the daily list to three to five outcomes. Combine work that has one owner,
-one done-when, and one result. Split work when ownership or done-when differs.
-
-Completion: every daily outcome has a goal path, an owner, an evidence state,
-and a done-when; unattached work is explicit.
+When a result is vague, make the missing work visible as proposed tickets. One
+proposal has one owner, one output, and one proof. Do not pretend that a
+comparison, measurement, or recommendation exists before its setup work does.
 
 ## 4. Prepare ticket changes
 
-Run this step when the user asks to create tickets, reprioritize them, or when
-a new outcome needs a tracked unit of work. Read
-`references/ticket-contract.md`, then use `lc-ticketize` for the detailed
-decomposition.
+Read `references/ticket-contract.md` when a ticket change is needed. Use the
+existing ticket grain. A ticket should be one owner-sized result, not a whole
+uncertain project.
 
-Produce a ticket delta before any external write:
+Every proposal states:
 
-- `CREATE`: one owner-sized chunk with one observable done-when.
-- `UPDATE`: exact fields that change, with old and new values.
-- `REPRIORITIZE`: old priority, new priority, the goal or evidence that caused
-  the change, and the tickets that become blocked or unblocked.
-- `CLOSE`: the evidence that satisfies done-when. Do not close on a merge alone
-  when deployment or live verification is part of done-when.
-- `DEFER`: the revisit trigger and the goal that will bring it back.
+- title;
+- type;
+- owner;
+- priority;
+- why now;
+- output;
+- proof needed;
+- current evidence or status;
+- destination status.
 
-Decisions are tickets when work depends on them. Give the decision one owner,
-one due point, and the dependent tickets. Do not create two decision tickets
-for one choice. Use `proposed, not created` for a new ticket and
-`proposed, not applied` for a change to an existing ticket until the user
-approves it. If the destination cannot be written from the current tools,
-mark the delta `proposed, not created` or `proposed, not applied` as
-appropriate and put it in the follow-up document.
+Use `proposed, not created` for a new ticket and `proposed, not applied` for
+an existing-ticket change until it is applied. For an explicit owner request,
+apply the named change and verify it. Do not close a ticket on a merge alone
+when its proof also requires deployment, measurement, live behavior, or owner
+sign-off.
 
-Completion: every proposed ticket has a type, owner, priority, goal path,
-done-when, evidence state, and destination status; every update names its
-before and after values; no external mutation happened without explicit
-approval.
+A decision becomes a ticket only when it blocks named work. Give the decision
+one owner and one due point. Do not create two tickets for one decision.
 
-## 5. Render the standup
+## 5. Render one short standup
 
-Write the first screen for a teammate who has no time to study the repository.
 Use this order:
 
-1. `At a glance` - three to five bullets: what changed, today's result, largest
-   blocker, owner decision, and send or release gate if one exists.
-2. `My update` - completed work owned by the reporting owner, with ownership
-   and evidence labels.
-3. `Other work` - work from other people or workstreams, clearly attributed.
-4. `Shared work` - work done by more than one person or workstream, with each
-   supported contributor named.
-5. `Today` - three to five high-level outcomes, each with its ticket and
-   done-when.
-6. `Unattached work` - results with no goal path, each with its reason and
-   proposed next action.
-7. `Decisions and blockers` - only items that need an owner or external input.
-8. `Questions for owner` - one numbered list containing all bundled questions
-   for missing sources, unresolved ownership, or unattached work.
-9. `Follow-up` - links to operational detail, open questions, and proposed
-   ticket deltas.
-10. `This week` - the weekly outcomes and their current status, every item
-    carrying its ticket links and milestone links.
-11. `This month` - the monthly outcomes and what this week contributes,
-    linked the same way. The weekly and monthly priorities close the
-    standup so the daily detail resolves into where the project is going.
-12. `Sources used` - the goal, state, ticket, and evidence sources behind the
-    claims. Put this last so it supports trust without crowding the summary.
+1. `Say this aloud` - two to four sentences the owner can repeat at an
+   in-person standup.
+2. `My update` - the reporting owner's work, with current status and sign-off
+   state.
+3. `Other work` - work owned by other people or workstreams.
+4. `Shared work` - only when more than one contributor is supported by the
+   source.
+5. `Today` - three to five results with tickets, owners, reasons, status, and
+   proof.
+6. `Open work` - only work not placed in Today that still needs an owner,
+   ticket, or decision.
+7. `Decisions` - only choices or blockers that need owner input.
+8. `Proposed tickets` - only new or changed ticket records; state clearly that
+   they are not applied unless they were explicitly requested and verified.
+9. `This week` - a short preview of current priorities, not a second plan.
+10. `This month` - a short preview of monthly outcomes and this week's part.
+11. `Sources used` - the sources behind the claims.
 
-This order maps the opening questions to visible sections: what changed to
-`At a glance`, what matters today to `Today`, what is blocked to `Decisions and
-blockers`, and what the owner must decide to `At a glance` plus
-`Decisions and blockers`.
-
-Use plain words. Define a term once in the glossary or at first use. Name a
-count, ticket, model, or release only when the source is known. Keep details
-that help someone inspect the system in the follow-up document, not in the
-opening summary.
-
-Never name a ticket by bare number. Every ticket reference carries the
-ticket's title and a direct link to the destination, and the reference is
-written only after the ticket was verified to exist there — repo documents
-can carry stale or mangled numbers, and an unverifiable citation costs a
-review round.
-
-Completion: a teammate can repeat what changed, today's result, the owner
-decision, and the largest blocker after reading the first screen; every claim
-has a supported owner or shared attribution and an evidence state; unattached
-work is visible; no hour-by-hour schedule appears unless requested.
+Use plain descriptions. Replace abstract labels with the action and the proof.
+For example, write `Add known-answer behavior tests to CI` instead of
+`Deploy-gate test set`, and write `things required before sending to dinner
+guests` instead of `release gate`. If a stronger public-release checklist is
+also relevant, label it `before public release`; do not mix it with the
+dinner-guest checklist.
 
 ## 6. Persist the result
 
-Update the existing daily file in place when one exists:
+Update the existing file in place:
 
 `docs/log/YYYY-MM-DD-standup.md`
 
-Create `docs/log/YYYY-MM-DD-standup-follow-up.md` when the standup has
-operational steps, inspection instructions, unresolved questions, unattached
-work, or ticket deltas that do not belong in the first screen. This includes
-any `proposed, not created` or `proposed, not applied` delta. Use these
-headings in the follow-up: `Operational checks`, `Open questions`,
-`Unattached work`, and `Ticket deltas`; each item names its owner or
-`owner unknown`, next action, done-when, and evidence state. Update the
-existing daily and follow-up files in place on the same date; do not create a
-second-round copy. Use the same filename and path on revision so review tools
-retain their history.
+Do not create `docs/log/YYYY-MM-DD-standup-follow-up.md` for a daily standup.
+Keep the daily document self-contained and short. Create a separate weekly
+planning document only when the owner asks for the longer planning session.
 
-After the files are written, open the standup for the owner in Plannotator:
-`plannotator annotate docs/log/YYYY-MM-DD-standup.md`, launched detached
-(`nohup ... & disown`), never as a harness-tracked background task, and
-report the local URL. One session per standup file: if a session already
-serves that file, do not relaunch — a relaunch resets the owner's
-unsubmitted draft, and updating the file in place is enough. Revisions on
-the same date reuse that session.
+If state or a durable decision changed, update `docs/STATE.md`, the append-only
+decision log named there, and `docs/taste.md` when the round revealed a
+standing preference. Record a decision only when reversing it would change
+future behavior.
 
-If the project state or decisions changed, update `docs/STATE.md` and the
-append-only decision log named by the state map. If the state map names no
-decision log, mark that destination `GAP` and do not invent a filename.
-Record a durable decision only when reversing it would change future behavior.
-Keep routine wording fixes out of the decision log.
+After writing, reuse the existing detached Plannotator session for the same
+standup file. Never relaunch over a live session: that destroys unsubmitted
+comments. Report the existing local URL.
 
-Completion: the standup, any follow-up, ticket delta, state map, and decision
-record agree; every source used in step 1 is either reflected or intentionally
-left unchanged with a reason; the standup is open in one Plannotator session
-and the owner has its URL.
+## 7. Handle feedback
 
-## 7. Handle lightweight follow-up
+For ordinary chat feedback, return three short lists: `Applied`, `Still open`,
+and `Ticket changes`. Re-render only the affected sections.
 
-When the user sends ordinary chat feedback after the standup:
+For submitted Plannotator feedback:
 
-1. Apply the correction without opening a review session.
-2. Return `Applied`, `Still open`, and `Ticket changes` in three short lists.
-3. Re-render only the affected standup sections.
-4. Record a decision only when the feedback settles future behavior or scope.
+1. Copy the raw feedback verbatim to
+   `.context/review/YYYY-MM-DD-standup-round-N.md`.
+2. Answer every numbered comment in
+   `docs/log/YYYY-MM-DD-standup-feedback-answers-round-N.md`, including where
+   each fix landed and what still needs owner input.
+3. Record each durable decision with the exact supporting quote.
+4. Update the state map and taste notes when the decision changes future work.
+5. Apply changes to the same standup file and reuse its review session.
+6. Do not claim a ticket write, review capture, or live proof that did not
+   happen.
 
-When the user submits Plannotator feedback, stop applying changes until
-`lc-review-capture` or the minimum review pass above has snapshotted the raw
-feedback, answered every comment by number, and recorded durable decisions.
-Then refresh the same files in place; do not launch a new review session for
-routine edits.
-
-Completion: every inline correction has a visible result, every unresolved
-choice is assigned to an owner, and a later standup can find the durable source
-of each changed decision.
+Completion means the one daily document, ticket changes, state map, decisions,
+answers, and review session agree. The owner can repeat the first section in a
+few sentences and can see every unresolved choice without reading another
+same-day file.
