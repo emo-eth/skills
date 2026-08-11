@@ -22,11 +22,21 @@ standup. Say `why this matters`, `how we will prove it`, `open work`, and
 
 - Use current goal, state, ticket, and code sources. Do not invent a goal,
   priority, owner, due date, or completion claim.
+- Treat the state map as an index, not the source of truth. If it conflicts
+  with a pointed source document, use the pointed source and reconcile the map
+  before finalizing the standup.
+- Write for a reader with no prior context. Every result names the exact
+  object, current state, next action, environment, and observable proof. Use
+  the source's terms. If any of those details is missing, write `GAP` or
+  `not verified` instead of inventing a label.
 - Report status in plain terms. Use `not done`, `implemented`, `merged`,
   `deployed`, `measured`, or `done` only when the source supports it. Do not
   ask the reporting owner to sign off their own work. If validation remains,
-  say `not done: validate ...`. A destination status of Done is a fact; it
-  does not prove live behavior without the required evidence.
+  say `not done: validate ...`.
+- `done` requires the ticket's stated proof. When proof requires live
+  behavior, exercise one real request or message at the relevant target
+  surface and record the result. A destination status of Done, a merge, or a
+  deploy does not prove live behavior.
 - This is the reporting owner's standup. Report only their work, decisions,
   and blockers. Mention another person's work only when it changes the
   owner's next action; do not create an `Other work` section.
@@ -51,14 +61,31 @@ standup. Say `why this matters`, `how we will prove it`, `open work`, and
   The existing application `/admin` view covers per-turn, inference, tool,
   workflow-step, and application-event detail. Do not replace one with the
   other. `ADMIN_PASSWORD` is the secret value in the deployed service
-  environment; say where the variable is stored, never print its value.
+  environment; locate the deployed service and its variables from the
+  deployment, say where the variable is stored, and never print its value.
+- To prove live behavior on a deployed service, send one real request or
+  message and confirm its application event or service-log result on the
+  relevant surface. State the exact URL or service when the source provides
+  it.
+- Use Railway when the proof concerns deploy health, service logs, CPU,
+  memory, or request signals. Use `/admin` when the proof concerns an
+  application event, per-turn detail, a workflow trace, or aggregate
+  application metrics. If a ticket's proof spans both, record both results.
+
+
 - A fresh worktree may hold each day's standup. The next day's run reads the
   current state and ticket sources again. It does not treat an archived
   worktree as current evidence.
 - Routine edits update the same standup file in place. A submitted Plannotator
-  round runs `lc-review-capture`: snapshot raw comments, answer every comment
-  by number, record durable decisions, apply the changes, and reuse the active
-  review session.
+  round uses the review-capture procedure below (`lc-review-capture`):
+  snapshot raw comments, answer every comment by number, record durable
+  decisions, apply the changes, and reuse the existing detached review
+  session.
+- `Plannotator` is the review session used for comments on the daily
+  standup. Reuse the existing detached session; do not create a second
+  session for the same file.
+
+
 - Never silently change an external ticket or release plan. Show a ticket
   delta first. A clear owner instruction in chat or submitted review feedback
   to create, update, assign, close, or reprioritize a named ticket is explicit
@@ -90,9 +117,12 @@ Process every new statement before drafting. Classify it as a fact correction,
 new fact, ownership correction, priority or due-date change, ticket request,
 decision, or open question.
 
-For each correction, replace the old claim. Keep a short change record in the
-review answers document when the change came from Plannotator. Do not leave
-the old claim in the standup for politeness.
+For each correction, replace the old claim. For a Plannotator correction,
+record the change in
+`docs/log/YYYY-MM-DD-standup-feedback-answers-round-N.md`. For ordinary chat
+feedback, use the Section 7 response and do not create that answers document.
+Do not leave the old claim in the standup for politeness.
+
 
 Use `unmeasured`, `unverified`, or `not done: validate ...` when the source
 supports no stronger claim.
@@ -119,9 +149,16 @@ comparison, measurement, or recommendation exists before its setup work does.
 
 ## 4. Prepare ticket changes
 
-Read `references/ticket-contract.md` when a ticket change is needed. Use the
-existing ticket grain. A ticket should be one owner-sized result, not a whole
-uncertain project.
+Read `references/ticket-contract.md` when a ticket change is needed. The skill
+package includes that file. If it or the ticket destination fields are
+unavailable, mark the missing fields `GAP` and do not invent a ticket change.
+Use the existing ticket grain. A ticket should be one owner-sized result, not a
+whole uncertain project.
+
+When an existing ticket description lacks the exact environment, action,
+output, or proof, propose an `UPDATE` to that description before using it as
+evidence. Do not hide the gap in the standup. For an explicit owner request,
+apply the description update and verify the destination record.
 
 Every proposal states:
 
@@ -137,9 +174,12 @@ Every proposal states:
 
 Use `proposed, not created` for a new ticket and `proposed, not applied` for
 an existing-ticket change until it is applied. For an explicit owner request,
-apply the named change and verify it. Do not close a ticket on a merge alone
-when its proof also requires deployment, measurement, live behavior, or
-validation.
+apply the named change and verify it. After an external ticket update, query
+the destination by its existing ID and confirm the title, direct URL, changed
+fields, and destination status. If the destination has no read interface,
+report the result as `unverified` instead of claiming that the update
+happened. Do not close a ticket on a merge alone when its proof also requires
+deployment, measurement, live behavior, or validation.
 
 A decision becomes a ticket only when it blocks named work. Give the decision
 one owner and one due point. Do not create two tickets for one decision.
@@ -158,19 +198,26 @@ Use this order:
 4. `Open work` - only work not placed in Today that still needs an owner,
    ticket, or decision.
 5. `Decisions` - only choices or blockers that need owner input.
-6. `Proposed tickets` - only new or changed ticket records; state clearly that
-   they are not applied unless they were explicitly requested and verified.
+6. `Proposed tickets` - only new or changed records that are not yet applied.
+   State clearly that each one is `proposed, not created` or
+   `proposed, not applied`.
 7. `This week` - a short preview of current priorities, not a second plan.
 8. `This month` - a short preview of monthly outcomes and this week's part.
 9. `Sources used` - the sources behind the claims.
+When an explicit request applies an existing-ticket description update, list
+the applied change under `My update`. Do not leave an applied change in
+`Proposed tickets`.
 
 Keep ticket titles and direct links in the written sections. Do not put ticket
-labels in the spoken summary. Use plain descriptions. Replace abstract labels
-with the action and the proof. For example, write `Add known-answer behavior
-tests to CI` instead of `Deploy-gate test set`, and write `things required
-before sending to dinner guests` instead of `release gate`. If a stronger
-public-release checklist is also relevant, label it `before public release`;
-do not mix it with the dinner-guest checklist.
+labels in the spoken summary. The spoken summary must still name the concrete
+feature, action, environment, and remaining proof. Replace abstract labels
+with the action and the proof. For example, write `run the dev workflow with
+a valid model key and confirm the model step, persisted reply, and trace`
+instead of `valid-key verification`. If public-release checks are also
+relevant, label them separately and do not combine them with checks needed
+before invited guests send.
+
+
 
 ## 6. Persist the result
 
@@ -183,29 +230,47 @@ Keep the daily document self-contained and short. Create a separate weekly
 planning document only when the owner asks for the longer planning session.
 
 If state or a durable decision changed, update `docs/STATE.md`, the append-only
-decision log named there, and `docs/taste.md` when the round revealed a
-standing preference. Record a decision only when reversing it would change
-future behavior.
+decision log path named by `docs/STATE.md`, and `docs/taste.md` when the round
+revealed a standing preference. If the state map names no decision log, mark
+that destination `GAP` and ask the owner; do not invent a filename. Record a
+decision only when reversing it would change future behavior.
 
-After writing, reuse the existing detached Plannotator session for the same
-standup file. Never relaunch over a live session: that destroys unsubmitted
-comments. Report the existing local URL.
+After writing, find session metadata in `~/.plannotator/sessions/*.json` and
+match its `label` to the standup filename; use that record's `url`. If no
+matching live record exists, start one detached with:
+`nohup plannotator annotate <standup-file> >/tmp/standup-review.out 2>&1 &
+disown`
+Verify that the URL responds. Never relaunch over a live session: that
+destroys unsubmitted comments.
+
 
 ## 7. Handle feedback
 
-For ordinary chat feedback, return three short lists: `Applied`, `Still open`,
-and `Ticket changes`. Re-render only the affected sections.
+For ordinary chat feedback, apply the correction to the same standup file,
+replace the old claim, and return three short lists: `Applied`, `Still open`,
+and `Ticket changes`. Do not create a review-answers document for ordinary
+chat feedback. If the correction changes future behavior, update the state
+map, decision log, or taste notes under Section 6.
 
-For submitted Plannotator feedback:
+For submitted Plannotator feedback, use the existing session's submitted
+feedback output. Draft comments are not submitted feedback. Find existing
+rounds by scanning
+`.context/review/YYYY-MM-DD-standup-round-*.md` and
+`docs/log/YYYY-MM-DD-standup-feedback-answers-round-*.md` for the same date.
+If no round exists, set `N` to `1`; otherwise use the highest number found in
+either set plus one. Never overwrite an existing raw snapshot or answers file.
 
 1. Copy the raw feedback verbatim to
    `.context/review/YYYY-MM-DD-standup-round-N.md`.
 2. Answer every numbered comment in
    `docs/log/YYYY-MM-DD-standup-feedback-answers-round-N.md`, including where
-   each fix landed and what still needs owner input.
+   each fix landed and what still needs owner input. If a comment is not
+   numbered in the submitted output, assign numbers in order and preserve the
+   original text.
 3. Record each durable decision with the exact supporting quote.
 4. Update the state map and taste notes when the decision changes future work.
-5. Apply changes to the same standup file and reuse its review session.
+5. Apply changes to the same standup file and reuse the same existing
+   detached review session.
 6. Do not claim a ticket write, review capture, or live proof that did not
    happen.
 
