@@ -22,13 +22,14 @@ standup. Say `why this matters`, `how we will prove it`, `open work`, and
 
 - Use current goal, state, ticket, and code sources. Do not invent a goal,
   priority, owner, due date, or completion claim.
-- Do not call work finished, complete, or closed unless the reporting owner has
-  signed off. Use `implemented`, `merged`, `deployed`, `measured`, or `awaiting
-  owner sign-off` when that is what the source proves. A destination status of
-  Done is a fact; it does not prove live behavior unless the owner signed off
-  the required proof.
-- Separate the reporting owner's work, other people's work, and shared work.
-  Use `owner unknown` only when the sources do not identify an owner.
+- Report status in plain terms. Use `not done`, `implemented`, `merged`,
+  `deployed`, `measured`, or `done` only when the source supports it. Do not
+  ask the reporting owner to sign off their own work. If validation remains,
+  say `not done: validate ...`. A destination status of Done is a fact; it
+  does not prove live behavior without the required evidence.
+- This is the reporting owner's standup. Report only their work, decisions,
+  and blockers. Mention another person's work only when it changes the
+  owner's next action; do not create an `Other work` section.
 - Keep the daily plan to three to five results. Each result names its owner,
   why it matters now, the ticket when one exists, the current status, and how
   we will prove it.
@@ -45,12 +46,12 @@ standup. Say `why this matters`, `how we will prove it`, `open work`, and
   Do not create a same-day follow-up document. Put the small amount of
   inspection detail needed for today's work in the daily document. A separate
   weekly planning document is allowed when the owner asks for one.
-- Use Railway's service observability page for deploy health, service logs,
-  CPU, memory, and request-level service signals. Use the application's
-  `/admin` view for per-turn, inference, tool, and workflow-step data. Do not
-  replace one with the other. The `ADMIN_PASSWORD` is the secret value in the
-  deployed service environment for the `/admin` sign-in; never print it in a
-  standup.
+- Use both observability surfaces for their distinct jobs. Railway's service
+  page covers deploy health, service logs, CPU, memory, and request signals.
+  The existing application `/admin` view covers per-turn, inference, tool,
+  workflow-step, and application-event detail. Do not replace one with the
+  other. `ADMIN_PASSWORD` is the secret value in the deployed service
+  environment; say where the variable is stored, never print its value.
 - A fresh worktree may hold each day's standup. The next day's run reads the
   current state and ticket sources again. It does not treat an archived
   worktree as current evidence.
@@ -90,11 +91,10 @@ new fact, ownership correction, priority or due-date change, ticket request,
 decision, or open question.
 
 For each correction, replace the old claim. Keep a short change record in the
-review answers document when the change came from Plannotator. Do not leave the
-old claim in the standup for politeness. Move work between `My update`, `Other
-work`, and `Shared work` when ownership changes.
+review answers document when the change came from Plannotator. Do not leave
+the old claim in the standup for politeness.
 
-Use `unmeasured`, `unverified`, or `awaiting owner sign-off` when the source
+Use `unmeasured`, `unverified`, or `not done: validate ...` when the source
 supports no stronger claim.
 
 ## 3. Build today's plan
@@ -138,8 +138,8 @@ Every proposal states:
 Use `proposed, not created` for a new ticket and `proposed, not applied` for
 an existing-ticket change until it is applied. For an explicit owner request,
 apply the named change and verify it. Do not close a ticket on a merge alone
-when its proof also requires deployment, measurement, live behavior, or owner
-sign-off.
+when its proof also requires deployment, measurement, live behavior, or
+validation.
 
 A decision becomes a ticket only when it blocks named work. Give the decision
 one owner and one due point. Do not create two tickets for one decision.
@@ -149,29 +149,28 @@ one owner and one due point. Do not create two tickets for one decision.
 Use this order:
 
 1. `Say this aloud` - two to four sentences the owner can repeat at an
-   in-person standup.
-2. `My update` - the reporting owner's work, with current status and sign-off
-   state.
-3. `Other work` - work owned by other people or workstreams.
-4. `Shared work` - only when more than one contributor is supported by the
-   source.
-5. `Today` - three to five results with tickets, owners, reasons, status, and
+   in-person standup. Use plain results and blockers, not ticket names or
+   ticket states.
+2. `My update` - the reporting owner's work, with current status and what
+   remains.
+3. `Today` - three to five results with tickets, owners, reasons, status, and
    proof.
-6. `Open work` - only work not placed in Today that still needs an owner,
+4. `Open work` - only work not placed in Today that still needs an owner,
    ticket, or decision.
-7. `Decisions` - only choices or blockers that need owner input.
-8. `Proposed tickets` - only new or changed ticket records; state clearly that
+5. `Decisions` - only choices or blockers that need owner input.
+6. `Proposed tickets` - only new or changed ticket records; state clearly that
    they are not applied unless they were explicitly requested and verified.
-9. `This week` - a short preview of current priorities, not a second plan.
-10. `This month` - a short preview of monthly outcomes and this week's part.
-11. `Sources used` - the sources behind the claims.
+7. `This week` - a short preview of current priorities, not a second plan.
+8. `This month` - a short preview of monthly outcomes and this week's part.
+9. `Sources used` - the sources behind the claims.
 
-Use plain descriptions. Replace abstract labels with the action and the proof.
-For example, write `Add known-answer behavior tests to CI` instead of
-`Deploy-gate test set`, and write `things required before sending to dinner
-guests` instead of `release gate`. If a stronger public-release checklist is
-also relevant, label it `before public release`; do not mix it with the
-dinner-guest checklist.
+Keep ticket titles and direct links in the written sections. Do not put ticket
+labels in the spoken summary. Use plain descriptions. Replace abstract labels
+with the action and the proof. For example, write `Add known-answer behavior
+tests to CI` instead of `Deploy-gate test set`, and write `things required
+before sending to dinner guests` instead of `release gate`. If a stronger
+public-release checklist is also relevant, label it `before public release`;
+do not mix it with the dinner-guest checklist.
 
 ## 6. Persist the result
 
