@@ -10,9 +10,9 @@ export function parseDurationMs(value: string): number {
   const amount = Number(match[1]);
   const unit = match[2].toLowerCase();
   const multiplier = unit === "ms" ? 1 : unit === "s" ? 1_000 : unit === "m" ? 60_000 : 3_600_000;
-  const durationMs = amount * multiplier;
-  if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error(`Duration must be positive: ${value}`);
-  return Math.round(durationMs);
+  const durationMs = Math.round(amount * multiplier);
+  if (!Number.isFinite(durationMs) || durationMs < 1) throw new Error(`Duration must be positive: ${value}`);
+  return durationMs;
 }
 
 export function parseLocalDeadlineMs(value: string, now = new Date()): number {
@@ -54,8 +54,12 @@ export function phaseAt(nowMs: number, hardDeadline: number, wrapUpAt: number, c
 }
 
 export function formatDurationMs(ms: number): string {
-  const seconds = Math.max(0, Math.ceil(ms / 1_000));
-  if (seconds < 60) return `${seconds}s`;
+  const wholeMilliseconds = Math.max(0, Math.floor(ms));
+  if (wholeMilliseconds === 0) return "0s";
+  if (wholeMilliseconds < 1_000) return `${wholeMilliseconds}ms`;
+  const seconds = Math.floor(wholeMilliseconds / 1_000);
+  const remainingMilliseconds = wholeMilliseconds % 1_000;
+  if (seconds < 60) return remainingMilliseconds ? `${seconds}s ${remainingMilliseconds}ms` : `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   if (minutes < 60) return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;

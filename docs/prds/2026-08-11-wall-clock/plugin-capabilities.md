@@ -1,7 +1,7 @@
 ---
 date: 2026-08-11
 topic: wall-clock-plugin-capabilities
-status: draft
+status: verified
 source_material: Agent Plugins 1.0.0 specification, Agent Skills specification, Model Context Protocol specification, and wall-clock design
 ---
 
@@ -166,6 +166,18 @@ The minimum evidence set is:
 - portable package discovery and Agent Skill loading;
 - optional MCP initialization, tool discovery, persistence, and report behavior when MCP is enabled.
 
+## Implementation evidence
+
+The v0 package now proves the Pi and OMP boundary with exact local host versions:
+
+- Pi 0.84.1 loads the native adapter, injects measured context, blocks expired shell work, and aborts its actual bash executor under `abort-running`.
+- OMP 17.2.15 provides a native pre-action gate, shared child event bus, child lifecycle identifiers, and a session-wide abort function. It loads the adapter, blocks expired shell work, aborts its actual bash executor, and shares assignment state between parent and child extension instances.
+- The OMP task path injects one bounded assignment into one child. Batch and nested delegation are blocked. A missing child report creates a structured fallback report.
+- Agent Plugin discovery loads the bundled skill and optional MCP tools without claiming that those portable components enforce a deadline.
+- Unsupported activation, unknown abort-running tools, missing action identifiers, and malformed newest state all fail closed.
+
+The exact mechanisms, failure modes, and test files are listed in `plugins/wall-clock/README.md`. Codex and Claude native activation and provider-specific remote cancellation remain deferred.
+
 ## Product decisions implied by this boundary
 
 - The main session must provide or select the session key for portable calls.
@@ -189,10 +201,10 @@ The minimum evidence set is:
 - [Model Context Protocol standard input/output transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio)
 - [Wall-clock implementation research](https://github.com/emo-eth/skills/tree/main/proposals/wall-clock)
 
-## Review Checkpoints
+## Resolved Review Checkpoints
 
-- Does the package remain useful as a discoverable artifact while refusing activation without native enforcement?
-- Is the explicit session key acceptable on clients that do not expose a stable conversation identifier?
-- Do Pi and OMP expose enough open lifecycle surface to prove both expiry policies?
-- Which child executors can accept and report an abort signal for `abort-running`?
-- Which remote providers, if any, should gain provider-specific cancellation support?
+- The package remains discoverable through Agent Plugins while standalone MCP refuses activation.
+- Portable MCP uses an explicit session key. Native Pi and OMP adapters use the stable host session file or identifier.
+- Pi and OMP expose enough open lifecycle surface to prove both expiry policies for their tested local executors.
+- Pi's tested abort-running tools are `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`. OMP's are `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task`.
+- Remote provider cancellation remains deferred until a provider-specific mechanism and confirmation contract are selected.

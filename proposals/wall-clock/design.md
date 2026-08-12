@@ -2,34 +2,50 @@
 
 ## Glossary
 
-- **Module**: A unit with a small interface and a hidden implementation.
-- **Interface**: Everything a caller must know to use a module correctly, including state, ordering, and failure behavior.
-- **Adapter**: Host-specific code that satisfies the common interface at a seam.
-- **Seam**: The place where an interface lets us change an implementation without changing its callers.
-- **WallClockController**: The common module that owns time contracts, plan assignments, reports, and tool decisions.
-- **Time contract**: A start time, hard deadline, wrap-up time, and current phase.
-- **Action class**: The risk category used by the pre-tool gate: read, write, destructive, delegate, or finalize.
+- **Agent Plugins**: The portable package format for Agent Skills and optional Model Context Protocol servers.
+- **MCP**: Model Context Protocol, used as an optional operation surface but never as the enforcement boundary.
+- **Pi**: The `@earendil-works/pi-coding-agent` host.
+- **OMP**: The `@oh-my-pi/pi-coding-agent` host.
+- **WallClockController**: The host-independent module that owns time contracts, plans, assignments, reports, timing, and action decisions.
+- **Time contract**: The issue time, hard deadline, wrap-up time, selected expiry policy, and current phase for one session or assignment.
+- **Action class**: The category used at the pre-action gate: read, write, destructive, delegate, finalize, or other.
+- **Expiry policy**: The required choice between blocking new work at expiry and also aborting supported running work.
+- **Abort domain**: One native host session controlled by one session-wide abort function.
+- **Owner session**: The parent host session that owns and persists a wall-clock contract.
+- **Child binding**: The stable relation between one native child session and one parent assignment.
+- **Vertical slice**: The smallest working end-to-end result that remains useful after scope is reduced.
+- **State version 3**: The current durable state shape. Older and malformed entries are rejected without migration.
 
 ## Design rule
 
-The common module is the deep module. Its interface is small: activate, assign, status, decide, record, complete, and report. Pi and OMP adapters translate host events into those operations. They do not duplicate deadline logic.
+The common controller is the deep module. Native adapters translate Pi and OMP events into its small interface and do not duplicate deadline rules. The package stays inert until explicit activation.
 
-The implementation is intentionally not a skill. A skill can describe behavior, but it cannot enforce a pre-tool gate or child abort. The plugin remains inert until a session is activated.
+Agent Skills and MCP can describe or expose the contract, but they cannot intercept arbitrary host actions. Only a tested native adapter can activate wall-clock.
 
-## State
+## Module boundaries
 
-State is keyed by session identifier. Each session has:
+`src/controller.ts` owns:
 
-- optional main-session time contract;
-- plan items;
-- assignments;
-- child reports;
-- action records;
-- a revision number.
+- activation, stop, phase, and remaining-time calculations;
+- plan validation and revision history;
+- assignment validation, deadlines, status, and measured elapsed time;
+- action classification and phase decisions;
+- running-action timing and abort request or observation records;
+- structured child reports.
 
-Timers are not durable state. On reload or resume, the adapter restores the durable state and computes phase from the current clock.
+`src/host.ts` owns:
 
-## Time phases
+- stable native session scope;
+- context injection before model turns;
+- native pre-action admission;
+- deadline timers;
+- executor abort requests and observed results;
+- OMP parent and child coordination;
+- host-session persistence and restore.
+
+`src/pi.ts` and `src/omp.ts` define the tested native enforcement capabilities. `src/mcp.ts` exposes optional portable operations and refuses activation.
+
+## Time and phase model
 
 ```text
 inactive -> active -> wrap-up -> expired
@@ -37,74 +53,117 @@ inactive -> active -> wrap-up -> expired
              +----------+-> complete
 ```
 
-- `active`: all actions may be admitted if they fit the remaining time.
-- `wrap-up`: no new delegation or destructive action; finish current acceptance work and report.
-- `expired`: no new tool call is admitted.
-- `complete`: assignment has met its acceptance target; the plugin blocks further assignment work.
+- `inactive`: ordinary host behavior is unchanged.
+- `active`: new actions can be admitted when the selected policy can enforce them.
+- `wrap-up`: new delegation and destructive work are blocked.
+- `expired`: all new non-control work is blocked.
+- `complete`: a terminal assignment blocks further assignment work.
 
-## Tool decision
+A duration must round to at least one millisecond. A local time uses the host timezone and selects the next occurrence when today's time has passed. The default wrap-up duration is 20 percent of available time, capped at five minutes.
 
-The pre-tool gate receives:
+The clock is authoritative. Durable state stores absolute times, not a saved phase or remaining-time value. Restore recomputes both from the current clock.
+
+## Controller interface
+
+The important calls are:
 
 ```ts
-decide(sessionId, {
-  action: "read" | "write" | "destructive" | "delegate" | "finalize",
-  estimatedMs?: number,
-  assignmentId?: string,
-}): { allow: boolean; reason?: string; phase: Phase; remainingMs: number }
+activate(sessionId, { durationMs | deadlineMs, wrapUpMs?, expiryPolicy }, plan?)
+status(sessionId, assignmentId?)
+decideTool(sessionId, { toolName, input?, action?, assignmentId?, actionId?, enforceable? })
+assign(sessionId, { id?, parentPlanItemId, objective, scope, acceptance, budgetMs, wrapUpMs? })
+complete(sessionId, assignmentId, status)
+report(sessionId, report)
+setPlan(sessionId, plan, reason, sourceAssignmentId?)
+stop(sessionId)
 ```
 
-The controller blocks when:
+No call accepts an estimated task duration. The adapter measures current time, total elapsed time, latest inference time, latest tool-call time, remaining time, and assignment elapsed time.
 
-- the session is inactive for an assignment that requires activation;
-- the session or assignment is expired;
-- the assignment is complete;
-- the action is disallowed during wrap-up;
-- an estimated duration cannot fit before the hard deadline.
+The controller validates unique plan and assignment identifiers, nonempty assignment and report fields, parent plan links when a plan exists, report status consistency, and report-linked plan revisions before persistence.
 
-The controller does not claim to cancel an action already admitted. The host adapter may pass an abort signal to an executor when the host supports it.
+## Pre-action enforcement
+
+The native `tool_call` event is the admission boundary. For an active session, the adapter:
+
+1. resolves the parent or child scope;
+2. classifies the proposed action;
+3. links a delegation to exactly one active unbound assignment;
+4. asks the controller for the current phase decision;
+5. checks executor cancellation support for `abort-running`;
+6. records the action only after every check passes;
+7. returns a native block result when any check fails.
+
+Portable `wallclock_check` returns the same phase decision for inspection but is not a gate.
+
+Native control tools remain available after expiry so the session can report, revise its plan, inspect status, stop, or explicitly start a new contract. `wallclock_assign` is not an expiry control and cannot create new work after expiry.
+
+## Expiry policies
+
+### `block-new`
+
+The deadline timer and the pre-action clock both make later actions fail admission. An action admitted before expiry may finish. The adapter never records that action as cancelled unless a native result says so.
+
+### `abort-running`
+
+The adapter admits only native executors on a tested allowlist and only when the event context exposes an abort function and a stable action identifier. Unknown extensions and direct `user_bash` execution are rejected.
+
+Pi supports `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`. OMP supports `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task`.
+
+Pi and OMP expose a session-wide abort function. The adapter therefore admits only one running action in each abort domain. A parent OMP task and one action inside its child can coexist because the parent and child are separate native sessions. At expiry, the timer requests abort for every owned running action in the expired session or assignment. The action is marked aborted only when a correlated native result contains structured abort data or a native cancellation error.
+
+If support, identity, context, or observation is missing, activation or action admission fails closed.
 
 ## Parent and child flow
 
-1. The user activates the main session.
-2. The main agent creates an assignment with an objective, acceptance target, and maximum budget.
-3. The controller caps the child deadline at the earlier of the assignment deadline and the parent deadline.
-4. The adapter injects the assignment and remaining time into the child context where the host supports child context injection.
-5. The child reports completion as soon as the acceptance target is met.
-6. The parent receives a structured report and revises the remaining plan.
-7. The controller records shortcuts, skipped validation, risks, and unknowns.
+1. The owner session activates wall-clock and creates a bounded assignment.
+2. An OMP `task` call is allowed only when exactly one active assignment is unbound. Batch delegation is blocked.
+3. The adapter adds the measured assignment context to the task input.
+4. OMP lifecycle events bind both child identifiers from the shared native event bus.
+5. The child adapter resolves all state operations to the parent session and current assignment.
+6. The child cannot activate or stop the parent contract, create nested assignments, inspect a sibling assignment, revise the parent plan, or report for another assignment.
+7. The child reports a complete, partial, blocked, or expired vertical slice. The parent session persists it.
+8. If the child ends without a report, the adapter records a blocked or expired fallback report with the missing evidence and validation stated.
+9. The parent can link the report to a plan revision with complete, partial, blocked, or deferred items.
 
-If a host cannot provide a child hook or abort signal, the controller records the assignment and gates work only in sessions where the plugin is active. It must mark child timing as guidance rather than enforcement.
+The child binding survives a parent task result arriving before the terminal child lifecycle event. Terminal events remove both stable child identifiers.
 
-## Persistence
+Pi has no native task child in this adapter. Pi assignments are still bounded records, but the package does not claim that they create or enforce a native Pi child.
 
-The first version stores state as a versioned JSON entry through the host session store. It must include the session identifier and a revision. Restore uses the latest valid entry. A malformed entry disables wall-clock control for that session and reports the error; it must not affect unrelated sessions.
+## Persistence and isolation
 
-## Adapters
+State version 3 contains:
 
-### Pi
+- the owner session identifier, issue time, deadline, wrap-up point, policy, revision, and stopped flag;
+- current plan items and revision history;
+- assignments, native child identifiers, status, deadlines, and completion times;
+- one current structured report for each reported assignment.
 
-The Pi adapter registers:
+Native adapters append state to the owner host session. Parent and child OMP extension modules are loaded separately, so they use a process-global weak registry keyed by OMP's shared native event bus. This gives the instances one coordination object without retaining old event buses. Only the owner adapter writes parent state. Raw native action identifiers are also scoped by direct host session so equal parent and child identifiers cannot overwrite each other.
 
-- `/wallclock start`, `/wallclock status`, `/wallclock stop`;
-- `wallclock_assign`, `wallclock_complete`, and `wallclock_report` tools;
-- `session_start` and `session_shutdown` handlers;
-- `before_agent_start` or `context` injection;
-- `tool_call` gating;
-- `tool_result` recording.
+Restore reads only the newest wall-clock custom entry. It deeply validates identifiers, times, parent limits, terminal status, reports, and report-linked plan revisions. A malformed, cross-session, or older-version newest entry disables wall-clock for that session. It does not fall back to a stale earlier entry. Other sessions remain unchanged.
 
-Pi has no native extension task API. The adapter must not imply that a recorded assignment automatically becomes a hard-bounded native child. A later SDK adapter can own a child `AgentSession` and use `abort()` when it owns the executor.
-
-### OMP
-
-The OMP adapter registers the same common commands and tools, plus listeners for:
-
-- `task:subagent:event`;
-- `task:subagent:progress`;
-- `task:subagent:lifecycle`.
-
-It associates events only when the event contains a stable child identifier. It observes native task outcomes and records them; it does not rewrite `task.maxRuntimeMs` unless the host exposes a supported runtime setting for that call.
+Timers and running actions are not durable. Reload schedules fresh timers from the stored absolute deadlines and starts runtime timing fields at zero.
 
 ## Distribution
 
-The experimental package is in `plugins/wall-clock/`. It is not in `skills/`, so `npx skills add` and `npx skills update` do not discover it. When the plugin is ready, publish or install its OMP and Pi entry points through their native extension mechanisms. Do not move it into `skills/` as a way to distribute runtime code.
+The package lives in `plugins/wall-clock/` and has three separate distribution surfaces:
+
+- `plugin.json`, `skills/wall-clock/SKILL.md`, and `mcp.json` for Agent Plugins discovery;
+- `package.json` `pi.extensions` and `omp.extensions` fields for native package discovery;
+- direct `--extension` paths for local Pi and OMP use.
+
+The package is not a root personal skill and must not be installed through `npx skills`. Native enforcement does not depend on the portable skill or MCP process.
+
+## Verification
+
+`npm run check` type-checks the source. `npm test` runs:
+
+- controller, state, MCP, package, adapter, and shared-host tests under Node.js;
+- real Pi and OMP command-line interface loading and expired shell blocking;
+- Pi's actual extension runner and abortable bash executor;
+- OMP's actual extension runner and abortable bash executor under Bun;
+- OMP Agent Plugin skill and MCP discovery;
+- parent and child scope, persistence, deadline, lifecycle, and abort-domain behavior.
+
+Codex and Claude activation, remote provider cancellation, and a portable visual dashboard remain deferred.

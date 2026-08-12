@@ -43,6 +43,14 @@ test("activation requires an explicit expiry policy", () => {
   assert.throws(() => controller.activate("main", { durationMs: 10_000 } as never), /Expiry policy/);
 });
 
+test("an active contract must be stopped before it is replaced", () => {
+  const { controller } = setup();
+  activate(controller);
+  assert.throws(() => activate(controller), /already active/);
+  controller.stop("main");
+  assert.equal(activate(controller).active, true);
+});
+
 test("hard expiry blocks new work but permits final reporting", () => {
   const { controller, advance } = setup();
   activate(controller);
@@ -77,6 +85,82 @@ test("child budgets are capped by the parent and completion stops assignment wor
   assert.equal(controller.decideTool("main", { toolName: "read", action: "read", assignmentId: assignment.id }).allow, false);
 });
 
+test("assignment and child identifiers cannot be rebound", () => {
+  const { controller } = setup();
+  activate(controller, 60_000);
+  const assignment = controller.assign("main", { ...assignmentInput(), id: "slice" });
+  assert.throws(() => controller.assign("main", { ...assignmentInput(), id: "slice" }), /already exists/);
+  controller.attachChild("main", assignment.id, "child-one");
+  assert.equal(controller.attachChild("main", assignment.id, "child-one").childSessionId, "child-one");
+  assert.throws(() => controller.attachChild("main", assignment.id, "child-two"), /already bound/);
+  const second = controller.assign("main", { ...assignmentInput(), id: "second" });
+  assert.throws(() => controller.attachChild("main", second.id, "child-one"), /already bound to assignment slice/);
+});
+
+test("generated assignment identifiers do not collide with user identifiers", () => {
+  const { controller } = setup();
+  activate(controller, 60_000);
+  controller.assign("main", { ...assignmentInput(), id: "assignment-2" });
+  assert.equal(controller.assign("main", assignmentInput()).id, "assignment-1");
+  assert.equal(controller.assign("main", assignmentInput()).id, "assignment-3");
+});
+
+test("plans require unique nonempty item identifiers and titles", () => {
+  const { controller } = setup();
+  assert.throws(
+    () => controller.activate("main", { durationMs: 60_000, expiryPolicy: "block-new" }, [
+      { id: "same", title: "First", status: "pending" },
+      { id: "same", title: "Second", status: "pending" },
+    ]),
+    /Plan item identifiers must be unique/,
+  );
+  controller.activate("main", { durationMs: 60_000, expiryPolicy: "block-new" });
+  assert.throws(
+    () => controller.setPlan("main", [{ id: " ", title: "Work", status: "active" }], "Add work"),
+    /identifier must not be empty/,
+  );
+  assert.throws(
+    () => controller.setPlan("main", [{ id: "work", title: " ", status: "active" }], "Add work"),
+    /title must not be empty/,
+  );
+  assert.throws(
+    () => controller.setPlan("main", [{ id: "work", title: "Work", status: "invented" } as never], "Add work"),
+    /status is invalid/,
+  );
+  controller.setPlan("main", [{ id: "work", title: "Work", status: "active" }], "Add work");
+  assert.throws(
+    () => controller.assign("main", assignmentInput()),
+    /does not exist in the current plan/,
+  );
+});
+
+test("assignment and report contents are validated before persistence", () => {
+  const { controller } = setup();
+  activate(controller, 60_000);
+  assert.throws(
+    () => controller.assign("main", { ...assignmentInput(), scope: [" "] }),
+    /scope entries must not be empty/,
+  );
+  const assignment = controller.assign("main", assignmentInput());
+  assert.throws(
+    () => controller.report("main", {
+      assignmentId: assignment.id,
+      status: "partial",
+      completed: [],
+      evidence: [],
+      partial: [],
+      skipped: [],
+      validation: [],
+      shortcuts: [{ choice: " ", tradeoff: "No full test" }],
+      risks: [],
+      unknowns: [],
+      recommendedParentAction: "Continue",
+    }),
+    /shortcut choice must not be empty/,
+  );
+  assert.equal(controller.status("main", assignment.id).assignment?.status, "active");
+});
+
 test("per-turn context reports host-measured inference, tool, and assignment elapsed time", () => {
   const { controller, advance } = setup();
   activate(controller, 60_000);
@@ -96,6 +180,41 @@ test("per-turn context reports host-measured inference, tool, and assignment ela
   assert.equal(context.latestToolCallElapsedMs, 700);
   assert.equal(context.assignmentElapsedMs, 1_200);
   assert.equal(context.expiryPolicy, "block-new");
+});
+
+test("fresh elapsed-time context starts every measured field at zero", () => {
+  const { controller } = setup();
+  controller.activate("main", { durationMs: 100, expiryPolicy: "block-new" });
+  const context = controller.turnContext("main");
+  assert.ok(context);
+  assert.equal(context.latestInferenceElapsedMs, 0);
+  assert.equal(context.latestToolCallElapsedMs, 0);
+  assert.equal(context.phase, "active");
+  assert.equal(controller.status("main").wrapUpAt, 1_080);
+});
+
+test("every terminal assignment status blocks more assignment work", () => {
+  for (const terminalStatus of ["complete", "partial", "blocked", "expired"] as const) {
+    const { controller } = setup();
+    controller.activate("main", { durationMs: 20_000, wrapUpMs: 2_000, expiryPolicy: "block-new" });
+    const assignment = controller.assign("main", assignmentInput());
+    controller.complete("main", assignment.id, terminalStatus);
+    const status = controller.status("main", assignment.id);
+    assert.equal(status.phase, "complete", terminalStatus);
+    assert.equal(
+      controller.decideTool("main", { toolName: "read", action: "read", assignmentId: assignment.id }).allow,
+      false,
+      terminalStatus,
+    );
+  }
+});
+
+test("hard expiry only permits explicit wall-clock control tools", () => {
+  const { controller, advance } = setup();
+  activate(controller);
+  advance(10_000);
+  assert.equal(controller.decideTool("main", { toolName: "finalize_deploy", action: "finalize" }).allow, false);
+  assert.equal(controller.decideTool("main", { toolName: "wallclock_report", action: "finalize" }).allow, true);
 });
 
 test("abort-running records requested and observed action aborts", () => {
@@ -150,8 +269,10 @@ test("reports preserve shortcuts, skipped validation, and measured elapsed time"
     recommendedParentAction: "Add integration coverage later",
   });
   assert.equal(report.actualElapsedMs, 1_500);
+  assert.equal(report.expiryPolicy, "block-new");
   assert.equal(report.shortcuts[0]?.choice, "Used a focused fixture");
   assert.equal(controller.snapshot("main")?.reports[0]?.actualElapsedMs, 1_500);
+  assert.throws(() => controller.complete("main", assignment.id, "complete"), /already has a partial report/);
 });
 
 test("plan revisions record changed items and actual elapsed time", () => {
@@ -162,4 +283,37 @@ test("plan revisions record changed items and actual elapsed time", () => {
   assert.deepEqual(revision.changedPlanItemIds, ["item-1"]);
   assert.equal(revision.actualElapsedMs, 2_000);
   assert.equal(controller.snapshot("main")?.planRevisions.length, 1);
+});
+
+test("plan revisions can mark partial work and link the report that caused the change", () => {
+  const { controller, advance } = setup();
+  controller.activate("main", {
+    durationMs: 60_000,
+    expiryPolicy: "block-new",
+  }, [{ id: "item-1", title: "Ship the slice", status: "active" }]);
+  const assignment = controller.assign("main", assignmentInput());
+  advance(1_500);
+  controller.report("main", {
+    assignmentId: assignment.id,
+    status: "partial",
+    completed: ["The narrow path works"],
+    evidence: ["The host test passed"],
+    partial: ["The full matrix is not covered"],
+    skipped: [],
+    validation: ["Focused host test"],
+    shortcuts: [],
+    risks: [],
+    unknowns: [],
+    recommendedParentAction: "Defer the untested matrix",
+  });
+
+  const revision = controller.setPlan(
+    "main",
+    [{ id: "item-1", title: "Ship the slice", status: "partial" }],
+    "Used the child report",
+    assignment.id,
+  );
+  assert.equal(revision.sourceAssignmentId, assignment.id);
+  assert.equal(revision.recommendedParentAction, "Defer the untested matrix");
+  assert.equal(revision.actualAssignmentElapsedMs, 1_500);
 });

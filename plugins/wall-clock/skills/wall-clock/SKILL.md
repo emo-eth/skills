@@ -31,9 +31,9 @@ The portable Agent Plugins package can provide tools and instructions. It cannot
 When the user gives a duration such as `30m` or a local time such as `5pm`:
 
 1. Create a short session key and reuse it for every wall-clock call in this run.
-2. If `wallclock_start` is available, call it with the session key, the exact duration or local time, and the current plan when one exists.
+2. If a native `wallclock_start` is available, call it with the exact duration or local time, the user's selected `block-new` or `abort-running` policy, and the current plan when one exists.
 3. Read the returned phase and remaining time. State the hard deadline and the wrap-up point in the working plan.
-4. If the tool is unavailable, record the deadline in the plan and treat all checks as model guidance. Do not claim that the host will block work.
+4. If activation is unavailable or rejected, do not create a guidance-only wall-clock session. Tell the user that this host cannot enforce the requested policy.
 
 A local-time deadline uses the host's local timezone. If the user names another timezone, convert it before starting or mark the conversion as unresolved.
 
@@ -41,13 +41,13 @@ A local-time deadline uses the host's local timezone. If the user names another 
 
 Before an assignment, write, destructive action, or long operation:
 
-1. Call `wallclock_status` when the MCP tool is available.
-2. Call `wallclock_check` with the proposed tool name, action class, estimate, and assignment key when the estimate or risk matters.
+1. Call `wallclock_status` when the tool is available.
+2. Call `wallclock_check` with the proposed tool name, action class, input, and assignment key when an explicit decision is useful. Never estimate task duration.
 3. If the result denies the action, do not start it. Move to wrap-up, reporting, or a smaller safe action.
 4. During wrap-up, do not start delegation or destructive work. Finish the smallest current acceptance target and report it.
 5. After expiry, start no new tool work. Report the current state and any work that remains.
 
-The check is not a host gate. A client-specific native adapter may enforce the same decision at a pre-tool event; a portable MCP client may only expose the decision for the model to follow.
+The check is not a host gate. A supported Pi or OMP native adapter enforces the same decision at its pre-tool event. Portable MCP alone refuses activation.
 
 ## Bound an assignment
 
@@ -59,7 +59,7 @@ Create an assignment only when the main session has an active wall-clock window:
 4. Call `wallclock_assign` and keep the returned assignment identifier.
 5. Pass the objective, scope, acceptance target, and remaining budget to the child through the host's supported child-session mechanism. The portable plugin does not create a child session by itself.
 
-If the child meets the acceptance target early, complete it. Do not turn the unused budget into extra work. If the host cannot pass a hard budget or abort signal, classify the timing as model guidance.
+If the child meets the acceptance target early, complete it. Do not turn the unused budget into extra work. OMP binds one unbound assignment to each task child. Pi does not create a native child through this package. Do not claim a hard child limit on an unsupported path.
 
 ## Complete and report
 
@@ -76,4 +76,6 @@ Keep partial output usable. Never report cancellation unless the host executor c
 
 ## Native host adapters
 
-The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter can restore session state, inject remaining time, observe tool results, and enforce its pre-tool decision. Those adapters are outside the portable Agent Plugins core and must not be treated as evidence that another client has the same enforcement boundary.
+The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter restores version 3 session state, injects measured time, observes tool and child results, and enforces its pre-tool decision.
+
+Under `abort-running`, the adapter rejects unknown or unabortable executors before they start. It records cancellation only after a correlated native result reports an abort. Native support does not imply that another Agent Plugins client has the same enforcement boundary.

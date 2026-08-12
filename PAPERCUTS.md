@@ -159,3 +159,63 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T04:22:15Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Preparing a session handoff -> the required session-handoff skill was listed but its installed SKILL.md path was missing, so I used the repo copy instead.
+- **2026-08-12T05:30:33.413Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While loading the required paseo skill, the project instructions pointed to ~/dev/skills, but that path does not exist in this worktree environment. The installed copy under ~/.agents/skills is available; keep the documented source path aligned with the actual machine setup.
+- **2026-08-12T05:33:24.330Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Updating Pi to the npm-reported latest release -> the documented @mariozechner package installed successfully but is deprecated in favor of @earendil-works/pi-coding-agent. Current installation guidance should point at the active namespace so update checks do not stop on the old release line.
+- **2026-08-12T05:53:37.165Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Running a live Pi RPC probe in a mktemp directory -> the command was rejected because its final cleanup used rm -rf, even though the target was a newly created explicit /tmp directory. Run probe cleanup as a separate recoverable operation or document the accepted temp cleanup pattern.
+- **2026-08-12T05:53:49.823Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Running matching live RPC probes for Pi and OMP -> OMP accepts --cwd but current Pi does not, so a shared probe command failed before loading the extension. Host test helpers need separate CLI argument builders instead of assuming flag parity.
+- **2026-08-12T06:03:52.209Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While adding the wall-clock shared-host test, Node's --experimental-strip-types rejected a TypeScript constructor parameter property. The test setup does not state the strip-only syntax limits; use ordinary property declarations and assignments or add a real TypeScript runner.
+- **2026-08-12T06:07:00.653Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While testing the real wall-clock adapters, activation left native deadline timers referenced, so Node's test process did not exit. Adapter tests need stop cleanup or the extension should unref Node timers when that method exists.
+- **2026-08-12T06:07:31.916Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While checking the installed Pi package discovery contract, rg searched generated source-map files and produced hundreds of thousands of characters. The package has no source tree and the maps dominate search; exclude *.map or document the useful dist files for extension discovery.
+- **2026-08-12T06:10:14.505Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While verifying the OMP package manifest in a temporary project, omp plugin link with project scope installed the link under ~/.omp/plugins instead of the temporary project, and omp plugin list showed it as a global npm plugin. The command's scope behavior is misleading; use an isolated profile or config root for tests and always audit and uninstall probe links.
+- **2026-08-12T06:11:17.974Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While pinning Pi and OMP as wall-clock host-test dependencies, npm installed 302 packages, reported five high-severity audit findings, and withheld six dependency install scripts. The host CLI packages are heavy test dependencies and need a documented audit and allow-scripts policy.
+- **2026-08-12T06:12:01.125Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: While testing OMP package parsing, omp plugin link with the dry-run flag still created a live link under the global plugin directory. Dry-run is not side-effect free in OMP 17.2.15; wall-clock tests must not call link or install, and every manual probe must verify and remove the resulting plugin.
+- **2026-08-12T06:14:09.410Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While locating Pi and OMP ExtensionRunner declarations, a zsh glob for OMP declaration files had no match and raised an error before the remaining searches. Use find or quote optional globs when installed package layouts can differ.
+- **2026-08-12T06:16:37.086Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: While adding SDK-level host tests, Node refused to strip the TypeScript source exported by the OMP package because it lives under node_modules. OMP native SDK tests must run under Bun, while Pi native SDK tests can run under Node; one shared test runtime is not valid.
+- **2026-08-12T06:17:18.749Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: While splitting native-runner tests by runtime, Bun treated tests/native-omp-runner.bun.ts as a name filter because the file lacks the .test suffix. Prefix the explicit path with ./ or use Bun test naming conventions.
+- **2026-08-12T06:18:47.129Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: While inspecting the OMP BashTool execution path, another optional zsh source glob had no matches and interrupted that part of the command. Package-source probes should consistently use find plus rg instead of shell globs.
+- **2026-08-12T06:26:30.155Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While auditing the pinned host dependencies, npm audit ran from the repository root instead of plugins/wall-clock and failed because no root lockfile exists. Package-scoped verification commands must set the plugin working directory explicitly.
+- **2026-08-12T06:26:43.817Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: While checking the plugin gitignore before the audit, the command still used the repository-relative plugins/wall-clock path after changing into that directory, so the file read failed. Keep command paths relative to the declared working directory.
+- **2026-08-12T06:38:14.085Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While reopening the wall-clock handoff from compacted context, the summarized filename included an extra wall-clock segment and sed could not find it. The real file is docs/log/2026-08-11-handoff.md; preserve exact repository paths in handoff summaries.
+- **2026-08-12T06:48:53.839Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While running the final wall-clock suite, the new abort-domain gate masked the more specific unsupported-executor error in an adapter test. Check cancellation capability before checking whether that session's abort domain is busy so callers get the actionable failure reason.
+- **2026-08-12T06:53:27.992Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While proving wall-clock with two actual OMP session runners, both runners received the same native EventBus but separately loaded extension modules did not share a module-local WeakMap. Cross-session OMP extension state must use a process-global registry keyed by the shared EventBus, not module-local state.
+- **2026-08-12T07:01:35.780Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While checking OMP package discovery, --plugin-dir loaded the Agent Plugin skill and MCP components but did not load the package.json omp.extensions entry. Agent Plugin directory discovery and native npm-plugin discovery are separate paths; native verification must keep using --extension unless installation is isolated.

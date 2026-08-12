@@ -2,15 +2,17 @@
 
 ## What this is
 
-Wall-clock is an experimental Agent Plugins package for enforcing time boundaries around agent sessions, assignments, and host actions. It is for the author's Codex, Pi, and OMP workflows, with Claude limited to package discovery and Claude proprietary systems excluded. The product contract is in draft; the package and focused tests exist, but Pi and OMP end-to-end enforcement is not yet proven against the reviewed contract.
+Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enforced time boundaries around agent sessions, assignments, and host actions. Codex and Claude are limited to portable package discovery, and Claude proprietary systems are excluded. The product document still has draft approval metadata, but the v0 implementation now matches its reviewed Pi and OMP contract and has real-host evidence.
 
 ## Where we are
 
-Current phase: v0 contract revision after the first review round. The current contract requires host-enforced activation, measured elapsed-time context at every turn, a user-selected expiry policy, and a working vertical slice when scope contracts. The portable Agent Plugins package is discoverable, and optional MCP operations are separated from native enforcement.
+Current phase: v0 implementation complete on the `wall-clock` branch. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. OMP parent and child extension instances share assignment state through the native event bus. Unsupported or unabortable paths fail closed.
 
-Open: implement and prove the reviewed contract in the native Pi and OMP paths: per-turn measured context, fail-closed activation, `block-new`, `abort-running` with an observed abort signal, child elapsed-time reporting, and end-to-end tests. The current implementation must not be described as complete until those checks pass.
+The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement.
 
 Deferred: Codex and Claude activation [D10] until an open, tested enforcement seam exists; Claude proprietary systems; provider-specific remote cancellation; and a portable visual dashboard. Revisit D10 when v1 host support is scoped and revisit the last two when provider or user-interface requirements become active. The full contract remains in `docs/prds/2026-08-11-wall-clock/prd.md`.
+
+Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 ## Standing constraints
 
@@ -27,7 +29,7 @@ Deferred: Codex and Claude activation [D10] until an open, tested enforcement se
 | --- | --- | --- | --- | --- |
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
 | Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
-| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `plugins/wall-clock/README.md` | inferred |
+| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | Pi and OMP command-line and native runner tests in `plugins/wall-clock/tests/` | verified-live |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md` | raw snapshot and answers doc | verified-live |

@@ -1,41 +1,77 @@
 # Wall Clock Agent Plugin
 
+Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects measured time before model turns, blocks work at native pre-action boundaries, and can stop supported running actions when the selected policy requires it.
+
 ## Glossary
 
-- **Agent Plugins**: The portable package format for Agent Skills and MCP servers.
-- **MCP**: Model Context Protocol, used here for wall-clock state and report tools.
-- **Native adapter**: Host-specific code loaded by Pi or OMP.
-- **Model guidance**: Instructions the model may follow; the host does not enforce them.
-- **Host enforcement**: A client event or executor mechanism that blocks or stops work.
+- **Agent Plugins**: The portable package format for Agent Skills and optional Model Context Protocol servers.
+- **MCP**: Model Context Protocol, used here as an optional portable operation surface.
+- **Pi**: The `@earendil-works/pi-coding-agent` host.
+- **OMP**: The `@oh-my-pi/pi-coding-agent` host.
+- **Native adapter**: Host-specific code that observes model and tool events and enforces wall-clock decisions.
+- **Expiry policy**: The selected rule at the deadline: block new work or also abort supported running work.
+- **Abort domain**: One native host session whose abort function can stop its current action.
+- **Assignment**: One bounded child objective with scope, acceptance targets, and its own time ceiling.
 
-This package targets Agent Plugins 1.0.0. The portable package gives compatible
-clients one root manifest, one skill location, and one MCP configuration. The
-standard does not define a universal hook that can block every client tool call.
+## Supported behavior
 
-## Layout
+Activation accepts a positive duration such as `30m` or a future local time such as `5pm`. The caller must select one policy:
 
-- `plugin.json`: Agent Plugins 1.0.0 manifest.
-- `skills/wall-clock/SKILL.md`: Portable workflow instructions.
-- `mcp.json`: Portable MCP server configuration.
-- `bin/wall-clock`: Node.js MCP launcher.
-- `src/mcp.ts`: MCP server that exposes the controller operations.
-- `src/controller.ts`: Host-independent deadline, assignment, report, and tool-decision module.
-- `src/host.ts`: Shared native host event and command adapter.
-- `src/pi.ts`: Pi entry point.
-- `src/omp.ts`: OMP entry point.
-- `tests/`: Controller, host, MCP, and package contract tests.
+- `block-new`: after expiry, reject new work and let work already admitted by the host finish.
+- `abort-running`: after expiry, reject new work and abort every supported wall-clock-owned action. The adapter rejects an action before it starts when it cannot prove that the native executor can be aborted.
 
-## Portable behavior
+Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
-The Agent Skill describes how to:
+Before each model turn, the native adapter injects current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, phase, policy, and current assignment elapsed time. These values come from the host clock. The model is not asked to estimate task duration.
 
-- start a duration or local-time deadline;
-- check remaining time before new work;
-- create bounded assignments;
-- finish as soon as an acceptance target is met;
-- report evidence, shortcuts, skipped validation, risks, and unknowns.
+The default wrap-up period is 20 percent of the available time, capped at five minutes. An explicit positive wrap-up value is capped at the hard deadline.
 
-The MCP server exposes:
+## Host support matrix
+
+| Host | Pre-action gate | Turn context | `block-new` | `abort-running` | Child behavior | Failure mode | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Pi 0.84.1 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls` | Assignments are recorded; Pi has no native task child in this adapter | Activation or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-runners.test.ts` |
+| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each task must have exactly one active unbound assignment; batch and nested delegation are blocked | Missing shared event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
+| Portable Agent Plugin or MCP only | None | None | Activation rejected | Activation rejected | No child creation | Reports that a native Pi or OMP adapter is required | `tests/plugin.test.ts`, `tests/mcp.test.ts`, `tests/real-hosts.test.ts` |
+
+`abort-running` admits only one action at a time in each abort domain because Pi and OMP expose a session-wide abort function. An OMP parent task and its child session can both be active because they have separate abort domains. Unknown extension tools and direct `user_bash` actions are rejected under `abort-running` when cancellation cannot be observed.
+
+Cancellation is recorded only after the native result reports an abort or cancellation. Local cancellation does not prove that remote provider work stopped.
+
+## Native loading
+
+Install the exact test dependencies and run the checks:
+
+```sh
+cd plugins/wall-clock
+npm install
+npm run check
+npm test
+```
+
+Load the native adapter from this checkout:
+
+```sh
+pi --extension /absolute/path/to/plugins/wall-clock/src/pi.ts
+omp --extension /absolute/path/to/plugins/wall-clock/src/omp.ts
+```
+
+Start and inspect a session:
+
+```text
+/wallclock start 30m block-new
+/wallclock status
+/wallclock stop
+```
+
+Use `abort-running` instead of `block-new` only when running supported native actions must stop at expiry.
+Stop the current contract before starting a replacement. A second start never silently discards active plans, assignments, reports, or running-action ownership.
+
+The package also declares `pi.extensions` and `omp.extensions` in `package.json` for native package discovery. Do not install this directory through `npx skills`; it is a runtime plugin, not a personal skill package.
+
+## Tools
+
+The native adapters register:
 
 - `wallclock_start`
 - `wallclock_status`
@@ -45,34 +81,28 @@ The MCP server exposes:
 - `wallclock_assign`
 - `wallclock_complete`
 - `wallclock_report`
+- `wallclock_revise_plan`
 
-Pass the same `sessionId` to every call in one work run. MCP state is stored
-under the client-provided `PLUGIN_DATA` directory. A standard MCP call does not
-automatically intercept unrelated client tools, so `wallclock_check` is model
-guidance unless the client supplies a pre-tool gate.
+An assignment report records completed and partial work, evidence, skipped work, validation, shortcuts and tradeoffs, risks, unknowns, actual elapsed time, the selected policy, and one recommended parent action. A plan revision can link to the report that caused it.
 
-The launcher requires Node.js 22.6 or newer because the package runs its
-TypeScript source with Node's type stripping support.
+## Persistence and isolation
 
-## Native host behavior
+Native state is written as version 3 custom entries in the owning host session. Reload and resume compute phase and remaining time from the current clock. The latest wall-clock entry is authoritative. A malformed, old-version, or cross-session latest entry disables wall-clock for that session instead of restoring older state.
 
-Load `src/pi.ts` or `src/omp.ts` through the host's native extension mechanism.
-Those adapters can restore session state, inject remaining time, observe tool
-results, and block new work at the host's pre-tool boundary. They remain
-host-specific and are not portable Agent Plugins components.
+An OMP child sees only its assigned scope and cannot stop the parent limit, create a nested assignment, inspect a sibling assignment, revise the parent plan, or report for another assignment. Parent state and child reports are persisted by the parent host session.
 
-Do not install this package through `npx skills`. Use a client that supports
-Agent Plugins, or use the native Pi or OMP loading mechanism.
+## Portable package and MCP
 
-## Limits
+The root `plugin.json`, bundled Agent Skill, and `mcp.json` follow Agent Plugins 1.0.0. OMP discovery is covered by a real-host test.
 
-- The package does not create a child session by itself.
-- A timer does not cancel an already-running arbitrary tool.
-- A local deadline does not cancel a remote action.
-- A child hard stop requires a host executor that accepts and obeys an abort signal.
+The standalone MCP server exposes the operation contracts but refuses `wallclock_start` because MCP has no native pre-action gate. It does not mirror native host session entries by itself. Package or MCP discovery is therefore not evidence of enforcement.
 
-## Test
+The launcher needs Node.js 22.6 or newer because it uses native TypeScript type stripping.
 
-```sh
-npm test
-```
+## Known boundaries
+
+- Pi does not provide native child delegation through this adapter.
+- OMP supports one bounded assignment per task invocation; batch and nested delegation are blocked. Under `abort-running`, only one parent-session task can be active because the abort function is session-wide.
+- Remote provider cancellation needs provider-specific confirmation and is not implemented.
+- Codex and Claude can discover the portable package but cannot activate wall-clock until an open, tested native enforcement seam exists.
+- The full development dependency audit reports five high-severity findings in optional OMP model and image dependencies. `npm audit --omit=optional` reports zero findings. No production runtime dependency was added to the wall-clock controller.
