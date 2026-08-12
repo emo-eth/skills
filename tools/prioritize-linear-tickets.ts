@@ -291,7 +291,7 @@ function renderPair(
   const line = "-".repeat(72);
   const remaining = Math.max(0, maxComparisons - decided);
   console.log(
-    `TOP-K  |  ${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  TOP ${top} of ${ticketsTotal} tickets  |  ${decided} compared, ~${remaining} left (est)`,
+    `TOP-K  |  ${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  TOP ${top} of ${ticketsTotal} tickets  |  ${decided} compared, ~${remaining} left (worst-case)`,
   );
   console.log(line);
   console.log(`${paint("LEFT (L) - candidate", BOLD)}`);
@@ -388,9 +388,21 @@ async function main(): Promise<void> {
   const stateFile = args.state;
   const usingLinear = args.input === undefined;
 
-  const tickets = usingLinear
+  let tickets = usingLinear
     ? await fetchAssignedNotCompleted({ team: args.team })
     : await loadTickets(args.input);
+  if (usingLinear) {
+    // Existing Urgent tickets already occupy "do now"; keep them out of the
+    // top-k ranking so they don't consume a k slot or get re-quizzed. They
+    // stay Urgent and untouched.
+    const excludedUrgent = tickets.filter((t) => String(t.priority) === "1");
+    if (excludedUrgent.length > 0) {
+      console.log(
+        `Skipping ${excludedUrgent.length} already-Urgent ticket(s): ${excludedUrgent.map((t) => t.id).join(", ")}`,
+      );
+    }
+    tickets = tickets.filter((t) => String(t.priority) !== "1");
+  }
   if (args.reset) await removeState(stateFile);
 
   const snapshot = snapshotFor(tickets, args.top);
@@ -416,8 +428,9 @@ async function main(): Promise<void> {
 
   let decided = 0;
   let ranked: Ticket[] | undefined;
-  // Worst-case pairwise comparison upper bound for binary-insert top-k.
-  const maxComparisons = Math.ceil(tickets.length * Math.log2(args.top + 1));
+  // Bottom-up probing worst case: a candidate can be quizzed against every
+  // slot in the frontier (rejects typically cost 1). Upper bound ~ n * k.
+  const maxComparisons = tickets.length * args.top;
 
   // Iterative driver: ask exactly one comparison per pass, then rerun the core.
   for (let guard = 0; guard < tickets.length * tickets.length; guard += 1) {
