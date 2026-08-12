@@ -70,6 +70,8 @@ DEFER <existing-id>
 ## Quality checks
 
 - One ticket has one owner, one output, and one proof.
+- A sub-ticket inherits its parent's priority. Give a sub-ticket a different
+  priority only when the owner re-prioritizes the parent first.
 - A decision has one owner, one due point, and names the work it blocks.
 - A research ticket names its output: a comparison, measurement,
   recommendation, or another concrete artifact.

@@ -117,6 +117,8 @@ and research, or has more than one independent done-when — break it into
 sub-tickets:
 
 - each sub-ticket has one owner, one done-when, one output, and one proof;
+- a sub-ticket inherits its parent's priority; no sub-ticket gets a different
+  priority from the parent unless the owner re-prioritizes the parent first;
 - build sub-tickets land code; observe sub-tickets verify deployed or live
   state; research sub-tickets produce the artifact;
 - a parent ticket stays open until its sub-tickets' proofs are satisfied.
