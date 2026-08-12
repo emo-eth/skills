@@ -141,3 +141,9 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T01:12:36Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Running the official global removal command -> skills CLI help advertises -a '*' but the parser rejects '*' as an invalid agent; omitting -a correctly targets every configured agent by default.
+- **2026-08-12T03:41:20Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Pushing the targeted skill removal commit to main -> origin/main advanced between the branch check and push, so the fast-forward push was rejected; fetch the current remote tip and merge it before retrying.
+- **2026-08-12T03:41:48Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Merging the current remote main -> Git refused because the papercut log itself was unstaged; commit or stash the agent-owned log before integrating remote changes, while leaving unrelated user edits untouched.
