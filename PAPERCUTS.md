@@ -318,3 +318,15 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T16:03:04Z** `codex`
   - cwd: `.`
   - note: Validating the new user-invoked skill -> the bundled skill-creator quick validator rejects the documented disable-model-invocation frontmatter key even though the existing standup skill uses it; use repository conventions plus YAML parsing instead.
+- **2026-08-12T16:20:50Z** `codex`
+  - cwd: `.`
+  - files: `plugins/yearn/tsconfig.json`
+  - note: Checking the new yearn package -> the repository has no global tsc binary, so npm run check cannot start without installing package dependencies.
+- **2026-08-12T16:21:24Z** `codex`
+  - cwd: `.`
+  - files: `plugins/yearn/tsconfig.json`
+  - note: Adding allowImportingTsExtensions -> the first anchored edit duplicated the types field and left invalid JSON, so the config needed an immediate corrective edit.
+- **2026-08-12T16:22:22Z** `codex`
+  - cwd: `.`
+  - files: `plugins/yearn/src/omp.ts`
+  - note: Running the OMP yearn smoke test -> the installed OMP 17.2.15 rejected Pi-only --offline and --no-approve flags, so the retry must use the OMP-specific flag set.
