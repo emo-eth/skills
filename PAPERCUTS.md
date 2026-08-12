@@ -321,3 +321,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T16:36:32.311Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While merging the nested Wall Clock specification into current main, docs/STATE.md conflicted because two independent changes appended rows to the same topic table. Keep project-state topics in separate included files or use a stable sorted insertion rule to reduce append conflicts.
+- **2026-08-12T20:54:19.827Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Trying Wall Clock on another computer exposed a command-name collision: /wall-clock invokes the portable skill and its fail-closed MCP path, while /wallclock invokes native OMP enforcement. Installation docs need to put this distinction and a native-load check before all usage examples.
