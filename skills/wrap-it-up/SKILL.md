@@ -17,6 +17,11 @@ argument-hint: "[optional finish constraint]"
 
 Use this skill only through an explicit `/wrap-it-up` invocation while a task is already in progress. Resume from the current state. Do not restart the task, switch to a new task, or expand the scope.
 
+On a supported native Pi or OMP host with the wall-clock plugin loaded, this
+invocation also activates a two-minute host guard with `abort-running`,
+delegation blocked, and a 12-call ordinary-tool limit. Without that native
+adapter, these instructions still guide the agent but cannot force a timeout.
+
 ## Core rule
 
 Finish the active task, not only the current substep. Continue until the finish line passes or a real blocker stops reachable progress.

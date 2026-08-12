@@ -14,11 +14,28 @@ import type {
 } from "./types.ts";
 
 const FAST_LANE_DURATION_MS = 120_000;
+const WRAP_IT_UP_DURATION_MS = 120_000;
 const FAST_LANE_WRAP_UP_MS = 15_000;
 const FAST_LANE_MAX_TOOL_CALLS = 12;
 
-type FastLaneState = {
+type FastLaneKind = "do-it-now" | "wrap-it-up";
+
+type FastLaneConfig = {
+  displayName: string;
+  durationMs: number;
+};
+
+const FAST_LANE_CONFIGS: Record<FastLaneKind, FastLaneConfig> = {
+  "do-it-now": { displayName: "Do-it-now", durationMs: FAST_LANE_DURATION_MS },
+  "wrap-it-up": { displayName: "Wrap-it-up", durationMs: WRAP_IT_UP_DURATION_MS },
+};
+
+type FastLaneInvocation = {
+  kind: FastLaneKind;
   request: string;
+};
+
+type FastLaneState = FastLaneInvocation & {
   toolCalls: number;
 };
 
@@ -315,20 +332,25 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return controller.status(sessionId);
   };
 
-  const startFastLane = (ctx: RuntimeContext | undefined, request: string) => {
+  const startFastLane = (ctx: RuntimeContext | undefined, invocation: FastLaneInvocation) => {
     const sessionId = requireOwnerSession(ctx);
     const existing = fastLanes.get(sessionId);
     if (existing) return controller.status(sessionId);
+    const config = FAST_LANE_CONFIGS[invocation.kind];
     if (controller.status(sessionId).active) {
-      throw new Error("Do-it-now requires an inactive wall-clock session");
+      throw new Error(`${config.displayName} requires an inactive wall-clock session`);
     }
     const status = activateSession(ctx, {
-      durationMs: FAST_LANE_DURATION_MS,
+      durationMs: config.durationMs,
       wrapUpMs: FAST_LANE_WRAP_UP_MS,
       expiryPolicy: "abort-running",
     });
-    fastLanes.set(sessionId, { request: request || "the current user request", toolCalls: 0 });
-    notify(ctx, "Do-it-now active: 2m hard deadline, abort-running, delegation blocked, 12 tool calls maximum", "info");
+    fastLanes.set(sessionId, { ...invocation, request: invocation.request || "the current user request", toolCalls: 0 });
+    notify(
+      ctx,
+      `${config.displayName} active: ${config.durationMs / 1_000}s hard deadline, abort-running, delegation blocked, ${FAST_LANE_MAX_TOOL_CALLS} tool calls maximum`,
+      "info",
+    );
     return status;
   };
 
@@ -431,7 +453,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const contextText = [
       controller.context(scope.sessionId, scope.assignmentId),
       fastLane
-        ? `Do-it-now host guard: execute only ${fastLane.request}; do not delegate or add adjacent work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
+        ? `${FAST_LANE_CONFIGS[fastLane.kind].displayName} host guard: execute only ${fastLane.request}; do not delegate or add adjacent work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
         : undefined,
     ].filter((part): part is string => part !== undefined).join("\n");
     return {
@@ -453,8 +475,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
     if (scope?.assignmentId === undefined) {
-      const request = parseFastLaneRequest(event);
-      if (request !== null) startFastLane(ctx, request);
+      const invocation = parseFastLaneRequest(event);
+      if (invocation !== null) startFastLane(ctx, invocation);
     }
     return undefined;
   });
@@ -462,8 +484,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("message_start", async (event, ctx) => {
     await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
-    const request = parseFastLaneRequest(event?.message ?? event);
-    if (scope?.assignmentId === undefined && request !== null) startFastLane(ctx, request);
+    const invocation = parseFastLaneRequest(event?.message ?? event);
+    if (scope?.assignmentId === undefined && invocation !== null) startFastLane(ctx, invocation);
     return undefined;
   });
 
@@ -513,12 +535,13 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const action = (event?.action as ActionClass | undefined) ?? classifyAction(toolName, input);
     const nativeTool = toolName.toLowerCase().startsWith("wallclock_");
     const fastLane = fastLanes.get(scope.sessionId);
-    if (fastLane && !nativeTool) {
+    const fastLaneConfig = fastLane ? FAST_LANE_CONFIGS[fastLane.kind] : undefined;
+    if (fastLane && fastLaneConfig && !nativeTool) {
       if (action === "delegate" || /task|spawn|delegate|assign/i.test(toolName)) {
-        return { block: true, reason: "Do-it-now blocks delegation; complete the current request in this session" };
+        return { block: true, reason: `${fastLaneConfig.displayName} blocks delegation; complete the current request in this session` };
       }
       if (fastLane.toolCalls >= FAST_LANE_MAX_TOOL_CALLS) {
-        return { block: true, reason: `Do-it-now reached its ${FAST_LANE_MAX_TOOL_CALLS}-tool limit` };
+        return { block: true, reason: `${fastLaneConfig.displayName} reached its ${FAST_LANE_MAX_TOOL_CALLS}-tool limit` };
       }
     }
     const suppliedActionId = existingActionId(event);
@@ -961,23 +984,31 @@ function existingActionId(event: unknown): string | undefined {
   return undefined;
 }
 
-function parseFastLaneRequest(message: unknown): string | null {
+function isFastLaneKind(value: unknown): value is FastLaneKind {
+  return value === "do-it-now" || value === "wrap-it-up";
+}
+
+function parseFastLaneRequest(message: unknown): FastLaneInvocation | null {
   if (!message || typeof message !== "object") return null;
   if ("details" in message && message.details && typeof message.details === "object" && !Array.isArray(message.details)) {
     const details = message.details;
-    if ("name" in details && details.name === "do-it-now") {
+    const kind = "name" in details && isFastLaneKind(details.name) ? details.name : null;
+    if (kind) {
       const args = "args" in details ? details.args : undefined;
-      return typeof args === "string" ? args.trim() : "";
+      return { kind, request: typeof args === "string" ? args.trim() : "" };
     }
   }
   const text = messageText(message);
-  const marker = /^\[IMPORTANT: User invoked the "do-it-now" skill; follow its instructions\. Full skill below\.\]/i;
-  if (marker.test(text)) {
+  const marker = /^\[IMPORTANT: User invoked the "(do-it-now|wrap-it-up)" skill; follow its instructions\. Full skill below\.\]/i.exec(text);
+  if (marker) {
+    const kind = marker[1]?.toLowerCase();
     const args = /\nUser:\s*([\s\S]*)$/i.exec(text);
-    return args ? args[1].trim() : "";
+    if (kind && isFastLaneKind(kind)) return { kind, request: args ? args[1].trim() : "" };
   }
-  const match = /^\s*\/(?:skill:)?do-it-now(?:\s+([\s\S]*?))?\s*$/i.exec(text);
-  return match ? (match[1] ?? "").trim() : null;
+  const match = /^\s*\/(?:skill:)?(do-it-now|wrap-it-up)(?:\s+([\s\S]*?))?\s*$/i.exec(text);
+  if (!match) return null;
+  const kind = match[1]?.toLowerCase();
+  return kind && isFastLaneKind(kind) ? { kind, request: (match[2] ?? "").trim() } : null;
 }
 
 function messageText(message: unknown): string {
