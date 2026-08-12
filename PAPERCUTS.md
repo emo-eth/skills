@@ -249,3 +249,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T07:49:49.412Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While cleaning one explicit temporary OMP profile after its isolated install test, the command runner rejected even a validated /tmp rm -rf target. The guard does not distinguish owned temporary directories from broad destructive targets; use the system trash command or leave mkdtemp cleanup to the test.
+- **2026-08-12T07:53:15.261Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While checking the final OMP and Pi versions, I assumed the repository root had package.json; this repo keeps the wall-clock package below plugins/wall-clock, so root-level Node package checks fail.
