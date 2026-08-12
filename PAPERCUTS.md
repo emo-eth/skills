@@ -367,3 +367,7 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `PAPERCUTS.md`
   - note: Appending preserved papercut entries after fast-forward -> the first anchored edit used spaced path characters and failed; retry with the exact repository filename.
+- **2026-08-12T22:22:52Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Publishing the skill change -> origin/main advanced with concurrent wrap-it-up work and rejected the direct push; fetching and merging the remote branch was required before retrying.
