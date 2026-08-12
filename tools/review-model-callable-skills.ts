@@ -392,49 +392,274 @@ class Review {
 // CUSTOMIZE - author this section. Keep the review library above unchanged.
 // -----------------------------------------------------------------------------
 
-const REVIEW_TITLE = "Review items";
-const STATE_FILE = process.env.REVIEW_STATE_FILE ?? ".review-state/items.json";
-const RESULT_FILE =
-  process.env.REVIEW_RESULT_FILE ?? ".review-state/items.result.json";
+const { readdir } = require("node:fs/promises");
+const { homedir } = require("node:os");
+const { join } = require("node:path");
+
+type LockEntry = {
+  source?: string;
+  sourceType?: string;
+  sourceUrl?: string;
+  skillPath?: string;
+};
+
+type GlobalLock = {
+  skills?: Record<string, LockEntry>;
+};
+
+type Frontmatter = Record<string, string | boolean>;
+
+type SkillMetadata = {
+  title: string;
+  description: string;
+  modelCallable: boolean;
+};
+
+const REVIEW_TITLE = "Review model-callable installed skills";
+const AUDIT_HOME = process.env.SKILL_AUDITOR_HOME ?? homedir();
+const AGENTS_DIR = join(AUDIT_HOME, ".agents");
+const SKILLS_DIR =
+  process.env.SKILL_AUDITOR_SKILLS_DIR ?? join(AGENTS_DIR, "skills");
+const LOCK_FILE =
+  process.env.SKILL_AUDITOR_LOCK ??
+  (process.env.XDG_STATE_HOME
+    ? join(process.env.XDG_STATE_HOME, "skills", ".skill-lock.json")
+    : join(AGENTS_DIR, ".skill-lock.json"));
+const STATE_FILE =
+  process.env.SKILL_AUDITOR_STATE ??
+  join(AGENTS_DIR, "model-callable-skills-review.json");
 const POSITIVE_LABEL = "keep";
 const NEGATIVE_LABEL = "remove";
 
+function errorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error) {
+    return String(error.code);
+  }
+  return undefined;
+}
+
+function parseScalar(value: string): string | boolean {
+  const trimmed = value.trim();
+  if (trimmed.toLowerCase() === "true") return true;
+  if (trimmed.toLowerCase() === "false") return false;
+  if (
+    trimmed.length >= 2 &&
+    trimmed.startsWith("\"") &&
+    trimmed.endsWith("\"")
+  ) {
+    try {
+      return JSON.parse(trimmed) as string;
+    } catch {
+      return trimmed.slice(1, -1);
+    }
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1).replaceAll("''", "'");
+  }
+  return trimmed;
+}
+
+function parseFrontmatter(raw: string): { fields: Frontmatter; body: string } {
+  const content = raw.startsWith("\uFEFF") ? raw.slice(1) : raw;
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) return { fields: {}, body: content };
+
+  const fields: Frontmatter = {};
+  const lines = match[1].split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const field = lines[index].match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!field) continue;
+
+    const [, key, value] = field;
+    if (/^[>|][-+]?$/.test(value.trim())) {
+      const block: string[] = [];
+      for (let next = index + 1; next < lines.length; next += 1) {
+        if (lines[next].trim() === "" || /^\s/.test(lines[next])) {
+          block.push(lines[next].trim());
+          index = next;
+          continue;
+        }
+        break;
+      }
+      fields[key] = value.trim().startsWith(">")
+        ? block.filter(Boolean).join(" ")
+        : block.join("\n");
+      continue;
+    }
+
+    fields[key] = parseScalar(value);
+  }
+
+  return { fields, body: content.slice(match[0].length) };
+}
+
+function compact(value: string, maxLength = 320): string {
+  const singleLine = value.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= maxLength) return singleLine;
+  return `${singleLine.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function readSkillMetadata(raw: string, skillName: string): SkillMetadata {
+  const { fields, body } = parseFrontmatter(raw);
+  const heading = body.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]?.trim();
+  const firstParagraph = body
+    .replace(/^#.*$/gm, "")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.replace(/[`*_]/g, "").trim())
+    .find(Boolean);
+  const description =
+    typeof fields.description === "string" && fields.description.trim()
+      ? fields.description
+      : firstParagraph || "No description found.";
+  const disabled =
+    fields["disable-model-invocation"] === true ||
+    fields["disable-model-invocation"] === "true";
+
+  return {
+    title: compact(heading || String(fields.name || skillName), 160),
+    description: compact(description),
+    modelCallable: !disabled,
+  };
+}
+
+function assertSafeSkillName(name: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    throw new Error(`Unsafe installed skill name: ${JSON.stringify(name)}`);
+  }
+}
+
+async function readGlobalLock(): Promise<GlobalLock> {
+  try {
+    const content = await readFile(LOCK_FILE, "utf8");
+    const lock = JSON.parse(content) as GlobalLock;
+    if (!lock || typeof lock !== "object") {
+      throw new Error("the lock file is not an object");
+    }
+    return lock;
+  } catch (error: unknown) {
+    if (errorCode(error) === "ENOENT") return { skills: {} };
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read ${LOCK_FILE}: ${message}`);
+  }
+}
+
+async function installedSkillNames(): Promise<string[]> {
+  try {
+    const entries = await readdir(SKILLS_DIR, { withFileTypes: true });
+    return entries
+      .filter(
+        (entry) =>
+          !entry.name.startsWith(".") &&
+          (entry.isDirectory() || entry.isSymbolicLink()),
+      )
+      .map((entry) => entry.name)
+      .sort((left, right) =>
+        left.localeCompare(right, undefined, { sensitivity: "base" }),
+      );
+  } catch (error: unknown) {
+    if (errorCode(error) === "ENOENT") return [];
+    throw error;
+  }
+}
+
 async function loadItems(): Promise<ReviewItem[]> {
-  return [
-    {
-      id: "example-item",
-      title: "Example item",
-      description: "Replace this card with an item from the real source.",
-      details: [["Origin", "Replace with provenance"]],
-    },
-  ];
+  const [names, lock] = await Promise.all([
+    installedSkillNames(),
+    readGlobalLock(),
+  ]);
+  const items: ReviewItem[] = [];
+
+  for (const name of names) {
+    assertSafeSkillName(name);
+    const skillFile = join(SKILLS_DIR, name, "SKILL.md");
+    let raw: string;
+    try {
+      raw = await readFile(skillFile, "utf8");
+    } catch (error: unknown) {
+      if (errorCode(error) === "ENOENT") continue;
+      throw error;
+    }
+
+    const metadata = readSkillMetadata(raw, name);
+    if (!metadata.modelCallable) continue;
+
+    const lockEntry = lock.skills?.[name];
+    const source =
+      lockEntry?.sourceUrl ||
+      lockEntry?.source ||
+      "Unknown: no global lock entry";
+    items.push({
+      id: name,
+      title: metadata.title,
+      description: metadata.description,
+      details: [
+        ["Name", name],
+        ["Source", source],
+        ["Source type", lockEntry?.sourceType || "unknown"],
+        ["Source path", lockEntry?.skillPath || "not in global lock"],
+        ["Installed path", skillFile],
+        ["Model invocation", "allowed directly"],
+      ],
+    });
+  }
+
+  return items;
+}
+
+function removalCommand(names: string[]): string[] {
+  return ["skills", "remove", "-g", ...names, "-y"];
 }
 
 function printActionPlan(outcome: ReviewOutcome): void {
-  console.log("\nAction plan:");
-  for (const item of outcome.rejected) {
-    console.log(`- write the ${NEGATIVE_LABEL} decision for ${item.id}`);
+  if (outcome.rejected.length === 0) {
+    console.log("\nNo skills were rejected. No cleanup is needed.");
+    return;
   }
-  for (const item of outcome.approved) {
-    console.log(`- write the ${POSITIVE_LABEL} decision for ${item.id}`);
+
+  const names = outcome.rejected.map((item) => item.id);
+  console.log(`\nCleanup plan: remove ${names.length} skill(s)`);
+  for (const name of names) console.log(`- ${name}`);
+  console.log(`\nCommand: npx ${removalCommand(names).join(" ")}`);
+}
+
+async function verifyRemoved(names: string[]): Promise<void> {
+  const lock = await readGlobalLock();
+  const lockLeftovers = names.filter((name) =>
+    Object.hasOwn(lock.skills ?? {}, name),
+  );
+  const installedLeftovers: string[] = [];
+  for (const name of names) {
+    try {
+      await readFile(join(SKILLS_DIR, name), "utf8");
+      installedLeftovers.push(name);
+    } catch (error: unknown) {
+      if (errorCode(error) !== "ENOENT") installedLeftovers.push(name);
+    }
+  }
+
+  const leftovers = [...new Set([...lockLeftovers, ...installedLeftovers])];
+  if (leftovers.length > 0) {
+    throw new Error(`Cleanup left these skills installed: ${leftovers.join(", ")}`);
   }
 }
 
 async function applyOutcome(outcome: ReviewOutcome): Promise<void> {
-  await mkdir(dirname(RESULT_FILE), { recursive: true });
-  await writeFile(
-    RESULT_FILE,
-    `${JSON.stringify(
-      {
-        approved: outcome.approved.map((item) => item.id),
-        rejected: outcome.rejected.map((item) => item.id),
-      },
-      null,
-      2,
-    )}\n`,
-    "utf8",
-  );
-  console.log(`Wrote the result to ${RESULT_FILE}`);
+  const names = outcome.rejected.map((item) => item.id);
+  if (names.length === 0) return;
+
+  const npx = process.env.SKILL_AUDITOR_NPX ?? "npx";
+  const result = spawnSync(npx, removalCommand(names), {
+    env: {
+      ...process.env,
+      HOME: AUDIT_HOME,
+    },
+    stdio: "inherit",
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${npx} skills remove exited with status ${result.status}`);
+  }
+  await verifyRemoved(names);
 }
 
 async function main(): Promise<void> {
@@ -445,6 +670,7 @@ async function main(): Promise<void> {
   }
 
   const items = await loadItems();
+  console.log(`Found ${items.length} model-callable installed skill(s).`);
   const review = new Review({
     title: REVIEW_TITLE,
     stateFile: STATE_FILE,
@@ -456,23 +682,27 @@ async function main(): Promise<void> {
   if (!outcome) return;
 
   if (args.dryRun) {
-    console.log("\nDry run only. No action was applied.");
+    console.log("\nDry run only. No installed skill or lock entry was changed.");
     return;
   }
 
   printActionPlan(outcome);
-  if (!(await confirmExact("Type APPLY to continue: ", "APPLY"))) {
-    console.log("Action skipped. The saved review can resume later.");
+  if (outcome.rejected.length === 0) {
+    await review.clearState();
+    return;
+  }
+  if (!(await confirmExact("Type CLEANUP to remove rejected skills: ", "CLEANUP"))) {
+    console.log("Cleanup skipped. The saved review can resume later.");
     return;
   }
 
   await applyOutcome(outcome);
   await review.clearState();
-  console.log("Action complete. The saved review was removed.");
+  console.log("Cleanup complete. Rejected skills and lock entries were removed.");
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`\nDecision wizard stopped: ${message}`);
+  console.error(`\nSkill review stopped: ${message}`);
   process.exitCode = 1;
 });
