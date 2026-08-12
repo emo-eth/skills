@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "wall-clock",
+  "version": "0.1.0",
+  "description": "Keep agent work inside a deadline with time-aware planning, bounded assignments, and explicit wrap-up reports.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "deadlines",
+    "time budgets",
+    "agent planning",
+    "wrap-up"
+  ]
+}
