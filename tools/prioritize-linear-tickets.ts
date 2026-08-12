@@ -8,7 +8,6 @@
 // algorithm lives in prioritize-core.ts (shared, dependency-free).
 
 import { createHash } from "node:crypto";
-import { createInterface } from "node:readline/promises";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
@@ -20,13 +19,10 @@ import {
   type Ticket,
 } from "./prioritize-core.ts";
 import { fetchAssignedNotCompleted, setPriority } from "./linear-client.ts";
+import { clearScreen, confirmExact, paint, rawChoice } from "./prompt.ts";
 
 const STATE_VERSION = 1;
-const RESET = "\u001b[0m";
 const BOLD = "\u001b[1m";
-const useColor = Boolean(
-  process.stdout.isTTY && process.env.NO_COLOR === undefined,
-);
 
 const DEFAULT_STATE_FILE = ".prioritize-state.json";
 const DEFAULT_OUTPUT_FILE = "top-k.json";
@@ -71,16 +67,6 @@ type ReviewState = {
   updatedAt: string;
 };
 
-function paint(value: string, color: string): string {
-  return useColor ? `${color}${value}${RESET}` : value;
-}
-
-function clearScreen(): void {
-  if (process.stdout.isTTY) {
-    process.stdout.write("\u001b[2J\u001b[3J\u001b[H");
-  }
-}
-
 function errorCode(error: unknown): string | undefined {
   if (error && typeof error === "object" && "code" in error) {
     return String(error.code);
@@ -94,7 +80,7 @@ function parseArguments(args: string[]): Arguments {
     top: 10,
     state: DEFAULT_STATE_FILE,
     output: undefined,
-    priorityTarget: 1,
+    priorityTarget: 2,
     team: undefined,
     dryRun: false,
     reset: false,
@@ -174,7 +160,8 @@ Controls in a terminal:
 
 Options:
   -k, --top <k>             top tickets to select; written to Linear at the end
-      --priority <1-4>      Linear priority to set on the top-k (default 1=Urgent)
+      --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
+                           star-linear-tickets.ts for Urgent)
       --team <key>          only rank issues in this team (e.g. NAT); default all
       --dry-run             rank and show the plan but do NOT write to Linear
   -i, --input <path|->      instead of Linear, rank a local JSON file ('-' = stdin)
@@ -275,50 +262,6 @@ async function removeState(stateFile: string): Promise<void> {
   await rm(stateFile, { force: true });
 }
 
-// Scripted (non-TTY) answers for tests and piping. Read lazily from the stdin
-// stream so a human run or --help never blocks on a stream read.
-let scriptedInput: string[] | undefined;
-
-async function readScriptedAnswers(): Promise<string[]> {
-  if (scriptedInput !== undefined) return scriptedInput;
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
-  const chunks: Buffer[] = [];
-  process.stdin.on("data", (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)));
-  process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-  process.stdin.on("error", reject);
-  process.stdin.resume();
-  const content = await promise;
-  scriptedInput = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return scriptedInput;
-}
-
-async function nextScriptedAnswer(): Promise<string | undefined> {
-  if (process.stdin.isTTY) return undefined;
-  const answers = await readScriptedAnswers();
-  return answers.shift();
-}
-
-async function readLine(prompt: string): Promise<string> {
-  if (!process.stdin.isTTY) {
-    const answer = await nextScriptedAnswer();
-    return answer ?? "";
-  }
-  const reader = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    return await reader.question(prompt);
-  } finally {
-    reader.close();
-  }
-}
-
-async function confirmExact(prompt: string, expected: string): Promise<boolean> {
-  const answer = await readLine(prompt);
-  return answer.trim() === expected;
-}
-
 function normalizeChoice(value: string): ComparisonResult | "pause" | undefined {
   const answer = value.trim().toLowerCase();
   if (["l", "left", "[d", "[b"].includes(answer)) return "left";
@@ -329,54 +272,26 @@ function normalizeChoice(value: string): ComparisonResult | "pause" | undefined 
 }
 
 async function chooseComparison(): Promise<ComparisonResult | "pause"> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    const answer = await nextScriptedAnswer();
-    return answer ? normalizeChoice(answer) ?? "pause" : "pause";
-  }
-
-  if (typeof process.stdin.setRawMode !== "function") {
-    return readLine("Which is more important? [L/R/T/q]: ").then(
-      (answer) => normalizeChoice(answer) ?? "pause",
-    );
-  }
-
-  process.stdin.resume();
-  process.stdin.setRawMode(true);
-  return new Promise<ComparisonResult | "pause">((resolve) => {
-    const finish = (result: ComparisonResult | "pause"): void => {
-      process.stdin.setRawMode(false);
-      process.stdin.pause();
-      process.stdin.off("data", onData);
-      process.stdout.write("\n");
-      resolve(result);
-    };
-
-    const onData = (chunk: Buffer | string): void => {
-      const input = chunk.toString();
-      if (input.includes("\u0003")) return finish("pause");
-      if (input.includes("\u001b[C") || input.includes("\u001bOC")) {
-        return finish("right");
-      }
-      if (input.includes("\u001b[D") || input.includes("\u001bOD")) {
-        return finish("left");
-      }
-      const result = normalizeChoice(input);
-      if (result) finish(result);
-    };
-
-    process.stdin.on("data", onData);
-  });
+  const result = await rawChoice(
+    "Which is more important? [L/R/T/q]: ",
+    normalizeChoice,
+  );
+  return result as ComparisonResult | "pause";
 }
 
 function renderPair(
   left: Ticket,
   right: Ticket,
   decided: number,
+  ticketsTotal: number,
+  top: number,
+  maxComparisons: number,
 ): void {
   clearScreen();
   const line = "-".repeat(72);
+  const remaining = Math.max(0, maxComparisons - decided);
   console.log(
-    `Top-k prioritization  |  ${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  DECIDED ${decided}`,
+    `TOP-K  |  ${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  TOP ${top} of ${ticketsTotal} tickets  |  ${decided} compared, ~${remaining} left (est)`,
   );
   console.log(line);
   console.log(`${paint("LEFT (L) - candidate", BOLD)}`);
@@ -501,6 +416,8 @@ async function main(): Promise<void> {
 
   let decided = 0;
   let ranked: Ticket[] | undefined;
+  // Worst-case pairwise comparison upper bound for binary-insert top-k.
+  const maxComparisons = Math.ceil(tickets.length * Math.log2(args.top + 1));
 
   // Iterative driver: ask exactly one comparison per pass, then rerun the core.
   for (let guard = 0; guard < tickets.length * tickets.length; guard += 1) {
@@ -516,7 +433,14 @@ async function main(): Promise<void> {
       throw new Error(`Internal error: core requested a cached comparison (${key}).`);
     }
 
-    renderPair(left, right, Object.keys(comparisons).length);
+    renderPair(
+      left,
+      right,
+      decided,
+      tickets.length,
+      args.top,
+      maxComparisons,
+    );
     const choice = await chooseComparison();
     if (choice === "pause") {
       await writeState(stateFile, snapshot, args.top, comparisons);
