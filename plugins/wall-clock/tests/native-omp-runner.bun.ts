@@ -88,12 +88,17 @@ async function createMockTaskSession(root: string, responses: any[]) {
   return { ...created, authStorage, mock, sessionManager };
 }
 
-function initializeRunner(session: any, sessionManager: any, abort: () => void = () => undefined) {
+function initializeRunner(
+  session: any,
+  sessionManager: any,
+  abort: () => void = () => undefined,
+  sendUserMessage: (content: unknown, options: unknown) => void = () => undefined,
+) {
   const runner = session.extensionRunner;
   expect(runner).toBeDefined();
   runner.initialize({
     sendMessage: () => undefined,
-    sendUserMessage: () => undefined,
+    sendUserMessage,
     appendEntry: (customType: string, data?: unknown) => { sessionManager.appendCustomEntry(customType, data); },
     setLabel: () => undefined,
     getActiveTools: () => [],
@@ -144,7 +149,13 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
     contextFiles: [],
   });
   try {
-    const runner = initializeRunner(session, sessionManager, () => runningSignal?.abort());
+    const submittedUserMessages: Array<{ content: unknown; options: unknown }> = [];
+    const runner = initializeRunner(
+      session,
+      sessionManager,
+      () => runningSignal?.abort(),
+      (content, options) => { submittedUserMessages.push({ content, options }); },
+    );
     await runner.emit({ type: "session_start" });
     const command = runner.getCommand("wallclock");
     expect(command).toBeDefined();
@@ -155,6 +166,10 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
     const blocked = await runner.emitToolCall({ type: "tool_call", toolCallId: "late", toolName: "read", input: { path: "README.md" } } as any);
     expect(blocked?.block).toBe(true);
     expect(blocked?.reason ?? "").toMatch(/deadline has expired/);
+
+    await command!.handler("stop", runner.createCommandContext());
+    await command!.handler("5m fix merge conflicts in all open PRs", runner.createCommandContext());
+    expect(submittedUserMessages).toEqual([{ content: "fix merge conflicts in all open PRs", options: undefined }]);
 
     await command!.handler("stop", runner.createCommandContext());
     await command!.handler("start 30ms abort-running", runner.createCommandContext());
@@ -168,6 +183,40 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
     expect(Date.now() - startedAt).toBeLessThan(250);
   } finally {
     await session.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("OMP native wallclock command starts the trailing prompt after activation", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-prompt-"));
+  const created = await createMockTaskSession(root, [
+    { content: [{ type: "text", text: "prompt received" }] },
+  ]);
+  let promptTask: Promise<void> | undefined;
+  try {
+    const runner = initializeRunner(
+      created.session,
+      created.sessionManager,
+      () => undefined,
+      (content, options) => {
+        promptTask = created.session.sendUserMessage(content, options);
+      },
+    );
+    await runner.emit({ type: "session_start" });
+
+    await runner.getCommand("wallclock")!.handler(
+      "5m fix merge conflicts in all open PRs",
+      runner.createCommandContext(),
+    );
+    expect(promptTask).toBeDefined();
+    await promptTask;
+
+    expect(created.mock.calls).toHaveLength(1);
+    expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("fix merge conflicts in all open PRs");
+    expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("Expiry policy: abort-running");
+  } finally {
+    await created.session.dispose();
+    created.authStorage.close();
     rmSync(root, { recursive: true, force: true });
   }
 }, 30_000);

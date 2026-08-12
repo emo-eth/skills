@@ -339,3 +339,9 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T21:06:40.601Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: Installing the native OMP wall-clock plugin required a full OMP process restart; /reload-plugins did not activate the newly installed npm plugin. The install and initialization docs need to state this restart requirement explicitly.
+- **2026-08-12T21:31:21.711Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: Running the Wall Clock native runner checks from the main checkout failed because plugins/wall-clock/node_modules was absent, while another worktree had the dependencies. The test command reports host-loading failures instead of first identifying the missing npm install setup.
+- **2026-08-12T21:36:39.947Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Searching documentation for backticked policy names -> a double-quoted rg pattern let zsh execute the backticks as commands. Use single-quoted search patterns whenever Markdown code spans appear in shell input.

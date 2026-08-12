@@ -121,3 +121,13 @@ Consequences: Restore fails closed and reports the error. Other sessions remain 
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## D13 - 2026-08-12 - Native command has a direct-start form
+
+Decision: The native `/wallclock` command accepts `[start] <deadline> [block-new|abort-running] [prompt]`. `start` is optional, an omitted policy defaults to `abort-running`, and `abort` is an accepted short spelling. The adapter activates the contract before it submits a trailing prompt. An idle host starts a turn; a running host receives normal steering input.
+Why: The required command words made initialization clumsy and prevented one command from both starting enforcement and starting the requested work.
+Alternatives: Require `start` and an explicit policy every time (rejected because it adds ceremony to the common case); submit the prompt before activation (rejected because its first tool call could escape the contract); use one delivery mode in every host state (rejected because Pi and OMP distinguish idle turn start from active steering).
+Consequences: D7 still requires every active contract to carry an enforceable policy, but its requirement for an explicit user choice at native slash-command invocation is superseded. Native operation tools keep their explicit canonical policy field. Prompt delivery fails before activation when the host has no user-message API.
+Status: active
+Scope: v0
+Load-bearing: no
