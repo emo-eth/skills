@@ -13,7 +13,7 @@ A daily standup is one short decision document. It answers:
 3. What is blocked?
 4. What must the owner decide?
 
-Do not read or create a glossary for a standup. Use normal words. Do not use
+Use normal language that humans would use and easily parse. For example, do not use phrases like
 `goal path`, `done-when`, `unattached work`, or `evidence state` in the
 standup. Say `why this matters`, `how we will prove it`, `open work`, and
 `current status` instead.
