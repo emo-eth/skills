@@ -321,6 +321,9 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T16:36:32.311Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While merging the nested Wall Clock specification into current main, docs/STATE.md conflicted because two independent changes appended rows to the same topic table. Keep project-state topics in separate included files or use a stable sorted insertion rule to reduce append conflicts.
+- **2026-08-12T20:54:19.827Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Trying Wall Clock on another computer exposed a command-name collision: /wall-clock invokes the portable skill and its fail-closed MCP path, while /wallclock invokes native OMP enforcement. Installation docs need to put this distinction and a native-load check before all usage examples.
 - **2026-08-12T19:15:48Z** `gpt-5.6-luna`
   - cwd: `.`
   - files: `PAPERCUTS.md`
@@ -333,3 +336,12 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `PAPERCUTS.md`
   - note: Running the wall-clock suite after installing dependencies -> the existing OMP MCP discovery test failed because /tools output no longer contained the expected mcp__wall_clock_wall_clock_wallclock_* names; the focused host and real OMP runner tests passed, so the failure is outside the fast-lane path.
+- **2026-08-12T21:06:40.601Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Installing the native OMP wall-clock plugin required a full OMP process restart; /reload-plugins did not activate the newly installed npm plugin. The install and initialization docs need to state this restart requirement explicitly.
+- **2026-08-12T21:31:21.711Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: Running the Wall Clock native runner checks from the main checkout failed because plugins/wall-clock/node_modules was absent, while another worktree had the dependencies. The test command reports host-loading failures instead of first identifying the missing npm install setup.
+- **2026-08-12T21:36:39.947Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Searching documentation for backticked policy names -> a double-quoted rg pattern let zsh execute the backticks as commands. Use single-quoted search patterns whenever Markdown code spans appear in shell input.

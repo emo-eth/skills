@@ -41,10 +41,11 @@ test("Pi native ExtensionRunner injects context and blocks a late tool call", { 
   });
   try {
     const runner = session.extensionRunner;
+    const submittedUserMessages: Array<{ content: unknown; options: unknown }> = [];
     let runningSignal: AbortController | undefined;
     runner.bindCore({
       sendMessage: () => undefined,
-      sendUserMessage: () => undefined,
+      sendUserMessage: (content: unknown, options: unknown) => { submittedUserMessages.push({ content, options }); },
       appendEntry: (customType: string, data?: unknown) => { sessionManager.appendCustomEntry(customType, data); },
       setSessionName: async () => undefined,
       getSessionName: () => sessionManager.getSessionName(),
@@ -79,6 +80,10 @@ test("Pi native ExtensionRunner injects context and blocks a late tool call", { 
     const blocked = await runner.emitToolCall({ type: "tool_call", toolCallId: "late", toolName: "read", input: { path: "README.md" } } as any);
     assert.equal(blocked?.block, true);
     assert.match(blocked?.reason ?? "", /deadline has expired/);
+
+    await command.handler("stop", runner.createCommandContext());
+    await command.handler("5m fix merge conflicts in all open PRs", runner.createCommandContext());
+    assert.deepEqual(submittedUserMessages, [{ content: "fix merge conflicts in all open PRs", options: undefined }]);
 
     runningSignal = new AbortController();
     await command.handler("stop", runner.createCommandContext());
