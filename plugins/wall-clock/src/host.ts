@@ -18,6 +18,7 @@ export type RuntimeContext = {
   assignmentId?: string;
   sessionManager?: { getSessionFile?: () => string | undefined; getEntries?: () => unknown[]; getBranch?: () => unknown[] };
   ui?: { notify?: (message: string, level?: string) => void; setStatus?: (key: string, value: string | undefined) => void };
+  signal?: AbortSignal;
   abort?: () => void | Promise<void>;
 };
 
@@ -33,19 +34,57 @@ export type RuntimeHost = {
 
 type AbortRequest = {
   sessionId: string;
-  actionIds: string[];
-  context?: RuntimeContext;
+  assignmentId?: string;
+  targets: Array<{ actionId: string; context: RuntimeContext }>;
 };
 
 export type HostEnforcement = {
   name: string;
   canBlockNew: boolean;
+  canAbortAction?: (proposal: ToolProposal, context: RuntimeContext | undefined) => boolean;
   abortRunning?: (request: AbortRequest) => void | Promise<void>;
-  abortObserved?: (event: unknown) => boolean;
+  abortObserved?: (event: unknown, context: RuntimeContext | undefined) => boolean;
 };
+
+type ChildBinding = {
+  parentSessionId: string;
+  assignmentId: string;
+};
+
+type ActionLink = {
+  sessionId: string;
+  assignmentId?: string;
+  actionId: string;
+  directSessionId: string;
+  rawActionId: string;
+  action: ActionClass;
+};
+
+export type HostCoordination = {
+  controller: WallClockController;
+  childBindings: Map<string, ChildBinding>;
+  actionAssignments: Map<string, ActionLink>;
+  actionContexts: Map<string, RuntimeContext>;
+  persistenceOwners: Map<string, () => void>;
+  timers: Map<string, { handle: unknown; cancel: (handle: unknown) => void }>;
+  processedLifecycleEvents: Set<string>;
+};
+
+export function createHostCoordination(controller = new WallClockController()): HostCoordination {
+  return {
+    controller,
+    childBindings: new Map(),
+    actionAssignments: new Map(),
+    actionContexts: new Map(),
+    persistenceOwners: new Map(),
+    timers: new Map(),
+    processedLifecycleEvents: new Set(),
+  };
+}
 
 export type HostExtensionOptions = {
   controller?: WallClockController;
+  coordination?: HostCoordination;
   clock?: Clock;
   enforcement?: HostEnforcement;
   schedule?: (callback: () => void, delayMs: number) => unknown;
@@ -57,21 +96,17 @@ type Scope = {
   assignmentId?: string;
 };
 
-type ChildBinding = {
-  parentSessionId: string;
-  assignmentId: string;
-};
-
 export function installHostExtension(host: RuntimeHost, options: HostExtensionOptions = {}): WallClockController {
-  const controller = options.controller ?? new WallClockController(options.clock);
+  const coordination = options.coordination ?? createHostCoordination(options.controller ?? new WallClockController(options.clock));
+  const controller = coordination.controller;
   const enforcement = options.enforcement;
-  const schedule = options.schedule ?? ((callback: () => void, delayMs: number) => setTimeout(callback, delayMs));
+  const schedule = options.schedule ?? ((callback: () => void, delayMs: number) => {
+    const handle = setTimeout(callback, delayMs);
+    handle.unref?.();
+    return handle;
+  });
   const cancelSchedule = options.cancelSchedule ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
-  const timers = new Map<string, unknown>();
-  const latestContexts = new Map<string, RuntimeContext>();
-  const childBindings = new Map<string, ChildBinding>();
-  const actionAssignments = new Map<string, { sessionId: string; assignmentId?: string }>();
-  let currentSessionId: string | undefined;
+  let currentDirectSessionId: string | undefined;
   let actionSequence = 0;
 
   const directSessionId = (ctx?: RuntimeContext): string | undefined => {
@@ -82,39 +117,68 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   const scopeFor = (ctx?: RuntimeContext, event?: any): Scope | undefined => {
     const direct = directSessionId(ctx) ?? (typeof event?.sessionId === "string" ? event.sessionId : undefined);
-    const child = direct ? childBindings.get(direct) : undefined;
+    const child = direct ? coordination.childBindings.get(direct) : undefined;
     if (child) return { sessionId: child.parentSessionId, assignmentId: child.assignmentId };
     const assignmentId = typeof event?.assignmentId === "string"
       ? event.assignmentId
       : typeof ctx?.assignmentId === "string" ? ctx.assignmentId : undefined;
-    const sessionId = direct ?? currentSessionId;
+    const currentBinding = currentDirectSessionId ? coordination.childBindings.get(currentDirectSessionId) : undefined;
+    const sessionId = direct ?? currentBinding?.parentSessionId ?? currentDirectSessionId;
+    if (assignmentId === undefined && currentBinding) return { sessionId: currentBinding.parentSessionId, assignmentId: currentBinding.assignmentId };
     return sessionId ? { sessionId, assignmentId } : undefined;
   };
 
-  const rememberContext = (ctx?: RuntimeContext, event?: any): Scope | undefined => {
-    const direct = directSessionId(ctx) ?? (typeof event?.sessionId === "string" ? event.sessionId : undefined);
-    if (direct) latestContexts.set(direct, ctx ?? {});
-    const scope = scopeFor(ctx, event);
-    if (scope && !childBindings.has(direct ?? "")) currentSessionId = scope.sessionId;
-    return scope;
-  };
-
-  const requireStableSession = (ctx?: RuntimeContext): string => {
-    const id = directSessionId(ctx) ?? currentSessionId;
-    if (!id) throw new Error("Wall-clock activation requires a stable host session identifier");
-    return id;
-  };
-
-  const persist = (sessionId: string): void => {
+  const writeOwnedState = (sessionId: string): void => {
     const state = controller.snapshot(sessionId);
     if (state) host.appendEntry?.("wall-clock-state", state);
   };
 
-  const clearDeadline = (sessionId: string): void => {
-    const timer = timers.get(sessionId);
+  const rememberContext = (ctx?: RuntimeContext, event?: any): Scope | undefined => {
+    const direct = directSessionId(ctx) ?? (typeof event?.sessionId === "string" ? event.sessionId : undefined);
+    if (direct) currentDirectSessionId = direct;
+    const scope = scopeFor(ctx, event);
+    if (direct && scope?.sessionId === direct) coordination.persistenceOwners.set(direct, () => writeOwnedState(direct));
+    return scope;
+  };
+
+  const requireStableScope = (ctx?: RuntimeContext): Scope => {
+    const scope = rememberContext(ctx);
+    if (!scope) throw new Error("Wall-clock requires a stable host session identifier");
+    return scope;
+  };
+
+  const requireOwnerSession = (ctx?: RuntimeContext): string => {
+    const direct = directSessionId(ctx) ?? currentDirectSessionId;
+    if (!direct) throw new Error("Wall-clock activation requires a stable host session identifier");
+    if (coordination.childBindings.has(direct)) {
+      throw new Error("Wall-clock activation is owned by this child session's parent");
+    }
+    currentDirectSessionId = direct;
+    coordination.persistenceOwners.set(direct, () => writeOwnedState(direct));
+    return direct;
+  };
+
+  const persist = (sessionId: string): void => {
+    coordination.persistenceOwners.get(sessionId)?.();
+  };
+
+  const clearDeadline = (sessionId: string, assignmentId?: string): void => {
+    const key = deadlineKey(sessionId, assignmentId);
+    const timer = coordination.timers.get(key);
     if (timer !== undefined) {
-      cancelSchedule(timer);
-      timers.delete(sessionId);
+      timer.cancel(timer.handle);
+      coordination.timers.delete(key);
+    }
+  };
+
+  const clearSessionDeadlines = (sessionId: string): void => {
+    const prefix = `${encodeURIComponent(sessionId)}:`;
+    for (const key of coordination.timers.keys()) {
+      if (key.startsWith(prefix)) {
+        const timer = coordination.timers.get(key);
+        if (timer) timer.cancel(timer.handle);
+        coordination.timers.delete(key);
+      }
     }
   };
 
@@ -122,47 +186,57 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (!enforcement?.canBlockNew) {
       throw new Error("Wall-clock activation rejected: this host has no tested pre-action blocking seam");
     }
-    if (expiryPolicy === "abort-running" && (!enforcement.abortRunning || !enforcement.abortObserved)) {
+    if (expiryPolicy === "abort-running" && (!enforcement.abortRunning || !enforcement.abortObserved || !enforcement.canAbortAction)) {
       throw new Error("Wall-clock activation rejected: this host cannot prove abort-running enforcement");
     }
   };
 
-  const scheduleDeadline = (sessionId: string, ctx?: RuntimeContext): void => {
-    clearDeadline(sessionId);
-    const status = controller.status(sessionId);
+  const scheduleDeadline = (sessionId: string, assignmentId?: string, ctx?: RuntimeContext): void => {
+    clearDeadline(sessionId, assignmentId);
+    const status = controller.status(sessionId, assignmentId);
     if (!status.active || status.deadlineMs === undefined) return;
     const delayMs = Math.max(0, status.deadlineMs - (options.clock?.now() ?? Date.now()));
     const timer = schedule(() => {
-      void handleExpiry(sessionId, ctx).catch((error) => notify(ctx, `Wall-clock expiry handling failed: ${errorMessage(error)}`, "error"));
+      void handleExpiry(sessionId, assignmentId, ctx).catch((error) => notify(ctx, `Wall-clock expiry handling failed: ${errorMessage(error)}`, "error"));
     }, delayMs);
-    timers.set(sessionId, timer);
+    coordination.timers.set(deadlineKey(sessionId, assignmentId), { handle: timer, cancel: cancelSchedule });
   };
 
-  const handleExpiry = async (sessionId: string, fallbackContext?: RuntimeContext): Promise<void> => {
-    const status = controller.status(sessionId);
+  const handleExpiry = async (sessionId: string, assignmentId?: string, fallbackContext?: RuntimeContext): Promise<void> => {
+    const status = controller.status(sessionId, assignmentId);
     if (!status.active || status.phase !== "expired" || status.expiryPolicy !== "abort-running") return;
-    const actions = controller.runningActions(sessionId);
+    const actions = controller.runningActions(sessionId).filter((action) =>
+      action.abortRequestedAt === undefined && (assignmentId === undefined || action.assignmentId === assignmentId));
     if (actions.length === 0) return;
-    const actionIds = actions.map((action) => action.actionId);
-    for (const actionId of actionIds) controller.requestAbort(sessionId, actionId);
-    await enforcement?.abortRunning?.({ sessionId, actionIds, context: fallbackContext ?? latestContexts.get(sessionId) });
+    const targets = actions.map((action) => ({
+      actionId: action.actionId,
+      context: coordination.actionContexts.get(action.actionId) ?? fallbackContext,
+    }));
+    if (targets.some((target) => !target.context)) {
+      throw new Error(`The ${enforcement?.name ?? "host"} lost an executor context for an admitted action`);
+    }
+    for (const action of actions) controller.requestAbort(sessionId, action.actionId);
+    await enforcement?.abortRunning?.({
+      sessionId,
+      assignmentId,
+      targets: targets as Array<{ actionId: string; context: RuntimeContext }>,
+    });
   };
 
   const activateSession = (ctx: RuntimeContext | undefined, input: ActivationInput, plan: PlanItem[] = []) => {
-    const sessionId = requireStableSession(ctx);
+    const sessionId = requireOwnerSession(ctx);
     ensureActivationSupport(input.expiryPolicy);
     const status = controller.activate(sessionId, input, plan);
-    latestContexts.set(sessionId, ctx ?? latestContexts.get(sessionId) ?? {});
-    scheduleDeadline(sessionId, ctx);
+    scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
     return status;
   };
 
   const stopSession = (ctx: RuntimeContext | undefined) => {
-    const sessionId = requireStableSession(ctx);
+    const sessionId = requireOwnerSession(ctx);
     controller.stop(sessionId);
-    clearDeadline(sessionId);
+    clearSessionDeadlines(sessionId);
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
     return controller.status(sessionId);
@@ -171,12 +245,37 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const restoreSession = async (_event: any, ctx: RuntimeContext) => {
     const direct = directSessionId(ctx);
     if (!direct) return;
-    currentSessionId = direct;
-    latestContexts.set(direct, ctx);
+    const previousDirect = currentDirectSessionId;
+    if (previousDirect && previousDirect !== direct && !coordination.childBindings.has(previousDirect)) {
+      persist(previousDirect);
+      clearSessionDeadlines(previousDirect);
+      coordination.persistenceOwners.delete(previousDirect);
+    }
+    currentDirectSessionId = direct;
+    const child = coordination.childBindings.get(direct);
+    if (child) {
+      updateStatus(host, controller, child.parentSessionId, ctx, child.assignmentId);
+      return;
+    }
+    coordination.persistenceOwners.set(direct, () => writeOwnedState(direct));
+    clearSessionDeadlines(direct);
     const restored = stateFromEntries(ctx.sessionManager?.getEntries?.() ?? ctx.sessionManager?.getBranch?.() ?? [], direct);
+    if (restored === null) {
+      controller.discard(direct);
+      clearSessionDeadlines(direct);
+      notify(ctx, "Wall-clock state is malformed or belongs to another session; control is inactive", "error");
+      updateStatus(host, controller, direct, ctx);
+      return;
+    }
     if (restored) controller.restoreFromState(restored, direct);
-    else controller.restore(direct);
-    scheduleDeadline(direct, ctx);
+    else controller.discard(direct);
+    const snapshot = controller.snapshot(direct);
+    if (snapshot && !snapshot.stopped) {
+      scheduleDeadline(direct, undefined, ctx);
+      for (const assignment of snapshot.assignments) {
+        if (assignment.status === "active") scheduleDeadline(direct, assignment.id, ctx);
+      }
+    }
     updateStatus(host, controller, direct, ctx);
   };
 
@@ -197,8 +296,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         return;
       }
       if (command !== "status") throw new Error("Usage: /wallclock start 30m|5pm block-new|abort-running, /wallclock status, or /wallclock stop");
-      const sessionId = requireStableSession(ctx);
-      notify(ctx, `${controller.context(sessionId)}\nExpiry policy: ${controller.status(sessionId).expiryPolicy ?? "none"}`, "info");
+      const scope = requireStableScope(ctx);
+      notify(ctx, `${controller.context(scope.sessionId, scope.assignmentId)}\nExpiry policy: ${controller.status(scope.sessionId, scope.assignmentId).expiryPolicy ?? "none"}`, "info");
     },
   });
 
@@ -229,7 +328,14 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return undefined;
   });
 
-  host.on("after_provider_response", async (_event, ctx) => {
+  host.on("message_end", async (event, ctx) => {
+    const scope = rememberContext(ctx);
+    const role = event?.message?.role ?? event?.role;
+    if (scope && role === "assistant") controller.endInference(scope.sessionId);
+    return undefined;
+  });
+
+  host.on("turn_end", async (_event, ctx) => {
     const scope = rememberContext(ctx);
     if (scope) controller.endInference(scope.sessionId);
     return undefined;
@@ -238,7 +344,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("tool_execution_start", async (event, ctx) => {
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
-    const actionId = existingActionId(event);
+    const actionId = canonicalActionId(scope, existingActionId(event));
     if (actionId) controller.beginToolCall(scope.sessionId, actionId);
     return undefined;
   });
@@ -246,16 +352,21 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("tool_call", async (event, ctx) => {
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
+    if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
     const toolName = String(event?.toolName ?? event?.name ?? "unknown");
     const input = event?.input;
     const action = (event?.action as ActionClass | undefined) ?? classifyAction(toolName, input);
-    const actionId = existingActionId(event) ?? `wall-clock-action-${++actionSequence}`;
-    if (input && typeof input === "object" && !Array.isArray(input) && "wallClockAssignmentId" in input) {
-      const requested = (input as Record<string, unknown>).wallClockAssignmentId;
-      if (typeof requested === "string" && requested.trim()) event.assignmentId = requested;
-      delete (input as Record<string, unknown>).wallClockAssignmentId;
+    const nativeTool = toolName.toLowerCase().startsWith("wallclock_");
+    const suppliedActionId = existingActionId(event);
+    if (!nativeTool && controller.status(scope.sessionId, scope.assignmentId).expiryPolicy === "abort-running" && !suppliedActionId) {
+      return { block: true, reason: "Abort-running requires a host action identifier before execution" };
     }
-    const assignment = resolveAssignment(controller, scope.sessionId, event, action);
+    const rawActionId = suppliedActionId ?? `wall-clock-action-${++actionSequence}`;
+    const actionId = canonicalActionId(scope, rawActionId);
+    if (!actionId) throw new Error("Wall-clock could not create an action identifier");
+    const assignmentResolution = nativeTool ? {} : resolveAssignment(controller, scope.sessionId, input, action, scope.assignmentId);
+    if (assignmentResolution.reason) return { block: true, reason: assignmentResolution.reason };
+    const assignment = assignmentResolution.assignment;
     const assignmentId = assignment?.id ?? scope.assignmentId;
     controller.beginToolCall(scope.sessionId, actionId);
     const proposal: ToolProposal = {
@@ -271,12 +382,39 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       controller.endAction(scope.sessionId, actionId);
       return { block: true, reason: decision.reason };
     }
-    if (!isWallClockControlTool(toolName)) {
+    if (!nativeTool && controller.status(scope.sessionId, assignmentId).expiryPolicy === "abort-running") {
+      if (!enforcement?.canAbortAction?.(proposal, ctx)) {
+        controller.endAction(scope.sessionId, actionId);
+        return { block: true, reason: `Abort-running cannot admit ${toolName}: the ${enforcement?.name ?? "host"} cannot prove that this action can be aborted` };
+      }
+      const sameAbortDomainIsBusy = controller.runningActions(scope.sessionId).some((runningAction) => {
+        const runningContext = coordination.actionContexts.get(runningAction.actionId);
+        if (!runningContext) return true;
+        const runningDirectSessionId = directSessionId(runningContext);
+        const proposedDirectSessionId = directSessionId(ctx);
+        if (runningDirectSessionId && proposedDirectSessionId) return runningDirectSessionId === proposedDirectSessionId;
+        return runningContext.abort === ctx?.abort;
+      });
+      if (sameAbortDomainIsBusy) {
+        controller.endAction(scope.sessionId, actionId);
+        return { block: true, reason: "Abort-running allows only one admitted action at a time in each host session because its abort signal is session-wide" };
+      }
+    }
+    if (!nativeTool) {
       controller.startAction(scope.sessionId, actionId, toolName, action, assignmentId);
-      actionAssignments.set(actionId, { sessionId: scope.sessionId, assignmentId });
+      if (ctx) coordination.actionContexts.set(actionId, ctx);
+      const actionDirectSessionId = directSessionId(ctx) ?? currentDirectSessionId ?? scope.sessionId;
+      coordination.actionAssignments.set(actionLinkKey(actionDirectSessionId, rawActionId), {
+        sessionId: scope.sessionId,
+        assignmentId,
+        actionId,
+        directSessionId: actionDirectSessionId,
+        rawActionId,
+        action,
+      });
       if (action === "delegate" && assignment) injectAssignmentContext(event, controller, scope.sessionId, assignment);
     }
-    updateStatus(host, controller, scope.sessionId, ctx);
+    updateStatus(host, controller, scope.sessionId, ctx, assignmentId);
     return undefined;
   });
 
@@ -293,6 +431,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("user_bash", async (event, ctx) => {
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
+    if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
     const actionId = `wall-clock-user-bash-${++actionSequence}`;
     const input = { command: event?.command, cwd: event?.cwd };
     controller.beginToolCall(scope.sessionId, actionId);
@@ -307,18 +446,22 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       controller.endAction(scope.sessionId, actionId);
       return { result: { output: `Wall-clock blocked this command: ${decision.reason}`, exitCode: 1, cancelled: true, truncated: false } };
     }
-    controller.startAction(scope.sessionId, actionId, "user_bash", classifyAction("bash", input));
+    if (controller.status(scope.sessionId, scope.assignmentId).expiryPolicy === "abort-running") {
+      controller.endAction(scope.sessionId, actionId);
+      return { result: { output: "Wall-clock blocked this command: abort-running cannot observe or abort user_bash execution", exitCode: 1, cancelled: true, truncated: false } };
+    }
+    controller.endAction(scope.sessionId, actionId);
     return undefined;
   });
 
   host.on("session_shutdown", async (_event, ctx) => {
-    const direct = directSessionId(ctx) ?? currentSessionId;
-    if (direct) {
+    const direct = directSessionId(ctx) ?? currentDirectSessionId;
+    if (direct && !coordination.childBindings.has(direct)) {
       persist(direct);
-      clearDeadline(direct);
-      latestContexts.delete(direct);
+      clearSessionDeadlines(direct);
+      coordination.persistenceOwners.delete(direct);
     }
-    if (direct === currentSessionId) currentSessionId = undefined;
+    if (direct === currentDirectSessionId) currentDirectSessionId = undefined;
   });
 
   registerChildLifecycleListeners();
@@ -347,8 +490,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       execute: async (...args: any[]) => {
         const input = toolInput<{ assignmentId?: string }>(args);
         const ctx = toolContext(args);
-        const sessionId = requireStableSession(ctx);
-        return textResult(controller.status(sessionId, input.assignmentId));
+        const scope = requireStableScope(ctx);
+        return textResult(controller.status(scope.sessionId, assignmentForScope(scope, input.assignmentId)));
       },
     });
 
@@ -367,8 +510,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: STATUS_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ assignmentId?: string }>(args);
-        const sessionId = requireStableSession(toolContext(args));
-        return textResult({ status: controller.status(sessionId, input.assignmentId), context: controller.context(sessionId, input.assignmentId) });
+        const scope = requireStableScope(toolContext(args));
+        const assignmentId = assignmentForScope(scope, input.assignmentId);
+        return textResult({ status: controller.status(scope.sessionId, assignmentId), context: controller.context(scope.sessionId, assignmentId) });
       },
     });
 
@@ -379,8 +523,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: CHECK_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ toolName: string; action?: ActionClass; assignmentId?: string; input?: unknown }>(args);
-        const sessionId = requireStableSession(toolContext(args));
-        return textResult(controller.decideTool(sessionId, { ...input, enforceable: false }));
+        const scope = requireStableScope(toolContext(args));
+        return textResult(controller.decideTool(scope.sessionId, { ...input, assignmentId: assignmentForScope(scope, input.assignmentId), enforceable: false }));
       },
     });
 
@@ -392,10 +536,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       execute: async (...args: any[]) => {
         const input = toolInput<AssignmentInput>(args);
         const ctx = toolContext(args);
-        const sessionId = requireStableSession(ctx);
-        const assignment = controller.assign(sessionId, input);
-        persist(sessionId);
-        return textResult({ assignment, context: controller.context(sessionId, assignment.id) });
+        const scope = requireStableScope(ctx);
+        if (scope.assignmentId) throw new Error("A child assignment cannot create another assignment");
+        const assignment = controller.assign(scope.sessionId, input);
+        scheduleDeadline(scope.sessionId, assignment.id, ctx);
+        persist(scope.sessionId);
+        return textResult({ assignment, context: controller.context(scope.sessionId, assignment.id) });
       },
     });
 
@@ -406,10 +552,13 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: COMPLETE_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ assignmentId: string; status: "complete" | "partial" | "blocked" | "expired" }>(args);
-        const sessionId = requireStableSession(toolContext(args));
-        const assignment = controller.complete(sessionId, input.assignmentId, input.status);
-        persist(sessionId);
-        return textResult({ assignment, status: controller.status(sessionId, input.assignmentId) });
+        const scope = requireStableScope(toolContext(args));
+        const assignmentId = scope.assignmentId ?? input.assignmentId;
+        if (scope.assignmentId && input.assignmentId !== scope.assignmentId) throw new Error("A child session can only complete its own assignment");
+        const assignment = controller.complete(scope.sessionId, assignmentId, input.status);
+        clearDeadline(scope.sessionId, assignmentId);
+        persist(scope.sessionId);
+        return textResult({ assignment, status: controller.status(scope.sessionId, assignmentId) });
       },
     });
 
@@ -420,10 +569,13 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: REPORT_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<ChildReportInput>(args);
-        const sessionId = requireStableSession(toolContext(args));
-        const report = controller.report(sessionId, input);
-        persist(sessionId);
-        return textResult({ report, status: controller.status(sessionId, input.assignmentId) });
+        const scope = requireStableScope(toolContext(args));
+        const assignmentId = scope.assignmentId ?? input.assignmentId;
+        if (scope.assignmentId && input.assignmentId !== scope.assignmentId) throw new Error("A child session can only report its own assignment");
+        const report = controller.report(scope.sessionId, { ...input, assignmentId });
+        clearDeadline(scope.sessionId, assignmentId);
+        persist(scope.sessionId);
+        return textResult({ report, status: controller.status(scope.sessionId, assignmentId) });
       },
     });
 
@@ -433,11 +585,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       description: "Record parent plan changes after a bounded result or time contraction.",
       parameters: PLAN_REVISION_SCHEMA,
       execute: async (...args: any[]) => {
-        const input = toolInput<{ plan: PlanItem[]; reason: string }>(args);
-        const sessionId = requireStableSession(toolContext(args));
-        const revision = controller.setPlan(sessionId, input.plan, input.reason);
-        persist(sessionId);
-        return textResult({ revision, status: controller.status(sessionId) });
+        const input = toolInput<{ plan: PlanItem[]; reason: string; sourceAssignmentId?: string }>(args);
+        const scope = requireStableScope(toolContext(args));
+        if (scope.assignmentId) throw new Error("Only the parent session can revise the parent plan");
+        const revision = controller.setPlan(scope.sessionId, input.plan, input.reason, input.sourceAssignmentId);
+        persist(scope.sessionId);
+        return textResult({ revision, status: controller.status(scope.sessionId) });
       },
     });
   }
@@ -445,73 +598,98 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   function finishAction(event: any, ctx?: RuntimeContext): void {
     const scope = rememberContext(ctx, event);
     if (!scope) return;
-    const actionId = existingActionId(event);
+    const rawActionId = existingActionId(event);
+    if (!rawActionId) return;
+    const linkedEntry = findActionLink(coordination.actionAssignments, rawActionId, directSessionId(ctx) ?? currentDirectSessionId);
+    const linked = linkedEntry?.[1];
+    const actionId = linked?.actionId ?? canonicalActionId(scope, rawActionId);
     if (!actionId) return;
-    const observed = Boolean(enforcement?.abortObserved?.(event));
-    if (observed) controller.markAbortObserved(scope.sessionId, actionId);
-    const finished = controller.endAction(scope.sessionId, actionId, options.clock?.now() ?? Date.now(), observed);
-    if (finished) actionAssignments.delete(actionId);
+    const running = controller.runningActions(linked?.sessionId ?? scope.sessionId).find((action) => action.actionId === actionId);
+    const actionContext = coordination.actionContexts.get(actionId) ?? ctx;
+    const observed = running?.abortRequestedAt !== undefined && Boolean(enforcement?.abortObserved?.(event, actionContext));
+    if (observed) controller.markAbortObserved(linked?.sessionId ?? scope.sessionId, actionId);
+    const finished = controller.endAction(linked?.sessionId ?? scope.sessionId, actionId, options.clock?.now() ?? Date.now(), observed);
+    if (finished) {
+      if (linkedEntry) coordination.actionAssignments.delete(linkedEntry[0]);
+      coordination.actionContexts.delete(actionId);
+    }
   }
 
   function registerChildLifecycleListeners(): void {
     const lifecycle = (event: any) => {
+      const eventKey = [event?.id, event?.sessionFile, event?.status, event?.parentToolCallId].map(String).join(":");
+      if (coordination.processedLifecycleEvents.has(eventKey)) return;
+      coordination.processedLifecycleEvents.add(eventKey);
       const parentToolCallId = typeof event?.parentToolCallId === "string" ? event.parentToolCallId : undefined;
-      const linked = parentToolCallId ? actionAssignments.get(parentToolCallId) : undefined;
-      const parentSessionId = linked?.sessionId ?? currentSessionId;
+      const childIds = [event?.id, event?.sessionFile].filter((id): id is string => typeof id === "string" && id.length > 0);
+      const knownBinding = childIds.map((childId) => coordination.childBindings.get(childId)).find((binding) => binding !== undefined);
+      const linkedEntry = parentToolCallId
+        ? findActionLink(coordination.actionAssignments, parentToolCallId, currentDirectSessionId, true)
+        : undefined;
+      const linked = linkedEntry?.[1];
+      const parentSessionId = linked?.sessionId ?? knownBinding?.parentSessionId ?? currentDirectSessionId;
       const assignmentId = linked?.assignmentId
+        ?? knownBinding?.assignmentId
         ?? (typeof event?.assignmentId === "string" ? event.assignmentId : undefined)
         ?? (parentSessionId ? controller.assignmentForDelegation(parentSessionId)?.id : undefined);
-      const childId = typeof event?.sessionFile === "string" ? event.sessionFile : typeof event?.id === "string" ? event.id : undefined;
-      if (!parentSessionId || !assignmentId || !childId) return;
+      if (!parentSessionId || !assignmentId || childIds.length === 0) return;
       if (event.status === "started") {
-        controller.attachChild(parentSessionId, assignmentId, childId);
-        childBindings.set(childId, { parentSessionId, assignmentId });
+        controller.attachChild(parentSessionId, assignmentId, childIds.at(-1)!);
+        for (const childId of childIds) coordination.childBindings.set(childId, { parentSessionId, assignmentId });
         persist(parentSessionId);
-      } else if (event.status === "aborted" || event.status === "failed") {
-        const assignmentStatus = event.status === "aborted" ? "expired" : "blocked";
-        const assignment = controller.status(parentSessionId, assignmentId).assignment;
-        if (assignment?.status === "active") {
-          controller.complete(parentSessionId, assignmentId, assignmentStatus);
+      } else if (event.status === "aborted" || event.status === "failed" || event.status === "completed") {
+        const snapshot = controller.snapshot(parentSessionId);
+        const hasReport = snapshot?.reports.some((report) => report.assignmentId === assignmentId) ?? false;
+        if (!hasReport) {
+          const expired = event.status === "aborted" && controller.status(parentSessionId, assignmentId).phase === "expired";
+          controller.report(parentSessionId, {
+            assignmentId,
+            status: expired ? "expired" : "blocked",
+            completed: [],
+            evidence: [],
+            partial: [],
+            skipped: ["The child session ended without wallclock_report"],
+            validation: [],
+            shortcuts: [],
+            risks: ["No structured child evidence or validation was returned"],
+            unknowns: ["The child session outcome is unknown"],
+            recommendedParentAction: "Inspect the child transcript and decide whether to retry the assignment",
+          });
+          clearDeadline(parentSessionId, assignmentId);
           persist(parentSessionId);
         }
-        if (parentToolCallId) controller.endAction(parentSessionId, parentToolCallId, options.clock?.now() ?? Date.now(), event.status === "aborted");
-      } else if (event.status === "completed" && parentToolCallId) {
-        controller.endAction(parentSessionId, parentToolCallId, options.clock?.now() ?? Date.now());
-      }
-    };
-
-    const childEvent = (payload: any) => {
-      const childId = typeof payload?.id === "string" ? payload.id : undefined;
-      const binding = childId ? childBindings.get(childId) : undefined;
-      const event = payload?.event;
-      if (!binding || !event || typeof event.type !== "string") return;
-      const actionId = typeof event.toolCallId === "string" ? `${childId}:${event.toolCallId}` : undefined;
-      if (event.type === "turn_start") controller.beginInference(binding.parentSessionId);
-      else if (event.type === "turn_end") controller.endInference(binding.parentSessionId);
-      else if (event.type === "tool_execution_start" && actionId) {
-        controller.beginToolCall(binding.parentSessionId, actionId);
-        controller.startAction(binding.parentSessionId, actionId, String(event.toolName ?? "child-tool"), classifyAction(String(event.toolName ?? "child-tool"), event.args), binding.assignmentId);
-      } else if (event.type === "tool_execution_end" && actionId) {
-        const observed = Boolean(enforcement?.abortObserved?.(event));
-        controller.endAction(binding.parentSessionId, actionId, options.clock?.now() ?? Date.now(), observed);
+        if (linked) {
+          const running = controller.runningActions(parentSessionId).find((action) => action.actionId === linked.actionId);
+          const observed = event.status === "aborted" && running?.abortRequestedAt !== undefined;
+          controller.endAction(parentSessionId, linked.actionId, options.clock?.now() ?? Date.now(), observed);
+          coordination.actionContexts.delete(linked.actionId);
+          coordination.actionAssignments.delete(linkedEntry![0]);
+        }
+        for (const childId of childIds) coordination.childBindings.delete(childId);
       }
     };
 
     if (host.events) {
       host.events.on("task:subagent:lifecycle", lifecycle);
-      host.events.on("task:subagent:event", childEvent);
     } else {
       host.on("task:subagent:lifecycle", lifecycle as any);
-      host.on("task:subagent:event", childEvent as any);
     }
   }
 }
 
-function resolveAssignment(controller: WallClockController, sessionId: string, event: any, action: ActionClass): Assignment | undefined {
-  if (action !== "delegate") return undefined;
-  const explicit = typeof event?.assignmentId === "string" ? event.assignmentId : undefined;
-  if (explicit) return controller.status(sessionId, explicit).assignment;
-  return controller.assignmentForDelegation(sessionId);
+function resolveAssignment(
+  controller: WallClockController,
+  sessionId: string,
+  input: unknown,
+  action: ActionClass,
+  scopedAssignmentId?: string,
+): { assignment?: Assignment; reason?: string } {
+  if (action !== "delegate") return {};
+  if (scopedAssignmentId) return { reason: "A child assignment cannot delegate more work" };
+  if (isBatchDelegation(input)) return { reason: "Wall-clock requires one bounded assignment per delegated child; batch delegation is blocked" };
+  const assignment = controller.assignmentForDelegation(sessionId);
+  if (!assignment) return { reason: "Create exactly one active, unbound wall-clock assignment before delegation" };
+  return { assignment };
 }
 
 function injectAssignmentContext(event: any, controller: WallClockController, sessionId: string, assignment: Assignment): void {
@@ -531,6 +709,45 @@ function injectAssignmentContext(event: any, controller: WallClockController, se
   }
 }
 
+function isBatchDelegation(input: unknown): boolean {
+  return Boolean(input && typeof input === "object" && !Array.isArray(input) && Array.isArray((input as Record<string, unknown>).tasks));
+}
+
+function deadlineKey(sessionId: string, assignmentId?: string): string {
+  return `${encodeURIComponent(sessionId)}:${assignmentId === undefined ? "session" : `assignment:${encodeURIComponent(assignmentId)}`}`;
+}
+
+function canonicalActionId(scope: Scope, rawActionId: string | undefined): string | undefined {
+  return rawActionId ? JSON.stringify([scope.sessionId, scope.assignmentId ?? null, rawActionId]) : undefined;
+}
+
+function assignmentForScope(scope: Scope, requestedAssignmentId?: string): string | undefined {
+  if (scope.assignmentId && requestedAssignmentId && requestedAssignmentId !== scope.assignmentId) {
+    throw new Error("A child session can only inspect its own assignment");
+  }
+  return scope.assignmentId ?? requestedAssignmentId;
+}
+
+function actionLinkKey(directSessionId: string, rawActionId: string): string {
+  return JSON.stringify([directSessionId, rawActionId]);
+}
+
+function findActionLink(
+  links: Map<string, ActionLink>,
+  rawActionId: string,
+  preferredDirectSessionId?: string,
+  delegateOnly = false,
+): [string, ActionLink] | undefined {
+  if (preferredDirectSessionId) {
+    const key = actionLinkKey(preferredDirectSessionId, rawActionId);
+    const exact = links.get(key);
+    if (exact && (!delegateOnly || exact.action === "delegate")) return [key, exact];
+  }
+  const matches = [...links.entries()].filter(([, link]) =>
+    link.rawActionId === rawActionId && (!delegateOnly || link.action === "delegate"));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 function existingActionId(event: any): string | undefined {
   const id = event?.toolCallId ?? event?.callId ?? event?.id;
   return typeof id === "string" && id.trim() ? id : undefined;
@@ -545,8 +762,8 @@ function notify(ctx: RuntimeContext | undefined, message: string, level = "info"
   ctx?.ui?.notify?.(message, level);
 }
 
-function updateStatus(host: RuntimeHost, controller: WallClockController, sessionId: string, ctx?: RuntimeContext): void {
-  const status = controller.status(sessionId);
+function updateStatus(host: RuntimeHost, controller: WallClockController, sessionId: string, ctx?: RuntimeContext, assignmentId?: string): void {
+  const status = controller.status(sessionId, assignmentId);
   const value = status.active && status.expiryPolicy
     ? `${status.phase} ${Math.ceil(status.remainingMs / 1_000)}s (${status.expiryPolicy})`
     : undefined;
@@ -580,9 +797,9 @@ const PLAN_ITEM_SCHEMA = {
   additionalProperties: false,
   required: ["id", "title", "status"],
   properties: {
-    id: { type: "string" },
-    title: { type: "string" },
-    status: { type: "string", enum: ["pending", "active", "complete", "blocked", "deferred"] },
+    id: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["pending", "active", "complete", "partial", "blocked", "deferred"] },
   },
 };
 const START_SCHEMA = {
@@ -600,7 +817,7 @@ const START_SCHEMA = {
 const STATUS_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  properties: { assignmentId: { type: "string" } },
+  properties: { assignmentId: { type: "string", minLength: 1 } },
 };
 
 const CHECK_SCHEMA = {
@@ -611,7 +828,7 @@ const CHECK_SCHEMA = {
     toolName: { type: "string", minLength: 1 },
     input: {},
     action: { type: "string", enum: ["read", "write", "destructive", "delegate", "finalize", "other"] },
-    assignmentId: { type: "string" },
+    assignmentId: { type: "string", minLength: 1 },
   },
 };
 
@@ -620,11 +837,11 @@ const ASSIGNMENT_SCHEMA = {
   additionalProperties: false,
   required: ["parentPlanItemId", "objective", "scope", "acceptance", "budgetMs"],
   properties: {
-    id: { type: "string" },
-    parentPlanItemId: { type: "string" },
-    objective: { type: "string" },
-    scope: { type: "array", items: { type: "string" } },
-    acceptance: { type: "array", items: { type: "string" } },
+    id: { type: "string", minLength: 1 },
+    parentPlanItemId: { type: "string", minLength: 1 },
+    objective: { type: "string", minLength: 1 },
+    scope: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+    acceptance: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
     budgetMs: { type: "number", exclusiveMinimum: 0 },
     wrapUpMs: { type: "number", exclusiveMinimum: 0 },
   },
@@ -635,7 +852,7 @@ const COMPLETE_SCHEMA = {
   additionalProperties: false,
   required: ["assignmentId", "status"],
   properties: {
-    assignmentId: { type: "string" },
+    assignmentId: { type: "string", minLength: 1 },
     status: { type: "string", enum: ["complete", "partial", "blocked", "expired"] },
   },
 };
@@ -645,17 +862,25 @@ const REPORT_SCHEMA = {
   additionalProperties: false,
   required: ["assignmentId", "status", "completed", "evidence", "partial", "skipped", "validation", "shortcuts", "risks", "unknowns", "recommendedParentAction"],
   properties: {
-    assignmentId: { type: "string" },
+    assignmentId: { type: "string", minLength: 1 },
     status: { type: "string", enum: ["complete", "partial", "blocked", "expired"] },
-    completed: { type: "array", items: { type: "string" } },
-    evidence: { type: "array", items: { type: "string" } },
-    partial: { type: "array", items: { type: "string" } },
-    skipped: { type: "array", items: { type: "string" } },
-    validation: { type: "array", items: { type: "string" } },
-    shortcuts: { type: "array", items: { type: "object" } },
-    risks: { type: "array", items: { type: "string" } },
-    unknowns: { type: "array", items: { type: "string" } },
-    recommendedParentAction: { type: "string" },
+    completed: { type: "array", items: { type: "string", minLength: 1 } },
+    evidence: { type: "array", items: { type: "string", minLength: 1 } },
+    partial: { type: "array", items: { type: "string", minLength: 1 } },
+    skipped: { type: "array", items: { type: "string", minLength: 1 } },
+    validation: { type: "array", items: { type: "string", minLength: 1 } },
+    shortcuts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["choice", "tradeoff"],
+        properties: { choice: { type: "string", minLength: 1 }, tradeoff: { type: "string", minLength: 1 } },
+      },
+    },
+    risks: { type: "array", items: { type: "string", minLength: 1 } },
+    unknowns: { type: "array", items: { type: "string", minLength: 1 } },
+    recommendedParentAction: { type: "string", minLength: 1 },
   },
 };
 
@@ -664,7 +889,11 @@ const PLAN_REVISION_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["plan", "reason"],
-  properties: { plan: { type: "array", items: PLAN_ITEM_SCHEMA }, reason: { type: "string" } },
+  properties: {
+    plan: { type: "array", items: PLAN_ITEM_SCHEMA },
+    reason: { type: "string", minLength: 1 },
+    sourceAssignmentId: { type: "string", minLength: 1 },
+  },
 };
 
 function errorMessage(error: unknown): string {

@@ -102,3 +102,44 @@ test("JSON MCP state survives a new server instance", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("MCP plan revision supports partial status and links its source report", () => {
+  let now = 1_000;
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const server = new WallClockMcpServer(controller);
+  initialize(server);
+  controller.activate("run-1", { durationMs: 60_000, expiryPolicy: "block-new" }, [{ id: "one", title: "One", status: "active" }]);
+  const assignment = controller.assign("run-1", {
+    id: "slice",
+    parentPlanItemId: "one",
+    objective: "One slice",
+    scope: ["src"],
+    acceptance: ["Evidence"],
+    budgetMs: 10_000,
+  });
+  now = 2_000;
+  controller.report("run-1", {
+    assignmentId: assignment.id,
+    status: "partial",
+    completed: ["Inspection"],
+    evidence: ["src/file.ts"],
+    partial: ["Edit"],
+    skipped: ["Test"],
+    validation: ["Read"],
+    shortcuts: [{ choice: "Inspect only", tradeoff: "No edit" }],
+    risks: ["Untested"],
+    unknowns: ["Runtime"],
+    recommendedParentAction: "Implement the edit",
+  });
+
+  const payload = readObject(callTool(server, 9, "wallclock_revise_plan", {
+    sessionId: "run-1",
+    sourceAssignmentId: "slice",
+    reason: "The slice was partial",
+    plan: [{ id: "one", title: "One", status: "partial" }],
+  }));
+  const revision = readObject(payload.revision);
+  assert.equal(revision.sourceAssignmentId, "slice");
+  assert.equal(revision.actualAssignmentElapsedMs, 1_000);
+  assert.equal(revision.recommendedParentAction, "Implement the edit");
+});

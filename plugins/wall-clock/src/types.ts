@@ -4,7 +4,7 @@ export type ExpiryPolicy = "block-new" | "abort-running";
 
 export type ActionClass = "read" | "write" | "destructive" | "delegate" | "finalize" | "other";
 
-export type AssignmentStatus = "pending" | "active" | "complete" | "partial" | "blocked" | "expired";
+export type AssignmentStatus = "active" | "complete" | "partial" | "blocked" | "expired";
 
 export type Clock = {
   now(): number;
@@ -23,7 +23,7 @@ export type ActivationInput = DeadlineInput & {
 export type PlanItem = {
   id: string;
   title: string;
-  status: "pending" | "active" | "complete" | "blocked" | "deferred";
+  status: "pending" | "active" | "complete" | "partial" | "blocked" | "deferred";
 };
 
 export type PlanRevision = {
@@ -32,6 +32,9 @@ export type PlanRevision = {
   changedPlanItemIds: string[];
   reason: string;
   actualElapsedMs: number;
+  sourceAssignmentId?: string;
+  actualAssignmentElapsedMs?: number;
+  recommendedParentAction?: string;
 };
 
 export type AssignmentInput = {
@@ -77,10 +80,11 @@ export type ChildReportInput = {
 export type ChildReport = ChildReportInput & {
   actualElapsedMs: number;
   recordedAt: number;
+  expiryPolicy: ExpiryPolicy;
 };
 
 export type SessionState = {
-  version: 2;
+  version: 3;
   sessionId: string;
   issuedAt: number;
   hardDeadline: number;
@@ -152,4 +156,5 @@ export type RunningAction = {
 export type StateStore = {
   load(sessionId: string): PersistedState | undefined;
   save(state: PersistedState): void;
+  delete(sessionId: string): void;
 };

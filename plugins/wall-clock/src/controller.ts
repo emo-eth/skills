@@ -26,6 +26,7 @@ const DEFAULT_WRAP_UP_MS = 5 * 60_000;
 type RuntimeTiming = {
   inferenceStartedAt?: number;
   latestInferenceElapsedMs: number;
+  latestToolCallElapsedMs: number;
   toolStartedAt: Map<string, number>;
   activeActions: Map<string, RunningAction>;
 };
@@ -44,19 +45,25 @@ export class WallClockController {
   activate(sessionId: string, input: ActivationInput, plan: PlanItem[] = []): Status {
     requireSessionId(sessionId);
     requireExpiryPolicy(input.expiryPolicy);
+    requireValidPlan(plan);
+    const existing = this.loadState(sessionId);
+    if (existing && !existing.stopped) {
+      throw new Error(`Wall-clock is already active for session ${sessionId}; stop it before starting a new contract`);
+    }
     const now = this.clock.now();
     const hardDeadline = input.deadlineMs ?? (input.durationMs === undefined ? undefined : now + input.durationMs);
     if (hardDeadline === undefined || !Number.isFinite(hardDeadline) || hardDeadline <= now) {
       throw new Error("A future deadline or positive duration is required");
     }
 
-    const requestedWrapUpMs = input.wrapUpMs ?? DEFAULT_WRAP_UP_MS;
+    const availableMs = hardDeadline - now;
+    const requestedWrapUpMs = input.wrapUpMs ?? Math.min(DEFAULT_WRAP_UP_MS, availableMs / 5);
     if (!Number.isFinite(requestedWrapUpMs) || requestedWrapUpMs <= 0) {
       throw new Error("Wrap-up duration must be positive");
     }
-    const wrapUpMs = Math.min(requestedWrapUpMs, Math.max(1_000, hardDeadline - now - 1));
+    const wrapUpMs = Math.min(requestedWrapUpMs, availableMs);
     const state: SessionState = {
-      version: 2,
+      version: 3,
       sessionId,
       issuedAt: now,
       hardDeadline,
@@ -83,12 +90,16 @@ export class WallClockController {
     this.save(state);
   }
 
+  discard(sessionId: string): void {
+    this.states.delete(sessionId);
+    this.timings.delete(sessionId);
+    this.store.delete(sessionId);
+  }
+
   restore(sessionId: string): Status {
-    const persisted = this.store.load(sessionId);
-    if (persisted && persisted.sessionId === sessionId && isPersistedState(persisted)) {
-      this.states.set(sessionId, structuredClone(persisted));
-      this.timings.set(sessionId, freshRuntimeTiming());
-    }
+    this.states.delete(sessionId);
+    this.timings.delete(sessionId);
+    if (this.loadState(sessionId)) this.timings.set(sessionId, freshRuntimeTiming());
     return this.status(sessionId);
   }
 
@@ -102,10 +113,17 @@ export class WallClockController {
     return this.status(state.sessionId);
   }
 
-  setPlan(sessionId: string, plan: PlanItem[], reason: string): PlanRevision {
+  setPlan(sessionId: string, plan: PlanItem[], reason: string, sourceAssignmentId?: string): PlanRevision {
     const state = this.requireState(sessionId);
     if (!reason.trim()) throw new Error("A plan revision reason is required");
+    requireValidPlan(plan);
     const now = this.clock.now();
+    const sourceReport = sourceAssignmentId === undefined
+      ? undefined
+      : state.reports.find((report) => report.assignmentId === sourceAssignmentId);
+    if (sourceAssignmentId !== undefined && !sourceReport) {
+      throw new Error(`No report exists for assignment ${sourceAssignmentId}`);
+    }
     const changedPlanItemIds = changedPlanItems(state.plan, plan);
     state.plan = structuredClone(plan);
     state.revision += 1;
@@ -115,6 +133,9 @@ export class WallClockController {
       changedPlanItemIds,
       reason,
       actualElapsedMs: Math.max(0, now - state.issuedAt),
+      sourceAssignmentId,
+      actualAssignmentElapsedMs: sourceReport?.actualElapsedMs,
+      recommendedParentAction: sourceReport?.recommendedParentAction,
     };
     state.planRevisions.push(revision);
     this.save(state);
@@ -129,19 +150,29 @@ export class WallClockController {
     }
     if (!Number.isFinite(input.budgetMs) || input.budgetMs <= 0) throw new Error("Assignment budget must be positive");
     if (!input.objective.trim()) throw new Error("Assignment objective is required");
-    if (input.scope.length === 0) throw new Error("Assignment scope must not be empty");
-    if (input.acceptance.length === 0) throw new Error("Assignment acceptance target must not be empty");
+    if (!input.parentPlanItemId.trim()) throw new Error("A parent plan item identifier is required");
+    if (state.plan.length > 0 && !state.plan.some((item) => item.id === input.parentPlanItemId)) {
+      throw new Error(`Parent plan item ${input.parentPlanItemId} does not exist in the current plan`);
+    }
+    requireNonEmptyStringArray(input.scope, "Assignment scope");
+    requireNonEmptyStringArray(input.acceptance, "Assignment acceptance target");
+    if (input.id !== undefined && !input.id.trim()) throw new Error("Assignment identifier must not be empty");
+    const assignmentId = input.id ?? nextAssignmentId(state);
+    if (state.assignments.some((assignment) => assignment.id === assignmentId)) {
+      throw new Error(`Assignment ${assignmentId} already exists`);
+    }
 
     const now = this.clock.now();
     const hardDeadline = Math.min(state.hardDeadline, now + input.budgetMs);
-    const requestedWrapUpMs = input.wrapUpMs ?? DEFAULT_WRAP_UP_MS;
+    const availableMs = hardDeadline - now;
+    const requestedWrapUpMs = input.wrapUpMs ?? Math.min(DEFAULT_WRAP_UP_MS, availableMs / 5);
     if (!Number.isFinite(requestedWrapUpMs) || requestedWrapUpMs <= 0) {
       throw new Error("Assignment wrap-up duration must be positive");
     }
-    const wrapUpMs = Math.min(requestedWrapUpMs, Math.max(1_000, hardDeadline - now - 1));
+    const wrapUpMs = Math.min(requestedWrapUpMs, availableMs);
     const assignment: Assignment = {
       ...structuredClone(input),
-      id: input.id ?? `assignment-${state.assignments.length + 1}`,
+      id: assignmentId,
       parentSessionId: sessionId,
       issuedAt: now,
       hardDeadline,
@@ -158,6 +189,14 @@ export class WallClockController {
     const state = this.requireState(sessionId);
     const assignment = this.requireAssignment(state, assignmentId);
     if (!childSessionId.trim()) throw new Error("Child session identifier is required");
+    const existingAssignment = state.assignments.find((item) => item.id !== assignmentId && item.childSessionId === childSessionId);
+    if (existingAssignment) {
+      throw new Error(`Child ${childSessionId} is already bound to assignment ${existingAssignment.id}`);
+    }
+    if (assignment.childSessionId === childSessionId) return structuredClone(assignment);
+    if (assignment.childSessionId !== undefined) {
+      throw new Error(`Assignment ${assignmentId} is already bound to child ${assignment.childSessionId}`);
+    }
     assignment.childSessionId = childSessionId;
     state.revision += 1;
     this.save(state);
@@ -167,6 +206,11 @@ export class WallClockController {
   complete(sessionId: string, assignmentId: string, status: "complete" | "partial" | "blocked" | "expired"): Assignment {
     const state = this.requireState(sessionId);
     const assignment = this.requireAssignment(state, assignmentId);
+    requireTerminalAssignmentStatus(status);
+    const existingReport = state.reports.find((report) => report.assignmentId === assignmentId);
+    if (existingReport && existingReport.status !== status) {
+      throw new Error(`Assignment ${assignmentId} already has a ${existingReport.status} report; replace the report to change its status`);
+    }
     assignment.status = status;
     assignment.completedAt ??= this.clock.now();
     state.revision += 1;
@@ -177,6 +221,7 @@ export class WallClockController {
   report(sessionId: string, input: ChildReportInput): ChildReport {
     const state = this.requireState(sessionId);
     const assignment = this.requireAssignment(state, input.assignmentId);
+    requireValidReport(input);
     const now = this.clock.now();
     assignment.status = input.status;
     assignment.completedAt ??= now;
@@ -184,6 +229,7 @@ export class WallClockController {
       ...structuredClone(input),
       actualElapsedMs: Math.max(0, (assignment.completedAt ?? now) - assignment.issuedAt),
       recordedAt: now,
+      expiryPolicy: state.expiryPolicy,
     };
     const existingIndex = state.reports.findIndex((item) => item.assignmentId === report.assignmentId);
     if (existingIndex === -1) state.reports.push(report);
@@ -194,15 +240,14 @@ export class WallClockController {
   }
 
   status(sessionId: string, assignmentId?: string): Status {
-    const state = this.states.get(sessionId) ?? this.store.load(sessionId);
+    const state = this.loadState(sessionId);
     if (!state) return { sessionId, active: false, phase: "inactive", remainingMs: 0 };
-    this.states.set(sessionId, state);
     const assignment = assignmentId ? state.assignments.find((item) => item.id === assignmentId) : undefined;
     if (assignmentId && !assignment) throw new Error(`Unknown assignment: ${assignmentId}`);
     const now = this.clock.now();
     const hardDeadline = assignment?.hardDeadline ?? state.hardDeadline;
     const wrapUpAt = assignment?.wrapUpAt ?? state.wrapUpAt;
-    const complete = state.stopped || assignment?.status === "complete";
+    const complete = state.stopped || (assignment !== undefined && assignment.status !== "active");
     const phase = state.stopped ? "complete" : phaseAt(now, hardDeadline, wrapUpAt, complete);
     const active = !state.stopped;
     const context = active ? this.elapsedContext(state, assignment, phase, now) : undefined;
@@ -226,10 +271,10 @@ export class WallClockController {
     const action = proposal.action ?? classifyAction(proposal.toolName, proposal.input);
     const controlAction = isWallClockControlTool(proposal.toolName);
     if (!status.active) return { allow: true, phase: status.phase, remainingMs: status.remainingMs };
-    if (status.phase === "expired" && !controlAction && action !== "finalize") {
+    if (status.phase === "expired" && !controlAction) {
       return this.block(status, "The wall-clock deadline has expired; no new work may start");
     }
-    if (status.phase === "complete" && !controlAction && action !== "finalize") {
+    if (status.phase === "complete" && !controlAction) {
       return this.block(status, "The assignment is complete; no new assignment work may start");
     }
     if (status.phase === "wrap-up" && (action === "delegate" || action === "destructive")) {
@@ -298,7 +343,7 @@ export class WallClockController {
   }
 
   assignmentForDelegation(sessionId: string): Assignment | undefined {
-    const state = this.states.get(sessionId) ?? this.store.load(sessionId);
+    const state = this.loadState(sessionId);
     if (!state) return undefined;
     const unbound = state.assignments.filter((assignment) => assignment.status === "active" && !assignment.childSessionId);
     return unbound.length === 1 ? structuredClone(unbound[0]) : undefined;
@@ -339,7 +384,7 @@ export class WallClockController {
   }
 
   snapshot(sessionId: string): PersistedState | undefined {
-    const state = this.states.get(sessionId) ?? this.store.load(sessionId);
+    const state = this.loadState(sessionId);
     return state ? structuredClone(state) : undefined;
   }
 
@@ -368,8 +413,21 @@ export class WallClockController {
   }
 
   private requireState(sessionId: string): SessionState {
-    const state = this.states.get(sessionId) ?? this.store.load(sessionId);
+    const state = this.loadState(sessionId);
     if (!state) throw new Error(`No active wall-clock state for session ${sessionId}`);
+    return state;
+  }
+
+  private loadState(sessionId: string): SessionState | undefined {
+    const inMemory = this.states.get(sessionId);
+    if (inMemory) return inMemory;
+    const persisted = this.store.load(sessionId);
+    if (!persisted) return undefined;
+    if (persisted.sessionId !== sessionId || !isPersistedState(persisted)) {
+      this.store.delete(sessionId);
+      return undefined;
+    }
+    const state = structuredClone(persisted);
     this.states.set(sessionId, state);
     return state;
   }
@@ -418,7 +476,7 @@ export function isWallClockControlTool(toolName: string): boolean {
 }
 
 function freshRuntimeTiming(): RuntimeTiming {
-  return { latestInferenceElapsedMs: 0, toolStartedAt: new Map(), activeActions: new Map() };
+  return { latestInferenceElapsedMs: 0, latestToolCallElapsedMs: 0, toolStartedAt: new Map(), activeActions: new Map() };
 }
 
 function changedPlanItems(previous: PlanItem[], next: PlanItem[]): string[] {
@@ -436,4 +494,59 @@ function requireExpiryPolicy(policy: string): asserts policy is ExpiryPolicy {
   if (policy !== "block-new" && policy !== "abort-running") {
     throw new Error("Expiry policy must be block-new or abort-running");
   }
+}
+
+function requireValidPlan(plan: PlanItem[]): void {
+  const ids = new Set<string>();
+  for (const item of plan) {
+    if (!item.id.trim()) throw new Error("A plan item identifier must not be empty");
+    if (!item.title.trim()) throw new Error(`Plan item ${item.id} title must not be empty`);
+    if (item.status !== "pending" && item.status !== "active" && item.status !== "complete" && item.status !== "partial" && item.status !== "blocked" && item.status !== "deferred") {
+      throw new Error(`Plan item ${item.id} status is invalid`);
+    }
+    if (ids.has(item.id)) throw new Error("Plan item identifiers must be unique");
+    ids.add(item.id);
+  }
+}
+
+function requireValidReport(input: ChildReportInput): void {
+  requireTerminalAssignmentStatus(input.status);
+  for (const [label, values] of [
+    ["completed", input.completed],
+    ["evidence", input.evidence],
+    ["partial", input.partial],
+    ["skipped", input.skipped],
+    ["validation", input.validation],
+    ["risks", input.risks],
+    ["unknowns", input.unknowns],
+  ] as const) requireStringArray(values, `Report ${label}`);
+  for (const shortcut of input.shortcuts) {
+    if (!shortcut.choice.trim()) throw new Error("Report shortcut choice must not be empty");
+    if (!shortcut.tradeoff.trim()) throw new Error("Report shortcut tradeoff must not be empty");
+  }
+  if (!input.recommendedParentAction.trim()) throw new Error("A recommended parent action is required");
+}
+
+function requireTerminalAssignmentStatus(status: string): asserts status is "complete" | "partial" | "blocked" | "expired" {
+  if (status !== "complete" && status !== "partial" && status !== "blocked" && status !== "expired") {
+    throw new Error("Assignment status is invalid");
+  }
+}
+
+function requireNonEmptyStringArray(values: string[], label: string): void {
+  if (values.length === 0) throw new Error(`${label} must not be empty`);
+  requireStringArray(values, label);
+}
+
+function requireStringArray(values: string[], label: string): void {
+  if (!Array.isArray(values) || values.some((value) => typeof value !== "string" || !value.trim())) {
+    throw new Error(`${label} entries must not be empty`);
+  }
+}
+
+function nextAssignmentId(state: SessionState): string {
+  const ids = new Set(state.assignments.map((assignment) => assignment.id));
+  let sequence = 1;
+  while (ids.has(`assignment-${sequence}`)) sequence += 1;
+  return `assignment-${sequence}`;
 }

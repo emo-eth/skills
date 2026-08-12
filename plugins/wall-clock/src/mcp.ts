@@ -16,7 +16,7 @@ import type {
   ToolProposal,
 } from "./types.ts";
 
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.1.0";
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
 type JsonRpcId = string | number | null;
@@ -39,9 +39,9 @@ const PLAN_ITEM_SCHEMA = {
   additionalProperties: false,
   required: ["id", "title", "status"],
   properties: {
-    id: { type: "string" },
-    title: { type: "string" },
-    status: { type: "string", enum: ["pending", "active", "complete", "blocked", "deferred"] },
+    id: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["pending", "active", "complete", "partial", "blocked", "deferred"] },
   },
 };
 
@@ -69,7 +69,7 @@ const TOOLS: McpTool[] = [
       type: "object",
       additionalProperties: false,
       required: ["sessionId"],
-      properties: { sessionId: { type: "string", minLength: 1 }, assignmentId: { type: "string" } },
+      properties: { sessionId: { type: "string", minLength: 1 }, assignmentId: { type: "string", minLength: 1 } },
     },
   },
   {
@@ -89,7 +89,7 @@ const TOOLS: McpTool[] = [
       type: "object",
       additionalProperties: false,
       required: ["sessionId"],
-      properties: { sessionId: { type: "string", minLength: 1 }, assignmentId: { type: "string" } },
+      properties: { sessionId: { type: "string", minLength: 1 }, assignmentId: { type: "string", minLength: 1 } },
     },
   },
   {
@@ -104,7 +104,7 @@ const TOOLS: McpTool[] = [
         toolName: { type: "string", minLength: 1 },
         input: {},
         action: { type: "string", enum: ["read", "write", "destructive", "delegate", "finalize", "other"] },
-        assignmentId: { type: "string" },
+        assignmentId: { type: "string", minLength: 1 },
       },
     },
   },
@@ -117,11 +117,11 @@ const TOOLS: McpTool[] = [
       required: ["sessionId", "parentPlanItemId", "objective", "scope", "acceptance", "budgetMs"],
       properties: {
         sessionId: { type: "string", minLength: 1 },
-        id: { type: "string" },
-        parentPlanItemId: { type: "string" },
-        objective: { type: "string" },
-        scope: { type: "array", items: { type: "string" } },
-        acceptance: { type: "array", items: { type: "string" } },
+        id: { type: "string", minLength: 1 },
+        parentPlanItemId: { type: "string", minLength: 1 },
+        objective: { type: "string", minLength: 1 },
+        scope: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+        acceptance: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
         budgetMs: { type: "number", exclusiveMinimum: 0 },
         wrapUpMs: { type: "number", exclusiveMinimum: 0 },
       },
@@ -165,15 +165,23 @@ const TOOLS: McpTool[] = [
         sessionId: { type: "string", minLength: 1 },
         assignmentId: { type: "string", minLength: 1 },
         status: { type: "string", enum: ["complete", "partial", "blocked", "expired"] },
-        completed: { type: "array", items: { type: "string" } },
-        evidence: { type: "array", items: { type: "string" } },
-        partial: { type: "array", items: { type: "string" } },
-        skipped: { type: "array", items: { type: "string" } },
-        validation: { type: "array", items: { type: "string" } },
-        shortcuts: { type: "array", items: { type: "object" } },
-        risks: { type: "array", items: { type: "string" } },
-        unknowns: { type: "array", items: { type: "string" } },
-        recommendedParentAction: { type: "string" },
+        completed: { type: "array", items: { type: "string", minLength: 1 } },
+        evidence: { type: "array", items: { type: "string", minLength: 1 } },
+        partial: { type: "array", items: { type: "string", minLength: 1 } },
+        skipped: { type: "array", items: { type: "string", minLength: 1 } },
+        validation: { type: "array", items: { type: "string", minLength: 1 } },
+        shortcuts: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["choice", "tradeoff"],
+            properties: { choice: { type: "string", minLength: 1 }, tradeoff: { type: "string", minLength: 1 } },
+          },
+        },
+        risks: { type: "array", items: { type: "string", minLength: 1 } },
+        unknowns: { type: "array", items: { type: "string", minLength: 1 } },
+        recommendedParentAction: { type: "string", minLength: 1 },
       },
     },
   },
@@ -188,6 +196,7 @@ const TOOLS: McpTool[] = [
         sessionId: { type: "string", minLength: 1 },
         plan: { type: "array", items: PLAN_ITEM_SCHEMA },
         reason: { type: "string", minLength: 1 },
+        sourceAssignmentId: { type: "string", minLength: 1 },
       },
     },
   },
@@ -208,6 +217,16 @@ export class JsonFileStore implements StateStore {
   save(state: PersistedState): void {
     const states = this.readStates();
     states[state.sessionId] = structuredClone(state);
+    this.writeStates(states);
+  }
+
+  delete(sessionId: string): void {
+    const states = this.readStates();
+    delete states[sessionId];
+    this.writeStates(states);
+  }
+
+  private writeStates(states: Record<string, PersistedState>): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
     writeFileSync(temporaryPath, `${JSON.stringify(states, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -359,7 +378,7 @@ export class WallClockMcpServer {
       }
       case "wallclock_revise_plan": {
         const plan = planItems(input.plan);
-        const revision = this.controller.setPlan(sessionId, plan, requiredString(input, "reason"));
+        const revision = this.controller.setPlan(sessionId, plan, requiredString(input, "reason"), optionalString(input, "sourceAssignmentId"));
         return { revision, status: this.controller.status(sessionId) };
       }
       default:
@@ -432,7 +451,7 @@ function planItems(value: unknown): PlanItem[] {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`plan[${index}] must be an object`);
     const planItem = item as JsonObject;
     const status = planItem.status;
-    if (status !== "pending" && status !== "active" && status !== "complete" && status !== "blocked" && status !== "deferred") throw new Error(`plan[${index}].status is invalid`);
+    if (status !== "pending" && status !== "active" && status !== "complete" && status !== "partial" && status !== "blocked" && status !== "deferred") throw new Error(`plan[${index}].status is invalid`);
     return { id: requiredString(planItem, "id"), title: requiredString(planItem, "title"), status };
   });
 }

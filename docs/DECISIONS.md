@@ -101,3 +101,23 @@ Status: deferred
 Revisit: when v1 host scoping starts or an open Codex or Claude enforcement seam becomes available
 Scope: v1+
 Load-bearing: yes
+
+## D11 - 2026-08-11 - Serialize actions by native abort domain
+
+Decision: Under `abort-running`, admit only one running action in each native host session. Permit an OMP parent task and its child action to coexist because they are separate native sessions with separate abort functions.
+Why: Pi and OMP expose a session-wide abort function, not an action-specific abort function. Concurrent actions in one session would make a deadline abort stop unrelated work. Global serialization would instead make an admitted task block all useful child tools.
+Alternatives: Permit concurrent same-session work (rejected because cancellation would have collateral effects); serialize the full parent and child tree (rejected because the child could not do work while its parent task was active).
+Consequences: The adapter tracks the direct native session for each admitted action. A second action in the same session is blocked until the first ends. Parent and child deadline timers can abort their separately owned actions.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D12 - 2026-08-11 - Newest durable state is authoritative
+
+Decision: Restore only the newest wall-clock custom entry and deeply validate version 3. If it is malformed, belongs to another session, or has an obsolete version, disable wall-clock for that session instead of loading an earlier entry.
+Why: Falling back to older valid state can silently restore a stale deadline, plan, policy, or assignment after a newer write became invalid.
+Alternatives: Search backward for the latest valid entry (rejected because it hides corruption and revives stale obligations); migrate older states (rejected because the project does not preserve obsolete contracts).
+Consequences: Restore fails closed and reports the error. Other sessions remain isolated. Runtime timers and timing fields are rebuilt from valid absolute state and the current clock.
+Status: active
+Scope: v0
+Load-bearing: yes

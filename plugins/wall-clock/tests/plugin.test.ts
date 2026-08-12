@@ -23,6 +23,14 @@ test("package follows the Agent Plugins root layout", () => {
   assert.ok(existsSync(join(pluginRoot, "mcp.json")));
 });
 
+test("package declares native Pi and OMP extension entry points", () => {
+  const packageJson = readJson(join(pluginRoot, "package.json"));
+  assert.equal(packageJson.version, "0.1.0");
+  assert.deepEqual(packageJson.engines, { node: ">=22.6" });
+  assert.deepEqual(packageJson.pi, { extensions: ["./src/pi.ts"] });
+  assert.deepEqual(packageJson.omp, { extensions: ["./src/omp.ts"] });
+});
+
 test("MCP configuration uses the portable v1 stdio contract", () => {
   const config = readJson(join(pluginRoot, "mcp.json"));
   assert.equal(config.$schema, "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json");
