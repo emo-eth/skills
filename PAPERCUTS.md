@@ -336,3 +336,6 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `PAPERCUTS.md`
   - note: Running the wall-clock suite after installing dependencies -> the existing OMP MCP discovery test failed because /tools output no longer contained the expected mcp__wall_clock_wall_clock_wallclock_* names; the focused host and real OMP runner tests passed, so the failure is outside the fast-lane path.
+- **2026-08-12T21:06:40.601Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: Installing the native OMP wall-clock plugin required a full OMP process restart; /reload-plugins did not activate the newly installed npm plugin. The install and initialization docs need to state this restart requirement explicitly.
