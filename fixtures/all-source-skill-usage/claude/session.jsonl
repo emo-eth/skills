@@ -1,0 +1,2 @@
+{"type":"assistant","requestId":"claude-request-1","timestamp":"2026-08-12T10:00:01.000Z","cwd":"/tmp/fixture","attributionSkill":"alpha","message":{"id":"claude-message-1","model":"claude-fixture","usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":3,"output_tokens":7}}}
+{"type":"assistant","requestId":"claude-request-2","timestamp":"2026-08-12T10:00:02.000Z","cwd":"/tmp/fixture","message":{"id":"claude-message-2","model":"claude-fixture","usage":{"input_tokens":2,"output_tokens":3}}}

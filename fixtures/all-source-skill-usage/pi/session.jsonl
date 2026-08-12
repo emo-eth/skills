@@ -1,0 +1,5 @@
+{"type":"session","id":"pi-session-1","timestamp":"2026-08-12T10:00:20.000Z","cwd":"/tmp/fixture"}
+{"type":"message","id":"pi-user-1","timestamp":"2026-08-12T10:00:21.000Z","message":{"role":"user","content":[{"type":"text","text":"/skill:gamma"}]}}
+{"type":"message","id":"pi-assistant-1","timestamp":"2026-08-12T10:00:22.000Z","message":{"role":"assistant","model":"pi-fixture","usage":{"input":7,"cacheRead":8,"cacheWrite":1,"output":9}}}
+{"type":"message","id":"pi-user-2","timestamp":"2026-08-12T10:00:23.000Z","message":{"role":"user","content":[{"type":"text","text":"ordinary request"}]}}
+{"type":"message","id":"pi-assistant-2","timestamp":"2026-08-12T10:00:24.000Z","message":{"role":"assistant","model":"pi-fixture","usage":{"input":2,"output":3}}}
