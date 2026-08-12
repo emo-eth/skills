@@ -300,3 +300,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T15:24:19.936Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While running the final merged-tree validation, git diff --check found one whitespace-only line with a trailing space in the wall-clock product document. Run diff --check before the handoff commit, not only after merging with main.
+- **2026-08-12T15:25:53.163Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While probing the normal OMP profile after wall-clock installation, the RPC host emitted available_commands_update but rejected the documented-looking get_commands request as unknown. Use the event stream or slash-command probes for OMP command discovery.
