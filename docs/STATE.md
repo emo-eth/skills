@@ -14,6 +14,8 @@ The current package includes version 3 state validation, assignment and report c
 
 Deferred: Codex and Claude activation [D10] until an open, tested enforcement seam exists; Claude proprietary systems; provider-specific remote cancellation; and a portable visual dashboard. Revisit D10 when v1 host support is scoped and revisit the last two when provider or user-interface requirements become active. The full contract remains in `docs/prds/2026-08-11-wall-clock/prd.md`.
 
+The repository now also publishes `skills/initiative-standup/SKILL.md`, a user-invoked standup for recent cross-project initiatives that do not need Linear tickets [documented]. On this device, Memex indexes local agent history and the `nicosuave.memex` Herdr plugin is installed; its refresh action succeeded on 2026-08-12 [verified-live]. These are supporting local integrations, not wall-clock enforcement.
+
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 ## Standing constraints
@@ -22,6 +24,8 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 - Parent and child agents receive measured elapsed-time context at every turn; agents do not estimate task duration. [D5]
 - Pi and OMP are the first enforcement targets; Codex and Claude are package targets only until tested seams exist. [D6]
 - Activation requires the user's selected `block-new` or `abort-running` expiry policy. [D7]
+- `standup` is ticket-centered; `initiative-standup` is the separate path for cross-project work and must not require or mutate Linear tickets. [documented]
+
 - Compression preserves a working vertical slice and reports gaps honestly. [D8]
 - MCP is optional and never enforces deadlines. [D9]
 
@@ -32,6 +36,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
 | Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
 | Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and `docs/log/2026-08-12-wall-clock-completion.md` | verified-live |
+| Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex and optional Herdr navigation | `memex index` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md` | raw snapshot and answers doc | verified-live |

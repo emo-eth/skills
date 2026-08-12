@@ -303,3 +303,18 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T15:25:53.163Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While probing the normal OMP profile after wall-clock installation, the RPC host emitted available_commands_update but rejected the documented-looking get_commands request as unknown. Use the event stream or slash-command probes for OMP command discovery.
+- **2026-08-12T15:54:22Z** `codex`
+  - cwd: `.`
+  - note: Locating installed Memex skill copies -> a broad home-directory glob timed out before finding matches, so discovery must be scoped to known tool directories.
+- **2026-08-12T15:56:16Z** `codex`
+  - cwd: `.`
+  - note: Inspecting global skill ownership with npx skills list -> unrelated malformed Smithers and karpathy-wiki frontmatter emitted repeated warnings and obscured the relevant list.
+- **2026-08-12T15:58:15Z** `codex`
+  - cwd: `.`
+  - note: Checking installed Memex Herdr actions -> the first output was truncated and the action-list subcommand rejected `--json`; rerun without that flag and filter the returned JSON.
+- **2026-08-12T16:00:35Z** `codex`
+  - cwd: `.`
+  - note: Inspecting the installed Memex plugin config -> Herdr accepts the plugin ID as a positional argument, not a --plugin option.
+- **2026-08-12T16:03:04Z** `codex`
+  - cwd: `.`
+  - note: Validating the new user-invoked skill -> the bundled skill-creator quick validator rejects the documented disable-model-invocation frontmatter key even though the existing standup skill uses it; use repository conventions plus YAML parsing instead.
