@@ -19,7 +19,7 @@ const {
   rm,
   writeFile,
 } = require("node:fs/promises");
-const { dirname } = require("node:path");
+const { dirname, join, relative } = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { createInterface } = require("node:readline/promises");
 
@@ -392,15 +392,17 @@ class Review {
 // CUSTOMIZE - author this section. Keep the review library above unchanged.
 // -----------------------------------------------------------------------------
 
-const { readdir } = require("node:fs/promises");
+const { lstat, readdir } = require("node:fs/promises");
 const { homedir } = require("node:os");
-const { join } = require("node:path");
 
 type LockEntry = {
   source?: string;
   sourceType?: string;
   sourceUrl?: string;
   skillPath?: string;
+  skillFolderHash?: string;
+  installedAt?: string;
+  updatedAt?: string;
 };
 
 type GlobalLock = {
@@ -577,12 +579,183 @@ async function writeTextAtomically(
   filePath: string,
   content: string,
 ): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.${temporaryFileNumber++}.tmp`;
   try {
     await writeFile(temporaryPath, content, "utf8");
     await rename(temporaryPath, filePath);
   } finally {
     await rm(temporaryPath, { force: true });
+  }
+}
+
+type ContentFile = {
+  relativePath: string;
+  content: Buffer;
+};
+
+async function collectContentFiles(
+  basePath: string,
+  currentPath: string,
+  files: ContentFile[],
+): Promise<void> {
+  const entries = await readdir(currentPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    const filePath = join(currentPath, entry.name);
+    if (entry.isDirectory()) {
+      await collectContentFiles(basePath, filePath, files);
+    } else if (entry.isFile()) {
+      files.push({
+        relativePath: relative(basePath, filePath).split("\\").join("/"),
+        content: await readFile(filePath),
+      });
+    }
+  }
+}
+
+async function computeContentHash(skillPath: string): Promise<string> {
+  const files: ContentFile[] = [];
+  await collectContentFiles(skillPath, skillPath, files);
+  files.sort((left, right) =>
+    left.relativePath.localeCompare(right.relativePath),
+  );
+  const hash = createHash("sha256");
+  for (const file of files) {
+    hash.update(file.relativePath);
+    hash.update(file.content);
+  }
+  return hash.digest("hex");
+}
+
+type GitTreeEntry = {
+  name: string;
+  mode: string;
+  hash: Buffer;
+};
+
+async function computeGitTreeHash(skillPath: string): Promise<string> {
+  const entries: GitTreeEntry[] = [];
+  const children = await readdir(skillPath, { withFileTypes: true });
+
+  for (const child of children) {
+    if (child.name === ".git" || child.name === "node_modules") continue;
+    const childPath = join(skillPath, child.name);
+    if (child.isDirectory()) {
+      entries.push({
+        name: child.name,
+        mode: "40000",
+        hash: Buffer.from(await computeGitTreeHash(childPath), "hex"),
+      });
+    } else if (child.isFile()) {
+      const content = await readFile(childPath);
+      const mode = (await lstat(childPath)).mode & 0o111 ? "100755" : "100644";
+      const blobPayload = Buffer.concat([
+        Buffer.from(`blob ${content.length}\0`),
+        content,
+      ]);
+      entries.push({
+        name: child.name,
+        mode,
+        hash: createHash("sha1").update(blobPayload).digest(),
+      });
+    }
+  }
+
+  entries.sort((left, right) => {
+    const leftName = `${left.name}${left.mode === "40000" ? "/" : ""}`;
+    const rightName = `${right.name}${right.mode === "40000" ? "/" : ""}`;
+    return Buffer.from(leftName).compare(Buffer.from(rightName));
+  });
+
+  const treePayload = Buffer.concat(
+    entries.map((entry) =>
+      Buffer.concat([
+        Buffer.from(`${entry.mode} ${entry.name}\0`),
+        entry.hash,
+      ]),
+    ),
+  );
+  return createHash("sha1")
+    .update(
+      Buffer.concat([Buffer.from(`tree ${treePayload.length}\0`), treePayload]),
+    )
+    .digest("hex");
+}
+
+async function computeSkillFolderHash(
+  skillPath: string,
+  previousHash?: string,
+): Promise<string> {
+  return /^[0-9a-f]{40}$/i.test(previousHash ?? "")
+    ? computeGitTreeHash(skillPath)
+    : computeContentHash(skillPath);
+}
+
+async function readOptionalFile(filePath: string): Promise<string | undefined> {
+  try {
+    return await readFile(filePath, "utf8");
+  } catch (error: unknown) {
+    if (errorCode(error) === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+type LockUpdate = {
+  before: string | undefined;
+  changed: boolean;
+  updatedNames: string[];
+};
+
+async function updateLockHashes(names: string[]): Promise<LockUpdate> {
+  const before = await readOptionalFile(LOCK_FILE);
+  const lock = await readGlobalLock();
+  const updatedNames: string[] = [];
+  const updatedAt = new Date().toISOString();
+
+  for (const name of names) {
+    const entry = lock.skills?.[name];
+    if (!entry) continue;
+    const skillPath = locationsByName.get(name)?.[0];
+    if (!skillPath) {
+      throw new Error(`Could not find the installed path for ${name}`);
+    }
+    entry.skillFolderHash = await computeSkillFolderHash(
+      skillPath,
+      entry.skillFolderHash,
+    );
+    entry.updatedAt = updatedAt;
+    updatedNames.push(name);
+  }
+
+  if (updatedNames.length === 0) {
+    return { before, changed: false, updatedNames };
+  }
+
+  const after = JSON.stringify(lock, null, 2);
+  if (after !== before) await writeTextAtomically(LOCK_FILE, after);
+  return { before, changed: after !== before, updatedNames };
+}
+
+async function verifyLockHashes(names: string[]): Promise<void> {
+  const lock = await readGlobalLock();
+  const failures: string[] = [];
+  for (const name of names) {
+    const entry = lock.skills?.[name];
+    const skillPath = locationsByName.get(name)?.[0];
+    if (!entry || !skillPath) continue;
+    const expected = await computeSkillFolderHash(
+      skillPath,
+      entry.skillFolderHash,
+    );
+    if (entry.skillFolderHash !== expected) {
+      failures.push(
+        `${name}: expected ${expected}, found ${entry.skillFolderHash}`,
+      );
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Global skill lock hashes are stale: ${failures.join(", ")}`);
   }
 }
 
@@ -678,13 +851,16 @@ async function loadItems(): Promise<ReviewItem[]> {
   return items;
 }
 
-function printActionPlan(outcome: ReviewOutcome): void {
+async function printActionPlan(outcome: ReviewOutcome): Promise<void> {
   if (outcome.rejected.length === 0) {
     console.log("\nNo skills were selected for disabling. No changes are needed.");
     return;
   }
 
   const names = outcome.rejected.map((item) => item.id);
+  const lock = await readGlobalLock();
+  const lockedNames = names.filter((name) => Boolean(lock.skills?.[name]));
+  const untrackedNames = names.filter((name) => !lock.skills?.[name]);
   console.log(
     `\nPlan: disable model invocation for ${names.length} skill(s)`,
   );
@@ -693,12 +869,27 @@ function printActionPlan(outcome: ReviewOutcome): void {
     "\nEach selected SKILL.md will retain the skill and gain " +
       "disable-model-invocation: true.",
   );
-  console.log("The global skill lock will not be changed.");
+  if (lockedNames.length > 0) {
+    console.log(
+      `The global skill lock will update skillFolderHash and updatedAt for ` +
+        `${lockedNames.length} selected skill(s).`,
+    );
+  }
+  if (untrackedNames.length > 0) {
+    console.log(
+      `No global lock entry exists for: ${untrackedNames.join(", ")}.`,
+    );
+  }
 }
 
-async function applyOutcome(outcome: ReviewOutcome): Promise<void> {
+async function applyOutcome(outcome: ReviewOutcome): Promise<string[]> {
   const names = outcome.rejected.map((item) => item.id);
   const changes: Array<{ path: string; before: string; after: string }> = [];
+  let lockUpdate: LockUpdate = {
+    before: undefined,
+    changed: false,
+    updatedNames: [],
+  };
 
   for (const name of names) {
     assertSafeSkillName(name);
@@ -724,8 +915,26 @@ async function applyOutcome(outcome: ReviewOutcome): Promise<void> {
       }
     }
     await verifyDisabled(names);
+    lockUpdate = await updateLockHashes(names);
+    await verifyLockHashes(lockUpdate.updatedNames);
+    return lockUpdate.updatedNames;
   } catch (error: unknown) {
     const rollbackFailures: string[] = [];
+    if (lockUpdate.changed) {
+      try {
+        if (lockUpdate.before === undefined) {
+          await rm(LOCK_FILE, { force: true });
+        } else {
+          await writeTextAtomically(LOCK_FILE, lockUpdate.before);
+        }
+      } catch (rollbackError: unknown) {
+        const message =
+          rollbackError instanceof Error
+            ? rollbackError.message
+            : String(rollbackError);
+        rollbackFailures.push(`${LOCK_FILE}: ${message}`);
+      }
+    }
     for (const change of [...changes].reverse()) {
       if (change.before === change.after) continue;
       try {
@@ -772,7 +981,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  printActionPlan(outcome);
+  await printActionPlan(outcome);
   if (outcome.rejected.length === 0) {
     await review.clearState();
     return;
@@ -782,11 +991,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  await applyOutcome(outcome);
+  const updatedLockNames = await applyOutcome(outcome);
   await review.clearState();
   console.log(
     "Complete. Selected skills remain installed with model invocation disabled.",
   );
+  if (updatedLockNames.length > 0) {
+    console.log(
+      `Updated global skill lock entries: ${updatedLockNames.join(", ")}.`,
+    );
+  }
 }
 
 main().catch((error: unknown) => {
