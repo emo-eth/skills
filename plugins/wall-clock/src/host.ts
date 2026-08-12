@@ -13,7 +13,7 @@ import type {
   ToolProposal,
 } from "./types.ts";
 
-const FAST_LANE_DURATION_MS = 90_000;
+const FAST_LANE_DURATION_MS = 120_000;
 const FAST_LANE_WRAP_UP_MS = 15_000;
 const FAST_LANE_MAX_TOOL_CALLS = 12;
 
@@ -328,7 +328,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       expiryPolicy: "abort-running",
     });
     fastLanes.set(sessionId, { request: request || "the current user request", toolCalls: 0 });
-    notify(ctx, "Do-it-now active: 90s hard deadline, abort-running, delegation blocked, 12 tool calls maximum", "info");
+    notify(ctx, "Do-it-now active: 2m hard deadline, abort-running, delegation blocked, 12 tool calls maximum", "info");
     return status;
   };
 

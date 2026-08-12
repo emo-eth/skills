@@ -18,7 +18,7 @@ argument-hint: "[small, explicit request]"
 - **Host guard**: Native plugin enforcement that limits this lane's time, delegation, and tool calls.
 
 On Pi or OMP with the wall-clock plugin enabled, this explicit invocation also
-activates a host guard: a 90-second hard deadline, `abort-running` cancellation
+activates a host guard: a 2-minute hard deadline, `abort-running` cancellation
 for supported actions, no delegation, and a 12-call limit for ordinary tools.
 Without that native plugin, the skill instructions still narrow model behavior
 but cannot force a stop.

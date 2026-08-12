@@ -131,3 +131,13 @@ Consequences: D7 still requires every active contract to carry an enforceable po
 Status: active
 Scope: v0
 Load-bearing: no
+
+## D14 - 2026-08-12 - Give do-it-now two minutes
+
+Decision: The native do-it-now lane uses a two-minute hard deadline, `abort-running`, no delegation, and 12 ordinary tool calls.
+Why: Ninety seconds leaves too little margin for host and model startup plus one slow external operation. Two minutes remains a hard ceiling while keeping the lane focused.
+Alternatives: Keep 90 seconds (rejected because it is too brittle for simple updates); remove the hard limit (rejected because it would recreate the delay this lane is meant to prevent).
+Consequences: The native host, bundled skills, documentation, and focused host test all use the two-minute limit. The existing 15-second pre-deadline interval is unchanged.
+Status: active
+Scope: v0
+Load-bearing: no

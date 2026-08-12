@@ -22,7 +22,7 @@ compatibility: The optional MCP tools require a client that loads mcp.json and N
 Use wall-clock control only when the user gives a deadline, gives a duration, or asks for time-bounded planning. Keep sessions without an explicit time boundary unchanged.
 
 The explicit `/do-it-now` skill is the exception: on a supported native Pi or
-OMP host, its invocation starts a fixed 90-second host guard with
+OMP host, its invocation starts a fixed 2-minute host guard with
 `abort-running`, no delegation, and a 12-call ordinary-tool limit. Do not call
 portable wall-clock tools to start that lane.
 

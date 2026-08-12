@@ -19,7 +19,7 @@ Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects me
 An explicit `/do-it-now <request>` invocation on a native Pi or OMP session
 with this plugin loaded activates a fixed fast lane:
 
-- 90-second hard deadline;
+- 2-minute hard deadline;
 - `abort-running` for supported native actions;
 - delegation blocked;
 - at most 12 ordinary tool calls.
