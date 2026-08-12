@@ -9,6 +9,8 @@ import {
   type ExtensionContext,
   yearnLogPath,
 } from "../src/index.ts";
+import yearnOmpExtension from "../src/omp.ts";
+import yearnPiExtension from "../src/pi.ts";
 
 type RegisteredCommand = Parameters<ExtensionApi["registerCommand"]>[1];
 
@@ -33,6 +35,14 @@ function context(notifications: string[]): ExtensionContext {
     },
   };
 }
+
+test("Pi and OMP entrypoints both register the local command", () => {
+  for (const extension of [yearnPiExtension, yearnOmpExtension]) {
+    const api = new FakeApi();
+    extension(api);
+    assert.ok(api.command);
+  }
+});
 
 test("yearn records a wish with host and session metadata", async () => {
   const root = mkdtempSync(join(tmpdir(), "yearn-test-"));
