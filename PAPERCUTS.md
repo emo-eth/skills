@@ -159,3 +159,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T03:49:28Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Invoking the newly installed decision-wizard skill -> the current skill router did not discover it immediately, so I read the repository copy directly; refresh is needed after installing a new skill.
+- **2026-08-12T04:50:51Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking whether OMP skills share files -> readlink exited nonzero for the real .agents directory, so the combined link check produced an incomplete result
