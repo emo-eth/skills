@@ -351,3 +351,19 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T22:02:44Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Launching the detached Plannotator review -> the shell command returned exit 99 even though its stdout said Resolved and a live session record with the review URL was created; verify the session file instead of treating the exit code as failure.
+- **2026-08-12T20:28:01Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Calculating elapsed time since the latest session message -> the first Python one-liner omitted quotes around a keyword argument and failed; the retry used a simpler timestamp calculation.
+- **2026-08-12T20:33:47Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Checking the documented main checkout after publishing -> docs pointed to /Users/emo/dev/skills, but that path does not exist on this machine; verification stopped at the missing checkout rather than guessing another path.
+- **2026-08-12T22:09:37Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Inspecting the fetched main delta -> the first command included a nonexistent built-in? helper and failed; rerun with a direct git path query.
+- **2026-08-12T22:11:41Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Appending preserved papercut entries after fast-forward -> the first anchored edit used spaced path characters and failed; retry with the exact repository filename.

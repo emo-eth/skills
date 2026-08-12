@@ -286,6 +286,7 @@ test("do-it-now arms a bounded fast lane and blocks delegation", async () => {
   }, ctx);
 
   assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  assert.equal(controller.status("main").remainingMs, 120_000);
   const contextResult = await host.emit("context", { messages: [] }, ctx) as any;
   assert.match(contextResult.messages[0].content[0].text, /update the ticket title/);
   assert.match(contextResult.messages[0].content[0].text, /12 tool calls remain/);
