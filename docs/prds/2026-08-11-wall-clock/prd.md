@@ -16,7 +16,7 @@ source_vibe: docs/prds/2026-08-11-wall-clock/vibe.md
 - **Phase**: The current time state: inactive, active, wrap-up, expired, or complete.
 - **Wrap-up**: The period before the hard deadline when new risky or expanding work stops and the current result is prepared.
 - **Hard deadline**: The point after which new work must not start.
-- **Expiry policy**: The explicit choice between blocking new work after expiry and aborting running wall-clock-owned work at expiry.
+- **Expiry policy**: The rule that either blocks new work after expiry or also aborts running wall-clock-owned work. The native slash command uses `abort-running` when the user does not specify one.
 - **Shortcut**: A deliberate reduction in scope, method, or validation, with its tradeoff stated.
 - **Host enforcement**: A runtime action that blocks or stops work.
 - **Elapsed-time context**: Measured total elapsed time, latest inference or tool-call elapsed time, current clock time, remaining time, and actual assignment elapsed time.
@@ -39,15 +39,15 @@ A user can give a supported agent session a real time boundary and trust the hos
 
 ## Users And Jobs
 
-- **User directing the work**: Choose a duration or local-time deadline and an expiry policy, then receive a result whose limits were actually enforced.
+- **User directing the work**: Choose a duration or local-time deadline, optionally override the default expiry policy, and receive a result whose limits were actually enforced.
 - **Parent session**: Turn an overall plan into bounded assignments, see actual elapsed time at every turn, and revise the remaining work from child reports.
 - **Child session**: Complete one acceptance target early when possible, see its actual elapsed time at every turn, and return a vertical slice with evidence and tradeoffs.
 - **Host maintainer**: Provide a tested enforcement seam for the selected harness and reject activation when that seam is unavailable.
 
 ## Product Shape
 
-- **Entry points**: Explicit activation with a duration, local-time deadline, and required expiry policy; status and stop actions; bounded assignment and report actions; and native host integrations.
-- **Core flow**: Select a supported harness -> activate one session and expiry policy -> receive elapsed-time context every turn -> create bounded assignments -> admit only host-approved actions -> complete or report the vertical slice -> revise the parent plan -> finish or stop.
+- **Entry points**: Explicit activation with a duration or local-time deadline, an optional native-command policy override, and an optional first prompt; status and stop actions; bounded assignment and report actions; and native host integrations.
+- **Core flow**: Select a supported harness -> activate one session with the default or selected expiry policy -> optionally start or steer work with the trailing prompt -> receive elapsed-time context every turn -> create bounded assignments -> admit only host-approved actions -> complete or report the vertical slice -> revise the parent plan -> finish or stop.
 - **Required surfaces**: Activation, status, elapsed-time context, enforced action admission, assignment, completion, report, persistence and restore, and a visible activation failure when the requested policy cannot be enforced.
 - **Harness expectations**: Pi and OMP are the first enforcement targets. Codex and Claude are considered only for the portable Agent Plugins package and open extension surfaces; Claude proprietary systems are out of scope. A client without a tested native enforcement seam must not activate wall-clock.
 - **Plugin expectations**: Agent Plugins requires a root manifest. Skills and MCP are optional components. Wall-clock may expose an MCP control surface, but MCP is never required for enforcement and never replaces a native adapter.
@@ -57,7 +57,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 
 ### R1. Explicit activation and inactive isolation
 
-- Requirement: The system must remain inactive until the user or parent session explicitly starts wall-clock control for one session and selects an expiry policy. Starting or installing the package must not change ordinary work in other sessions.
+- Requirement: The system must remain inactive until the user or parent session explicitly starts wall-clock control for one session. Every activation must carry an expiry policy. The native slash command must use `abort-running` when the user does not specify one. Starting or installing the package must not change ordinary work in other sessions.
 - Rationale: Time control is a user-selected constraint, and a limit without enforcement is not useful.
 - Acceptance: With no activation, ordinary tools, context, and workflow remain unchanged. Activation succeeds only when the selected harness can enforce the chosen policy. After activation, only the selected session has wall-clock state.
 - Not acceptable: An installed package adds deadline instructions to every session, activates guidance-only behavior, or blocks ordinary work that has no active time contract.
@@ -125,12 +125,12 @@ A user can give a supported agent session a real time boundary and trust the hos
 - Acceptance: A compatible client can discover the package and load the skill. If it supports MCP, it can connect to the optional control surface. Wall-clock enforcement does not depend on either component alone.
 - Not acceptable: The manifest claims that MCP is required by the standard, a portable skill is presented as a pre-action hook, or a package is activated on a client that has no enforcement adapter.
 
-### R11. Explicit in-flight expiry policy
+### R11. Host-enforced in-flight expiry policy
 
-- Requirement: Activation must require one of two expiry policies: `block-new`, which enforces the deadline by rejecting new work while admitted work may finish, or `abort-running`, which enforces the deadline by rejecting new work and aborting every wall-clock-owned running action at expiry. The host must reject `abort-running` when an admitted action has no abortable executor.
-- Rationale: The user must decide whether reaching the deadline ends only admission or also ends running work. The product must enforce the selected choice rather than silently choosing for the user.
+- Requirement: Activation must carry one of two expiry policies: `block-new`, which enforces the deadline by rejecting new work while admitted work may finish, or `abort-running`, which enforces the deadline by rejecting new work and aborting every wall-clock-owned running action at expiry. The native slash command defaults to `abort-running` and lets the user override it with `block-new`. The host must reject `abort-running` when an admitted action has no abortable executor.
+- Rationale: The common command should be concise, while the user must still be able to choose whether reaching the deadline ends only admission or also ends running work. The product must enforce the effective policy and show it in status.
 - Acceptance: The selected policy is visible in status and reports. `block-new` never claims that running work stopped. `abort-running` emits and observes an abort signal for every owned running action, or rejects the action before it starts when cancellation cannot be enforced.
-- Not acceptable: The product silently changes policies, reports an in-flight action as cancelled without an observed abort, or allows an unabortable action under `abort-running`.
+- Not acceptable: The product uses an undocumented default, silently changes an active policy, reports an in-flight action as cancelled without an observed abort, or allows an unabortable action under `abort-running`.
 
 ### R12. Parent plan revision
 
@@ -157,7 +157,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 
 ### In Scope
 
-- Explicit activation for a duration or local-time deadline and a required expiry policy.
+- Explicit activation for a duration or local-time deadline, with `abort-running` as the documented native-command default and `block-new` as an override.
 - Active, wrap-up, expired, and complete phase behavior.
 - Measured per-turn elapsed-time context for parent and child agents.
 - Host-enforced action admission and, when selected, host-enforced abort of running owned work.
@@ -184,7 +184,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 
 ## Success Criteria
 
-- A user can start a 30-minute or local-time wall-clock window with an explicit expiry policy on a supported Pi or OMP path.
+- A user can start a 30-minute or local-time wall-clock window with the default or an explicit expiry policy on a supported Pi or OMP path, and can include the first work prompt in the same native command.
 - Every parent and child turn includes measured current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, and actual assignment elapsed time.
 - A supported host blocks wrap-up and expired actions before execution.
 - `abort-running` is tested against an abortable executor, and `block-new` is tested without falsely claiming cancellation.
@@ -201,7 +201,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 - Claude proprietary systems are not a target.
 - MCP is optional in the Agent Plugins standard and is not an enforcement dependency.
 - Activation always requires a host-enforced expiry policy.
-- The user selects whether expiry blocks new work only or aborts running wall-clock-owned work.
+- The user can select whether expiry blocks new work only or aborts running wall-clock-owned work; omission from the native slash command means `abort-running`.
 
 ## Approval
 

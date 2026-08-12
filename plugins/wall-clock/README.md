@@ -31,10 +31,12 @@ behavior. Without a native adapter, the skill is guidance only.
 
 ## Supported behavior
 
-Activation accepts a positive duration such as `30m` or a future local time such as `5pm`. The caller must select one policy:
+Activation accepts a positive duration such as `30m` or a future local time such as `5pm`. Every active contract carries one policy:
 
 - `block-new`: after expiry, reject new work and let work already admitted by the host finish.
 - `abort-running`: after expiry, reject new work and abort every supported wall-clock-owned action. The adapter rejects an action before it starts when it cannot prove that the native executor can be aborted.
+
+The native `/wallclock` command defaults to `abort-running` when the policy is omitted. Use `block-new` to override it. `abort` is accepted as a short spelling of `abort-running`. Native tools and the portable operation contract still carry the canonical policy explicitly.
 
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
@@ -72,15 +74,20 @@ pi --extension /absolute/path/to/plugins/wall-clock/src/pi.ts
 omp --extension /absolute/path/to/plugins/wall-clock/src/omp.ts
 ```
 
-Start and inspect a session:
+Start a session, optionally submit the first prompt, and inspect it:
 
 ```text
-/wallclock start 30m block-new
+/wallclock 5m fix merge conflicts in all open PRs
+/wallclock 30m block-new inspect the failing tests
+/wallclock start 30m abort-running finish the refactor
 /wallclock status
 /wallclock stop
 ```
 
-Use `abort-running` instead of `block-new` only when running supported native actions must stop at expiry.
+`start` is optional. The policy is optional and defaults to `abort-running`. When the command includes a prompt, an idle host starts a new turn and a running host delivers it as normal steering input. Wall-clock activates and persists before it submits the prompt.
+
+The native status display refreshes once per second from the current host clock. A delayed refresh recalculates the remaining time instead of decrementing a cached value, so display delays do not accumulate drift.
+
 Stop the current contract before starting a replacement. A second start never silently discards active plans, assignments, reports, or running-action ownership.
 
 The package also declares `pi.extensions` and `omp.extensions` in `package.json` for native package discovery. Do not install this directory through `npx skills`; it is a runtime plugin, not a personal skill package.
@@ -93,6 +100,7 @@ omp --profile wall-clock
 ```
 
 Do not add `--scope` for a local path. OMP 17.2.15 ignores it for local package installs.
+After the first native plugin install, fully quit and restart OMP. In OMP 17.2.15, `/reload-plugins` does not activate a newly installed npm plugin in the current process.
 
 ## Tools
 
