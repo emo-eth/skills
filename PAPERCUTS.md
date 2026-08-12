@@ -321,3 +321,7 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T16:36:32.311Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While merging the nested Wall Clock specification into current main, docs/STATE.md conflicted because two independent changes appended rows to the same topic table. Keep project-state topics in separate included files or use a stable sorted insertion rule to reduce append conflicts.
+- **2026-08-12T19:15:48Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Checking the required main checkout before pushing -> the documented /Users/emo/dev/skills path does not exist on this machine, so the status check failed; the actual repository location must be resolved before fast-forwarding main.
