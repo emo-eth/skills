@@ -13,6 +13,7 @@ Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects me
 - **Abort domain**: One native host session whose abort function can stop its current action.
 - **Fast lane**: A short host-enforced execution window for one bounded request.
 - **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
+- **Wrap-it-up lane**: A two-minute host-enforced execution window for finishing the active request.
 
 ## Do-it-now lane
 
@@ -28,6 +29,19 @@ The lane ends when the agent run ends. This is a host guard, not a semantic
 scope parser. It cannot decide whether an arbitrary read or write is related
 to the request, so the bundled skill remains responsible for narrowing model
 behavior. Without a native adapter, the skill is guidance only.
+
+## Wrap-it-up lane
+
+An explicit `/wrap-it-up` invocation on a native Pi or OMP session with this
+plugin loaded activates a fixed fast lane:
+
+- two-minute hard deadline;
+- `abort-running` for supported native actions;
+- delegation blocked;
+- at most 12 ordinary tool calls.
+
+The bundled skill remains responsible for closing the active task. Without a
+native adapter, the skill is guidance only.
 
 ## Supported behavior
 

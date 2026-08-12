@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { WallClockController } from "../src/controller.ts";
-import { createHostCoordination, installHostExtension } from "../src/host.ts";
+import { createHostCoordination, installHostExtension, type RuntimeHost } from "../src/host.ts";
 import { MemoryStore } from "../src/store.ts";
 
 class FakeEventBus {
@@ -340,6 +340,48 @@ test("do-it-now custom skill messages arm the host guard", async () => {
   assert.equal(controller.status("main").expiryPolicy, "abort-running");
   const contextResult = await host.emit("context", { messages: [] }, context()) as any;
   assert.match(contextResult.messages[0].content[0].text, /refresh the list/);
+});
+
+test("wrap-it-up arms a two-minute fast lane and blocks delegation", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: {
+      name: "fake-pi",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.emit("message_start", {
+    type: "message_start",
+    message: {
+      role: "custom",
+      details: { name: "wrap-it-up", args: "finish the active task" },
+      content: "skill body",
+    },
+  }, ctx);
+
+  assert.equal(controller.status("main").remainingMs, 120_000);
+  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  const contextResult = await host.emit("context", { messages: [] }, ctx) as {
+    messages: Array<{ content: Array<{ text: string }> }>;
+  };
+  assert.match(contextResult.messages[0].content[0].text, /Wrap-it-up host guard/);
+  assert.match(contextResult.messages[0].content[0].text, /finish the active task/);
+
+  const delegated = await host.emit("tool_call", {
+    toolCallId: "wrap-up-delegated",
+    toolName: "task",
+    input: { task: "Finish the task" },
+  }, ctx) as { block: boolean; reason: string };
+  assert.equal(delegated.block, true);
+  assert.match(delegated.reason, /Wrap-it-up blocks delegation/);
 });
 
 test("Pi-shaped host injects measured context and blocks expired work before execution", async () => {
