@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## Project state
+
+- Before any work, read `docs/STATE.md`. It is the index of what is current; follow its pointers to the real source before editing.
+- If a session changes the project's understanding or code, update `docs/STATE.md` in the same commit as the work.
+- Dated session artifacts go in `docs/log/YYYY-MM-DD-<name>.md`, never the repository root.
+
 Personal agent skills, distributed via [`npx skills`](https://github.com/vercel-labs/skills).
 
 This repo is the single source of truth for these skills across all of my machines. Every device installs from here and updates from here.

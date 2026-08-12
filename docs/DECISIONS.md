@@ -1,0 +1,103 @@
+# Wall Clock Plugin Decisions
+
+## Glossary
+
+- **Decision**: A rule that changes future implementation behavior.
+- **Load-bearing**: A decision that is expensive to reverse or affects several modules.
+
+## D1 - 2026-08-05 - Store design outside skills
+
+Decision: Keep wall-clock design, research, and experimental implementation outside `skills/` until the plugin is ready for skill distribution.
+Why: The user asked to keep design and future-work documents separate and ensure they are not installed with skills.
+Consequences: `npx skills` will not discover the proposal or plugin directories. Native OMP and Pi distribution will be added later.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D2 - 2026-08-05 - Budgets are ceilings
+
+Decision: An assignment budget is a maximum guardrail, not a target. A child should finish as soon as its acceptance target is met.
+Why: "sessions should not strive to fill the allotted time; short tasks should not take longer; they should finish early whenever possible" - Plannotator annotation.
+Consequences: The controller records completion explicitly and never creates extra work to consume unused time.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D3 - 2026-08-05 - Host proof is required
+
+Decision: Every enforcement claim must name a host mechanism, failure mode, and test evidence. Model instructions are not enforcement.
+Why: "how do we enforce that it does?" - Plannotator annotation.
+Consequences: The implementation blocks new tool calls at the host pre-tool seam and labels unsupported child stopping as guidance.
+Status: superseded-by D4
+Scope: v0
+Load-bearing: yes
+
+## D4 - 2026-08-11 - No guidance-only activation
+
+Decision: Wall-clock may activate only when the selected host can enforce the requested expiry policy. A package that provides only prompts, timers, skills, or MCP must reject activation rather than run a guidance-only limit.
+Why: "a limit should always be an enforcement. if we can't do that with a plugin, we shouldn't try"
+Alternatives: Guidance-only activation (rejected because it is equivalent to saying "hurry up"); package discovery without activation (accepted for unsupported clients).
+Consequences: Native host enforcement is a prerequisite for an active session. Unsupported activation fails closed. D3's former guidance fallback is superseded.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D5 - 2026-08-11 - Measured context replaces estimates
+
+Decision: Every parent and child turn receives measured current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, and actual assignment elapsed time. Agents do not estimate task duration.
+Why: "parent and children are also acutely aware at every turn how much time remains and how long each task has taken" and "i suspect agents will be very poor at estimating how long a task takes. they should not attempt to estimate"
+Alternatives: A deadline-only context (rejected because it hides elapsed work); an agent-provided duration estimate (rejected because the user expects measured time, not guesses).
+Consequences: Host adapters must measure and inject the fields at each model turn. Assignment and report contracts use actual elapsed time.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D6 - 2026-08-11 - Pi and OMP are first enforcement targets
+
+Decision: Build and prove native enforcement for Pi and OMP first. Codex and Claude may discover the package but cannot activate wall-clock until an open, tested enforcement seam exists. Claude proprietary systems are out of scope.
+Why: "only harnesses i am considering: codex, pi, omp, claude (do not target claude's proprietary system). favor pi and omp"
+Alternatives: Treat every package-loading client as equally supported (rejected because package discovery does not prove enforcement); target Claude proprietary systems (rejected by scope).
+Consequences: Pi and OMP host tests are the first release gate. Codex and Claude remain package targets only until their open runtime seams are proven.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D7 - 2026-08-11 - Expiry policy is user-selected
+
+Decision: Activation requires one expiry policy: `block-new`, which rejects new work while admitted work may finish, or `abort-running`, which rejects new work and aborts every wall-clock-owned running action through an observed executor signal.
+Why: "i'd like to be able to decide whether or not this is the case"
+Alternatives: Always allow admitted work to finish (rejected because it removes the user's choice); always abort admitted work (rejected because some executors cannot safely abort).
+Consequences: The selected policy is stored, visible in status and reports, and enforced at the host boundary. A host must reject `abort-running` when it cannot observe an abortable executor.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D8 - 2026-08-11 - Compression preserves a working vertical slice
+
+Decision: When time contracts, wall-clock reduces scope toward the smallest working vertical slice and reports the skipped work, validation, shortcuts, risks, and unknowns.
+Why: "vertical slice"
+Alternatives: Describe any incomplete result as merely usable partial work (rejected because it does not promise an end-to-end working result); hide skipped validation (rejected because it would mislead the parent).
+Consequences: Reports and acceptance targets must identify the working path, not only a list of completed files or investigations.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D9 - 2026-08-11 - MCP is optional
+
+Decision: MCP is an optional Agent Plugins component and an optional wall-clock control and inspection surface. It is never required by the package standard and never supplies deadline enforcement.
+Why: "is mcp required by plugin standard?"
+Alternatives: Require MCP for every client (rejected because the standard permits skills-only clients); use MCP as the enforcement boundary (rejected because MCP does not define host pre-action hooks).
+Consequences: The root manifest and Agent Skill remain the portable floor. Native Pi and OMP adapters enforce deadlines independently of MCP.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D10 - 2026-08-11 - Defer unsupported-harness activation
+
+Decision: Keep Codex and Claude package discovery available, but defer active wall-clock sessions on those hosts until an open, tested enforcement seam exists. Claude proprietary systems remain excluded.
+Why: "only harnesses i am considering: codex, pi, omp, claude (do not target claude's proprietary system). favor pi and omp"
+Consequences: v0 implementation work stays focused on Pi and OMP. Revisit activation support when v1 host scoping identifies a public lifecycle boundary and its tests prove the selected expiry policies.
+Status: deferred
+Revisit: when v1 host scoping starts or an open Codex or Claude enforcement seam becomes available
+Scope: v1+
+Load-bearing: yes
