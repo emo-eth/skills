@@ -1,6 +1,6 @@
 ---
 name: papercut
-description: Log small agent workflow frictions to a repo-local PAPERCUTS.md file with the bundled shell helper.
+description: Log small agent workflow frictions to a user-global PAPERCUTS.md file with the bundled shell helper.
 license: MIT
 ---
 
@@ -8,12 +8,11 @@ license: MIT
 
 Use this skill whenever you notice a small friction while working in a repository: a misleading command, flaky setup step, unclear documentation, cache surprise, missing helper, path mismatch, template drift, or another annoyance that was not worth stopping for but should be visible later.
 
-There is no global `papercut` command. Use the bundled `scripts/papercut.sh` helper directly.
+The helper writes to one user-global append-only file, not the repository. The default is `~/PAPERCUTS.md`; set `PAPERCUTS_PATH` or pass `--path` to choose another file.
 
 ## Resolve the helper
 
 Run this once in the shell where you will log the papercut. Set `PAPERCUT_SKILL_DIR` to the directory containing this `SKILL.md` when the skill system gives you that path. The other candidates cover the standard global skill locations.
-
 ```bash
 papercut_skill_script=""
 for papercut_candidate in \
@@ -58,6 +57,10 @@ papercut -m codex "what you were doing -> what got in the way"
 - Do not put secrets, tokens, private URLs, or copied logs with credentials in the message.
 - This is for sandpaper, not big bugs. Real bugs still need the normal tracker/review path.
 
+Each entry records the repository identity, worktree, branch (or detached commit), current folder, agent, related files, and note. Paths are local metadata; do not log secrets in paths or messages.
+
 ## Output
 
-The CLI appends to `PAPERCUTS.md` at the nearest Git repository root. It creates the file if needed.
+The CLI appends to the global `PAPERCUTS.md` path, creating its parent directory and file if needed. The default is `~/PAPERCUTS.md`; set `PAPERCUTS_PATH` or pass `--path` to choose another file. Output is never written into the repository.
+
+`--repo <path>` sets the project root used to compute relative metadata (worktree, branch or detached commit, and folder); it does not change the global output location.
