@@ -6,7 +6,7 @@ Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enfor
 
 ## Where we are
 
-Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. The native `/wallclock` command accepts an optional `start`, defaults an omitted policy to `abort-running`, and submits an optional trailing prompt only after activation; idle use starts a turn and active use steers it. The host status display recalculates from the current clock once per second. OMP's real `TaskTool` creates tested children that inherit assignment context, block late work, report, terminate through native `yield`, and abort a running child bash action. The adapters also recognize explicit `/do-it-now` skill invocations and apply a fixed 2-minute, abort-running fast lane that blocks delegation and caps ordinary tool calls. OMP does not forward the parent event-bus object into these children, so the adapter binds the real child session file through a process-wide registry and removes the binding at terminal lifecycle. Unsupported or unabortable paths fail closed.
+Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. The native `/wallclock` command accepts an optional `start`, defaults an omitted policy to `block-new`, and submits an optional trailing prompt only after activation; idle use starts a turn and active use steers it. The host status display recalculates from the current clock once per second. OMP's real `TaskTool` creates tested children that inherit assignment context, block late work, report, terminate through native `yield`, and abort a running child bash action. The adapters also recognize explicit `/do-it-now` skill invocations and apply a fixe…
 
 The package is installed and enabled in the normal local OMP profile from `/Users/emo/dev/skills/plugins/wall-clock`. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
@@ -27,7 +27,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
 - Parent and child agents receive measured elapsed-time context at every turn; agents do not estimate task duration. [D5]
 - Pi and OMP are the first enforcement targets; Codex and Claude are package targets only until tested seams exist. [D6]
-- Every activation carries `block-new` or `abort-running`; the native slash command defaults an omitted choice to `abort-running`. [D7, D13]
+- Every activation carries `block-new` or `abort-running`; the native slash command defaults an omitted choice to `block-new`. [D7, D15]
 - `standup` is ticket-centered; `initiative-standup` is the separate path for cross-project work and must not require or mutate Linear tickets. [documented]
 
 - Compression preserves a working vertical slice and reports gaps honestly. [D8]

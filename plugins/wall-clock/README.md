@@ -50,7 +50,7 @@ Activation accepts a positive duration such as `30m` or a future local time such
 - `block-new`: after expiry, reject new work and let work already admitted by the host finish.
 - `abort-running`: after expiry, reject new work and abort every supported wall-clock-owned action. The adapter rejects an action before it starts when it cannot prove that the native executor can be aborted.
 
-The native `/wallclock` command defaults to `abort-running` when the policy is omitted. Use `block-new` to override it. `abort` is accepted as a short spelling of `abort-running`. Native tools and the portable operation contract still carry the canonical policy explicitly.
+- The native `/wallclock` command defaults to `block-new` when the policy is omitted. Use `abort-running` when the host can prove safe cancellation. `abort` is accepted as a short spelling of `abort-running`. Native tools and the portable operation contract still carry the canonical policy explicitly.
 
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
@@ -98,7 +98,7 @@ Start a session, optionally submit the first prompt, and inspect it:
 /wallclock stop
 ```
 
-`start` is optional. The policy is optional and defaults to `abort-running`. When the command includes a prompt, an idle host starts a new turn and a running host delivers it as normal steering input. Wall-clock activates and persists before it submits the prompt.
+`start` is optional. The policy is optional and defaults to `block-new`. When the command includes a prompt, an idle host starts a new turn and a running host delivers it as normal steering input. Wall-clock activates and persists before it submits the prompt.
 
 The native status display refreshes once per second from the current host clock. A delayed refresh recalculates the remaining time instead of decrementing a cached value, so display delays do not accumulate drift.
 

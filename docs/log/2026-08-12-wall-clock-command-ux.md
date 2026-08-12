@@ -14,7 +14,7 @@ The native Pi and OMP adapters now accept:
 /wallclock [start] <deadline> [block-new|abort-running|abort] [prompt...]
 ```
 
-`start` and the expiry policy are optional. The default is `abort-running`, and `abort` is its short spelling. The adapter persists the active contract before it submits a trailing prompt. Idle delivery starts a turn; active delivery uses steering.
+`start` and the expiry policy are optional. The default is `block-new`, and `abort` is its short spelling for explicit `abort-running`. The adapter persists the active contract before it submits a trailing prompt. Idle delivery starts a turn; active delivery uses steering.
 
 The native status display now refreshes once per second from the host clock. A late callback recalculates the actual remaining time and phase, so callback delay does not create countdown drift. Refresh stops at completion, expiry, stop, session switch, or shutdown.
 
@@ -24,7 +24,7 @@ OMP 17.2.15 needs a full process restart after a new npm plugin install. `/reloa
 
 - `npm run check` passed.
 - `npm test` passed 69 Node tests and 6 Bun tests.
-- The native OMP mock-backed session received the trailing prompt only after context showed `Expiry policy: abort-running`.
+- The native OMP mock-backed session received the trailing prompt only after context showed `Expiry policy: block-new`.
 - Pi and OMP native runner tests observed the user-message API call with normal idle delivery.
 - The host status test advanced the clock from active time to expiry with delayed callbacks and observed current, non-drifting values.
 - The pinned Pi and OMP command-line tests, isolated OMP install test, native task-child tests, and abort-running executor tests passed.

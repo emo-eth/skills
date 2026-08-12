@@ -41,7 +41,7 @@ The portable Agent Plugins package can provide tools and instructions. It cannot
 When the user gives a duration such as `30m` or a local time such as `5pm`:
 
 1. Create a short session key and reuse it for every wall-clock call in this run.
-2. If a native `wallclock_start` is available, call it with the exact duration or local time, the user's selected `block-new` or `abort-running` policy, and the current plan when one exists. Use `abort-running` when the user does not select a policy.
+2. If a native `wallclock_start` is available, call it with the exact duration or local time, the user's selected `block-new` or `abort-running` policy, and the current plan when one exists. Use `block-new` when the user does not select a policy.
 3. Read the returned phase and remaining time. State the hard deadline and the wrap-up point in the working plan.
 4. If activation is unavailable or rejected, do not create a guidance-only wall-clock session. Tell the user that this host cannot enforce the requested policy.
 
