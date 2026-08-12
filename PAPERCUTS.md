@@ -132,3 +132,12 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-10T23:30:01Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
   - note: Syncing the chezmoi lock -> `re-add` did not update a `create_` entry, while `add` renamed it and auto-push hit a non-fast-forward; fetch and merge remote changes before pushing.
+- **2026-08-12T01:00:59Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Listing globally installed skills with npx skills ls -> the command scanned unrelated agent directories and emitted repeated YAML parse warnings, so its output was not a reliable metadata source.
+- **2026-08-12T01:10:45Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking XDG_STATE_HOME and HOME with printenv -> printenv returned status 1 when the optional XDG variable was absent, so the combined probe looked like a failed check despite printing HOME.
+- **2026-08-12T01:12:36Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Running the official global removal command -> skills CLI help advertises -a '*' but the parser rejects '*' as an invalid agent; omitting -a correctly targets every configured agent by default.
