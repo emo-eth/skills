@@ -6,7 +6,9 @@ Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enfor
 
 ## Where we are
 
-Current phase: v0 implementation complete on the `wall-clock` branch. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. OMP's real `TaskTool` creates tested children that inherit assignment context, block late work, report, terminate through native `yield`, and abort a running child bash action. OMP does not forward the parent event bus into these children, so the adapter binds each real child session file through a process-wide registry and removes the binding at terminal lifecycle. Unsupported or unabortable paths fail closed.
+Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. OMP's real `TaskTool` creates tested children that inherit assignment context, block late work, report, terminate through native `yield`, and abort a running child bash action. OMP does not forward the parent event bus into these children, so the adapter binds each real child session file through a process-wide registry and removes the binding at terminal lifecycle. Unsupported or unabortable paths fail closed.
+
+The package is installed and enabled in the normal local OMP profile from `/Users/emo/dev/skills/plugins/wall-clock`. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. The completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`.
 
 The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement.
 
@@ -29,7 +31,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | --- | --- | --- | --- | --- |
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
 | Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
-| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | Pi and OMP command-line tests, isolated OMP install test, and native TaskTool child tests in `plugins/wall-clock/tests/` | verified-live |
+| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and `docs/log/2026-08-12-wall-clock-completion.md` | verified-live |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md` | raw snapshot and answers doc | verified-live |
