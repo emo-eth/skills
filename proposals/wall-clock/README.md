@@ -19,6 +19,7 @@ Nothing in this directory is discovered by `npx skills`: only directories under 
 
 - [Research report](research-report.md)
 - [Design](design.md)
+- [Nested assignment limits proposal](nested-assignment-limits.md)
 - [Future work](future-work.md)
 - [Review answers](review-answers.md)
 - [Decisions](../../docs/DECISIONS.md)
