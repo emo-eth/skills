@@ -40,6 +40,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and `docs/log/2026-08-12-wall-clock-completion.md` | verified-live |
 | Nested assignment limits | `proposals/wall-clock/nested-assignment-limits.md` | not implemented | data-shape sign-off and Gate 0 still required | proposed |
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex and optional Herdr navigation | `memex index` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
+| Direct execution lane | `skills/do-it-now/SKILL.md` | `skills/do-it-now/SKILL.md` | skill contract inspection and focused invocation smoke check | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md` | raw snapshot and answers doc | verified-live |
