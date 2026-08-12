@@ -174,3 +174,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T05:05:42Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Verifying the updated skillFolderHash with git mktree -> the first command used a blob hash without storing the object, so mktree rejected it; store the blob in a temporary repository before comparing
+- **2026-08-12T05:33:15Z** `deepseek-v4`
+  - cwd: `.`
+  - note: Testing subvert-cli invocation for a new skill -> npx subvert-cli mangles brace args in FROM/TO ('facilit{y,ies}'), treating the next token as a path and failing with ENOENT; bunx works fine. Prefer bunx/global install for brace renames.
