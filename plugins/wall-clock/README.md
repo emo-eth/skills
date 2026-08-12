@@ -132,6 +132,8 @@ The standalone MCP server exposes the operation contracts but refuses `wallclock
 
 The launcher needs Node.js 22.6 or newer because it uses native TypeScript type stripping.
 
+The Codex feasibility finding is in [CODEX-SUPPORT.md](CODEX-SUPPORT.md). It describes a possible `block-new`-only adapter; Codex activation is not implemented or supported in v0.
+
 ## Known boundaries
 
 - Pi does not provide native child delegation through this adapter.
