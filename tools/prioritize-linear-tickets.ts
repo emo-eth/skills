@@ -19,6 +19,7 @@ import {
   type ComparisonResult,
   type Ticket,
 } from "./prioritize-core.ts";
+import { fetchAssignedNotCompleted, setPriority } from "./linear-client.ts";
 
 const STATE_VERSION = 1;
 const RESET = "\u001b[0m";
@@ -29,12 +30,21 @@ const useColor = Boolean(
 
 const DEFAULT_STATE_FILE = ".prioritize-state.json";
 const DEFAULT_OUTPUT_FILE = "top-k.json";
+const PRIORITY_LABELS: Record<number, string> = {
+  1: "Urgent",
+  2: "High",
+  3: "Medium",
+  4: "Low",
+};
 
 type Arguments = {
   input: string | undefined;
   top: number;
   state: string;
   output: string | undefined;
+  priorityTarget: number;
+  team: string | undefined;
+  dryRun: boolean;
   reset: boolean;
   help: boolean;
 };
@@ -84,6 +94,9 @@ function parseArguments(args: string[]): Arguments {
     top: 10,
     state: DEFAULT_STATE_FILE,
     output: undefined,
+    priorityTarget: 1,
+    team: undefined,
+    dryRun: false,
     reset: false,
     help: false,
   };
@@ -122,21 +135,36 @@ function parseArguments(args: string[]): Arguments {
       if (!options.output) throw new Error("--output needs a path");
       continue;
     }
+    if (arg === "--priority" || arg === "-p") {
+      const value = args[++index];
+      const parsed = Number(value);
+      if (value === undefined || !Number.isInteger(parsed) || parsed < 1 || parsed > 4) {
+        throw new Error("--priority needs an integer 1..4 (1=Urgent, 4=Low)");
+      }
+      options.priorityTarget = parsed;
+      continue;
+    }
+    if (arg === "--team") {
+      options.team = args[++index];
+      if (!options.team) throw new Error("--team needs a team key");
+      continue;
+    }
+    if (arg === "--dry-run") {
+      options.dryRun = true;
+      continue;
+    }
     throw new Error(`Unknown option: ${arg}`);
-  }
-
-  if (!options.help && !options.input) {
-    throw new Error("Missing required option: --input <path|->");
   }
   return options;
 }
 
 function printHelp(): void {
-  console.log(`Usage: tools/prioritize-linear-tickets.ts --input <path|-> --top <k> [options]
+  console.log(`Usage: tools/prioritize-linear-tickets.ts -k <k> [options]
   (or: node --experimental-strip-types tools/prioritize-linear-tickets.ts ...)
 
-Find the top k most important tickets from exported Linear (or generic)
-JSON using human pairwise comparisons, without ranking everything.
+Find the top k most important tickets assigned to you in Linear using human
+pairwise comparisons, without ranking everything. Uses the installed \`linear\`
+CLI for auth. Pass -i to rank a local JSON export instead.
 
 Controls in a terminal:
   L or Left   the LEFT ticket is more important
@@ -145,12 +173,15 @@ Controls in a terminal:
   Q or Ctrl-C pause and save progress
 
 Options:
-  -i, --input <path|->   JSON file to read, or '-' for stdin
-  -k, --top <k>          number of top tickets to select (default 10)
-  --state <path>         resume/persist state file (default .prioritize-state.json)
-  -o, --output <path>    write the resulting top-k JSON here on completion
-  --reset                discard saved comparisons and start again
-  -h, --help             show this help
+  -k, --top <k>             top tickets to select; written to Linear at the end
+      --priority <1-4>      Linear priority to set on the top-k (default 1=Urgent)
+      --team <key>          only rank issues in this team (e.g. NAT); default all
+      --dry-run             rank and show the plan but do NOT write to Linear
+  -i, --input <path|->      instead of Linear, rank a local JSON file ('-' = stdin)
+  -o, --output <path>       also write the resulting top-k JSON here
+      --state <path>        resume/persist state file (default ${DEFAULT_STATE_FILE})
+      --reset               discard saved comparisons and start again
+  -h, --help                show this help
 
 State file: ${DEFAULT_STATE_FILE}
 `);
@@ -281,6 +312,11 @@ async function readLine(prompt: string): Promise<string> {
   } finally {
     reader.close();
   }
+}
+
+async function confirmExact(prompt: string, expected: string): Promise<boolean> {
+  const answer = await readLine(prompt);
+  return answer.trim() === expected;
 }
 
 function normalizeChoice(value: string): ComparisonResult | "pause" | undefined {
@@ -433,13 +469,13 @@ async function main(): Promise<void> {
     printHelp();
     return;
   }
-  if (!args.input) throw new Error("Missing required option: --input <path|->");
 
-  // State-file default lives next to the input fixture when the input is a path
-  // naming a JSON file in the current directory; otherwise use the default.
   const stateFile = args.state;
+  const usingLinear = args.input === undefined;
 
-  const tickets = await loadTickets(args.input);
+  const tickets = usingLinear
+    ? await fetchAssignedNotCompleted({ team: args.team })
+    : await loadTickets(args.input);
   if (args.reset) await removeState(stateFile);
 
   const snapshot = snapshotFor(tickets, args.top);
@@ -455,10 +491,9 @@ async function main(): Promise<void> {
     );
   }
 
-  const comparisons: ComparisonCache = saved?.comparisons ?? {};
-  console.log(
-    `Prioritizing ${tickets.length} tickets, top ${args.top}. Input: ${args.input}.`,
-  );
+  let comparisons: ComparisonCache = saved?.comparisons ?? {};
+  const sourceLabel = usingLinear ? `Linear (${args.team ?? "all teams"})` : `file ${args.input}`;
+  console.log(`Prioritizing ${tickets.length} tickets, top ${args.top}. Source: ${sourceLabel}.`);
   if (saved) console.log(`Resuming from ${stateFile} (${Object.keys(comparisons).length} comparisons saved).`);
 
   // Prime the state file so a paused session is findable.
@@ -488,7 +523,7 @@ async function main(): Promise<void> {
       console.log("Paused. Comparisons are saved; rerun to resume.");
       return;
     }
-    comparisons[key] = writeComparisonValue(
+    comparisons = writeComparisonValue(
       comparisons,
       key,
       left.id,
@@ -508,20 +543,60 @@ async function main(): Promise<void> {
   console.log("");
   renderFinal(ranked, decided, args.top);
 
-  if (!args.output) return;
+  if (!usingLinear) {
+    if (!args.output) return;
+    const resultPayload = {
+      top: args.top,
+      selected: ranked.map((ticket, index) => ({
+        rank: index + 1,
+        id: ticket.id,
+        title: ticket.title,
+      })),
+      comparisonCount: decided,
+      input: args.input,
+    };
+    await writeFile(args.output, `${JSON.stringify(resultPayload, null, 2)}\n`, "utf8");
+    console.log(`\nWrote ${args.output}`);
+    return;
+  }
 
-  const resultPayload = {
-    top: args.top,
-    selected: ranked.map((ticket, index) => ({
-      rank: index + 1,
-      id: ticket.id,
-      title: ticket.title,
-    })),
-    comparisonCount: decided,
-    input: args.input,
-  };
-  await writeFile(args.output, `${JSON.stringify(resultPayload, null, 2)}\n`, "utf8");
-  console.log(`\nWrote ${args.output}`);
+  if (args.output) {
+    const resultPayload = {
+      top: args.top,
+      selected: ranked.map((ticket, index) => ({
+        rank: index + 1,
+        id: ticket.id,
+        title: ticket.title,
+      })),
+      comparisonCount: decided,
+      input: "linear",
+    };
+    await writeFile(args.output, `${JSON.stringify(resultPayload, null, 2)}\n`, "utf8");
+    console.log(`\nWrote ${args.output}`);
+  }
+
+  // Write-back: set the top-k to the target priority; leave non-selected alone.
+  const priorityLabel = PRIORITY_LABELS[args.priorityTarget] ?? String(args.priorityTarget);
+  console.log(
+    `\nPlan: set ${ranked.length} ticket(s) to priority ${priorityLabel} (${args.priorityTarget}) in Linear.`,
+  );
+  for (const ticket of ranked) console.log(`- ${ticket.id}  ${ticket.title}`);
+  if (args.dryRun) {
+    console.log("\nDry run only. No Linear issues were updated.");
+    return;
+  }
+
+  if (!(await confirmExact("Type APPLY to update Linear: ", "APPLY"))) {
+    console.log("Skipped. Saved state remains; rerun to resume from your comparisons.");
+    return;
+  }
+
+  for (const ticket of ranked) {
+    await setPriority(ticket.id, args.priorityTarget);
+    console.log(`Updated ${ticket.id} -> ${priorityLabel}`);
+  }
+  await removeState(stateFile);
+  console.log(`Done. Top ${ranked.length} set to ${priorityLabel}; others left as-is.`);
 }
 
 await main().catch((error: unknown) => {
