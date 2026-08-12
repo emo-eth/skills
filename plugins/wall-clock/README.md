@@ -31,7 +31,7 @@ The default wrap-up period is 20 percent of the available time, capped at five m
 | Host | Pre-action gate | Turn context | `block-new` | `abort-running` | Child behavior | Failure mode | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pi 0.84.1 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls` | Assignments are recorded; Pi has no native task child in this adapter | Activation or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-runners.test.ts` |
-| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each task must have exactly one active unbound assignment; batch and nested delegation are blocked | Missing shared event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
+| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each task must have exactly one active unbound assignment; batch and nested delegation are blocked | Missing event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
 | Portable Agent Plugin or MCP only | None | None | Activation rejected | Activation rejected | No child creation | Reports that a native Pi or OMP adapter is required | `tests/plugin.test.ts`, `tests/mcp.test.ts`, `tests/real-hosts.test.ts` |
 
 `abort-running` admits only one action at a time in each abort domain because Pi and OMP expose a session-wide abort function. An OMP parent task and its child session can both be active because they have separate abort domains. Unknown extension tools and direct `user_bash` actions are rejected under `abort-running` when cancellation cannot be observed.
@@ -69,6 +69,15 @@ Stop the current contract before starting a replacement. A second start never si
 
 The package also declares `pi.extensions` and `omp.extensions` in `package.json` for native package discovery. Do not install this directory through `npx skills`; it is a runtime plugin, not a personal skill package.
 
+To install and auto-load the package in an isolated OMP profile:
+
+```sh
+omp --profile wall-clock plugin install /absolute/path/to/plugins/wall-clock
+omp --profile wall-clock
+```
+
+Do not add `--scope` for a local path. OMP 17.2.15 ignores it for local package installs.
+
 ## Tools
 
 The native adapters register:
@@ -89,7 +98,7 @@ An assignment report records completed and partial work, evidence, skipped work,
 
 Native state is written as version 3 custom entries in the owning host session. Reload and resume compute phase and remaining time from the current clock. The latest wall-clock entry is authoritative. A malformed, old-version, or cross-session latest entry disables wall-clock for that session instead of restoring older state.
 
-An OMP child sees only its assigned scope and cannot stop the parent limit, create a nested assignment, inspect a sibling assignment, revise the parent plan, or report for another assignment. Parent state and child reports are persisted by the parent host session.
+An OMP child sees only its assigned scope and cannot stop the parent limit, create a nested assignment, inspect a sibling assignment, revise the parent plan, or report for another assignment. The child must call `wallclock_report` before OMP's required `yield`. After a valid report, the adapter permits only that native completion step even when the assignment is complete or expired. Parent state and child reports are persisted by the parent host session.
 
 ## Portable package and MCP
 
@@ -103,6 +112,7 @@ The launcher needs Node.js 22.6 or newer because it uses native TypeScript type 
 
 - Pi does not provide native child delegation through this adapter.
 - OMP supports one bounded assignment per task invocation; batch and nested delegation are blocked. Under `abort-running`, only one parent-session task can be active because the abort function is session-wide.
+- OMP 17.2.15 does not forward the parent event-bus object into a task-created child. The adapter binds the real child session file through a process-wide registry and removes the binding when the child reaches a terminal lifecycle state.
 - Remote provider cancellation needs provider-specific confirmation and is not implemented.
 - Codex and Claude can discover the portable package but cannot activate wall-clock until an open, tested native enforcement seam exists.
 - The full development dependency audit reports five high-severity findings in optional OMP model and image dependencies. `npm audit --omit=optional` reports zero findings. No production runtime dependency was added to the wall-clock controller.

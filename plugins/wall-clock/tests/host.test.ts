@@ -492,6 +492,13 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
   await childHost.emit("session_start", {}, childCtx);
   const childContext = await childHost.emit("context", { messages: [] }, childCtx) as any;
   assert.match(childContext.messages[0].content[0].text, /Assignment elapsed/);
+  const prematureYield = await childHost.emit("tool_call", {
+    toolCallId: "premature-yield",
+    toolName: "yield",
+    input: { result: { data: "not reported" } },
+  }, childCtx) as any;
+  assert.equal(prematureYield.block, true);
+  assert.match(prematureYield.reason, /wallclock_report/);
   await assert.rejects(
     childHost.commands.get("wallclock").handler("stop", childCtx),
     /owned by this child session's parent/,
@@ -529,6 +536,12 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
   }, undefined, undefined, childCtx) as any;
   assert.equal(JSON.parse(report.content[0].text).report.expiryPolicy, "block-new");
   assert.equal((parentHost.entries.at(-1)?.data as any).reports[0].assignmentId, assignment.id);
+  const allowedYield = await childHost.emit("tool_call", {
+    toolCallId: "reported-yield",
+    toolName: "yield",
+    input: { result: { data: "reported" } },
+  }, childCtx);
+  assert.equal(allowedYield, undefined);
 });
 
 test("a child lifecycle end without a report produces a blocked fallback report", async () => {

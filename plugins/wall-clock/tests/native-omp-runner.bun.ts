@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAgentSession, SessionManager } from "@oh-my-pi/pi-coding-agent";
+import { AuthStorage, createMockModel } from "@oh-my-pi/pi-ai";
+import { createAgentSession, ModelRegistry, SessionManager, Settings } from "@oh-my-pi/pi-coding-agent";
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -16,6 +17,75 @@ function messageText(message: any): string {
 
 function resultValue(result: any): any {
   return JSON.parse(result?.content?.[0]?.text ?? "null");
+}
+
+function reportInput(assignmentId: string, status: "complete" | "partial" | "blocked" | "expired") {
+  return {
+    assignmentId,
+    status,
+    completed: status === "complete" ? ["Completed the delegated check"] : [],
+    evidence: ["OMP native task child executed the wall-clock tools"],
+    partial: status === "complete" ? [] : ["The late read was blocked"],
+    skipped: [],
+    validation: ["Native task result returned through yield"],
+    shortcuts: [],
+    risks: [],
+    unknowns: [],
+    recommendedParentAction: "Use the child evidence",
+  };
+}
+
+async function createMockTaskSession(root: string, responses: any[]) {
+  const provider = `wall-clock-mock-${root.split("-").at(-1)}`;
+  const modelId = "task-model";
+  const authStorage = await AuthStorage.create(join(root, "agent.db"));
+  const modelRegistry = new ModelRegistry(authStorage, join(root, "models.yml"));
+  const mock = createMockModel({ id: modelId, provider, responses });
+  modelRegistry.registerProvider(provider, {
+    baseUrl: "mock://wall-clock",
+    apiKey: "wall-clock-test-key",
+    api: "mock",
+    streamSimple: (_model, context, options) => mock.stream(mock, context, options),
+    models: [{
+      id: modelId,
+      name: "Wall-clock task model",
+      api: "mock",
+      reasoning: false,
+      input: ["text"],
+      supportsTools: true,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 32_000,
+      maxTokens: 4_096,
+    }],
+  });
+  const model = modelRegistry.find(provider, modelId);
+  expect(model).toBeDefined();
+  const settings = Settings.isolated({
+    "async.enabled": false,
+    "includeWorkspaceTree": false,
+    "task.agentModelOverrides": { task: `${provider}/${modelId}` },
+    "task.enableLsp": false,
+    "task.isolation.mode": "none",
+    "task.maxRuntimeMs": 10_000,
+    "task.prewalk": false,
+  });
+  const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
+  const created = await createAgentSession({
+    cwd: pluginRoot,
+    agentDir: join(root, "agent"),
+    additionalExtensionPaths: [join(pluginRoot, "src", "omp.ts")],
+    disableExtensionDiscovery: true,
+    enableLsp: false,
+    enableMCP: false,
+    contextFiles: [],
+    model: model!,
+    modelRegistry,
+    rules: [],
+    sessionManager,
+    settings,
+    skills: [],
+  });
+  return { ...created, authStorage, mock, sessionManager };
 }
 
 function initializeRunner(session: any, sessionManager: any, abort: () => void = () => undefined) {
@@ -184,6 +254,127 @@ test("OMP native shared event bus scopes a real child runner", async () => {
   } finally {
     await childResult.session.dispose();
     await parentResult.session.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("OMP native TaskTool creates a child that blocks late work, reports, and yields", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-task-block-"));
+  const assignmentId = "block-assignment";
+  let created: Awaited<ReturnType<typeof createMockTaskSession>>;
+  created = await createMockTaskSession(root, [
+    async () => {
+      await Bun.sleep(120);
+      return { content: [{ type: "toolCall", name: "wallclock_status", arguments: {} }] };
+    },
+    { content: [{ type: "toolCall", name: "read", arguments: { path: "README.md" } }] },
+    { content: [{ type: "toolCall", name: "yield", arguments: { result: { data: { outcome: "premature" } } } }] },
+    { content: [{ type: "toolCall", name: "wallclock_report", arguments: reportInput(assignmentId, "expired") }] },
+    { content: [{ type: "toolCall", name: "yield", arguments: { result: { data: { outcome: "late work blocked and reported" } } } }] },
+  ]);
+  const lifecycle: any[] = [];
+  created.eventBus.on("task:subagent:lifecycle", (event: any) => { lifecycle.push(event); });
+  try {
+    const runner = initializeRunner(created.session, created.sessionManager);
+    await runner.emit({ type: "session_start" });
+    await runner.getCommand("wallclock")!.handler("start 5s block-new", runner.createCommandContext());
+    const assign = runner.getRegisteredTool("wallclock_assign")!;
+    await assign.definition.execute("assign-call", {
+      id: assignmentId,
+      parentPlanItemId: "block-new",
+      objective: "Prove a native OMP task child blocks late work",
+      scope: ["README.md"],
+      acceptance: ["The late read is blocked and the child reports before yield"],
+      budgetMs: 40,
+    }, undefined, undefined, runner.createContext());
+
+    const task = created.session.getToolByName("task");
+    expect(task).toBeDefined();
+    const result = await task!.execute("task-call", { agent: "task", task: "Read README.md after the assigned delay" });
+    const child = result.details?.results?.[0] as any;
+    expect(child?.exitCode).toBe(0);
+    expect(child?.aborted).not.toBe(true);
+    expect(child?.extractedToolData?.yield?.at(-1)?.data).toEqual({ outcome: "late work blocked and reported" });
+    expect(lifecycle.map((event) => event.status)).toEqual(["started", "completed"]);
+    expect(JSON.stringify(created.mock.calls[0]?.context)).toMatch(/Assignment block-assignment/);
+    const delayedStatusResult = created.mock.calls[1]?.context.messages.find((message: any) =>
+      message.role === "toolResult" && message.toolName === "wallclock_status");
+    const delayedStatus = resultValue(delayedStatusResult);
+    expect(lifecycle[0]?.sessionFile).toStartWith(delayedStatus?.sessionId?.slice(0, -6));
+    expect(delayedStatus?.phase).toBe("expired");
+    const lateReadResult = created.mock.calls[2]?.context.messages.find((message: any) =>
+      message.role === "toolResult" && message.toolName === "read");
+    expect(messageText(lateReadResult)).toMatch(/wall-clock deadline has expired/i);
+    const prematureYieldResult = created.mock.calls[3]?.context.messages.find((message: any) =>
+      message.role === "toolResult" && message.toolName === "yield");
+    expect(messageText(prematureYieldResult)).toMatch(/wallclock_report/);
+
+    const state = created.sessionManager.getEntries().filter((entry: any) =>
+      entry.type === "custom" && entry.customType === "wall-clock-state").at(-1) as any;
+    expect(state?.data?.reports?.[0]?.assignmentId).toBe(assignmentId);
+    expect(state?.data?.reports?.[0]?.status).toBe("expired");
+  } finally {
+    await created.session.dispose();
+    created.authStorage.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
+test("OMP native TaskTool aborts a running child bash action at assignment expiry", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-task-abort-"));
+  const assignmentId = "abort-assignment";
+  const created = await createMockTaskSession(root, [
+    { content: [{ type: "toolCall", name: "wallclock_status", arguments: {} }] },
+    { content: [{ type: "toolCall", name: "bash", arguments: { command: "sleep 5" } }] },
+  ]);
+  const lifecycle: any[] = [];
+  const childEvents: any[] = [];
+  created.eventBus.on("task:subagent:lifecycle", (event: any) => { lifecycle.push(event); });
+  created.eventBus.on("task:subagent:event", (payload: any) => { childEvents.push(payload.event); });
+  const taskSignal = new AbortController();
+  try {
+    const runner = initializeRunner(created.session, created.sessionManager, () => taskSignal.abort());
+    await runner.emit({ type: "session_start" });
+    await runner.getCommand("wallclock")!.handler("start 5s abort-running", runner.createCommandContext());
+    const assign = runner.getRegisteredTool("wallclock_assign")!;
+    await assign.definition.execute("assign-call", {
+      id: assignmentId,
+      parentPlanItemId: "abort-running",
+      objective: "Prove a native OMP task child is aborted",
+      scope: ["bash"],
+      acceptance: ["A running child bash action is cancelled at expiry"],
+      budgetMs: 500,
+    }, undefined, undefined, runner.createContext());
+
+    const task = created.session.getToolByName("task");
+    expect(task).toBeDefined();
+    const startedAt = Date.now();
+    const result = await task!.execute(
+      "task-call",
+      { agent: "task", task: "Run sleep 5 with bash and wait for it" },
+      taskSignal.signal,
+    );
+    const child = result.details?.results?.[0] as any;
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
+    expect(taskSignal.signal.aborted).toBe(true);
+    const childStatusResult = created.mock.calls[1]?.context.messages.find((message: any) =>
+      message.role === "toolResult" && message.toolName === "wallclock_status");
+    const childStatus = resultValue(childStatusResult);
+    expect(childStatus?.assignment?.id).toBe(assignmentId);
+    expect(childStatus?.phase).toBe("active");
+    expect(childEvents.some((event) => event.type === "tool_execution_start" && event.toolName === "bash")).toBe(true);
+    expect(child?.aborted).toBe(true);
+    expect(lifecycle.some((event) => event.status === "started")).toBe(true);
+    expect(lifecycle.some((event) => event.status === "aborted")).toBe(true);
+
+    const state = created.sessionManager.getEntries().filter((entry: any) =>
+      entry.type === "custom" && entry.customType === "wall-clock-state").at(-1) as any;
+    expect(state?.data?.reports?.[0]?.assignmentId).toBe(assignmentId);
+    expect(state?.data?.reports?.[0]?.status).toBe("expired");
+    expect(state?.data?.reports?.[0]?.risks?.[0]).toMatch(/No structured child evidence/);
+  } finally {
+    await created.session.dispose();
+    created.authStorage.close();
     rmSync(root, { recursive: true, force: true });
   }
 }, 30_000);

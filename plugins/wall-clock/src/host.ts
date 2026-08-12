@@ -89,6 +89,9 @@ export type HostExtensionOptions = {
   enforcement?: HostEnforcement;
   schedule?: (callback: () => void, delayMs: number) => unknown;
   cancelSchedule?: (handle: unknown) => void;
+  publishChildCoordination?: (childSessionIds: string[], coordination: HostCoordination) => void;
+  resolveChildCoordination?: (childSessionId: string) => HostCoordination | undefined;
+  releaseChildCoordination?: (childSessionIds: string[]) => void;
 };
 
 type Scope = {
@@ -97,8 +100,8 @@ type Scope = {
 };
 
 export function installHostExtension(host: RuntimeHost, options: HostExtensionOptions = {}): WallClockController {
-  const coordination = options.coordination ?? createHostCoordination(options.controller ?? new WallClockController(options.clock));
-  const controller = coordination.controller;
+  let coordination = options.coordination ?? createHostCoordination(options.controller ?? new WallClockController(options.clock));
+  let controller = coordination.controller;
   const enforcement = options.enforcement;
   const schedule = options.schedule ?? ((callback: () => void, delayMs: number) => {
     const handle = setTimeout(callback, delayMs);
@@ -108,6 +111,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const cancelSchedule = options.cancelSchedule ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   let currentDirectSessionId: string | undefined;
   let actionSequence = 0;
+
+  const adoptCoordination = (next: HostCoordination | undefined): void => {
+    if (!next?.controller || !next?.childBindings) return;
+    coordination = next;
+    controller = next.controller;
+  };
 
   const directSessionId = (ctx?: RuntimeContext): string | undefined => {
     const explicit = ctx?.sessionId ?? ctx?.sessionManager?.getSessionFile?.();
@@ -191,6 +200,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     }
   };
 
+  const ensureChildCoordination = async (ctx?: RuntimeContext): Promise<void> => {
+    const direct = directSessionId(ctx);
+    if (!direct || coordination.childBindings.has(direct) || !options.resolveChildCoordination) return;
+    let next = options.resolveChildCoordination(direct);
+    if (!next) {
+      await Promise.resolve();
+      next = options.resolveChildCoordination(direct);
+    }
+    adoptCoordination(next);
+  };
+
   const scheduleDeadline = (sessionId: string, assignmentId?: string, ctx?: RuntimeContext): void => {
     clearDeadline(sessionId, assignmentId);
     const status = controller.status(sessionId, assignmentId);
@@ -245,6 +265,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const restoreSession = async (_event: any, ctx: RuntimeContext) => {
     const direct = directSessionId(ctx);
     if (!direct) return;
+    await ensureChildCoordination(ctx);
     const previousDirect = currentDirectSessionId;
     if (previousDirect && previousDirect !== direct && !coordination.childBindings.has(previousDirect)) {
       persist(previousDirect);
@@ -282,6 +303,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.registerCommand("wallclock", {
     description: "Activate and inspect enforced wall-clock control",
     handler: async (args, ctx) => {
+      await ensureChildCoordination(ctx);
       rememberContext(ctx);
       const [command = "status", deadline, expiryPolicy] = args.trim().split(/\s+/, 3);
       if (command === "start") {
@@ -309,6 +331,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("session_tree", restoreSession);
 
   host.on("context", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
     const status = controller.status(scope.sessionId, scope.assignmentId);
@@ -323,6 +346,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   });
 
   host.on("before_provider_request", async (_event, ctx) => {
+    await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx);
     if (scope) controller.beginInference(scope.sessionId);
     return undefined;
@@ -342,6 +366,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   });
 
   host.on("tool_execution_start", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
     const actionId = canonicalActionId(scope, existingActionId(event));
@@ -350,10 +375,18 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   });
 
   host.on("tool_call", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
-    if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
     const toolName = String(event?.toolName ?? event?.name ?? "unknown");
+    if (toolName.toLowerCase() === "yield" && scope.assignmentId) {
+      const hasReport = controller.snapshot(scope.sessionId)?.reports.some((report) => report.assignmentId === scope.assignmentId) ?? false;
+      if (!hasReport) {
+        return { block: true, reason: "A wall-clock child must call wallclock_report before OMP yield" };
+      }
+      return undefined;
+    }
+    if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
     const input = event?.input;
     const action = (event?.action as ActionClass | undefined) ?? classifyAction(toolName, input);
     const nativeTool = toolName.toLowerCase().startsWith("wallclock_");
@@ -419,16 +452,19 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   });
 
   host.on("tool_result", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     finishAction(event, ctx);
     return undefined;
   });
 
   host.on("tool_execution_end", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     finishAction(event, ctx);
     return undefined;
   });
 
   host.on("user_bash", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
     if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
@@ -457,6 +493,11 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("session_shutdown", async (_event, ctx) => {
     const direct = directSessionId(ctx) ?? currentDirectSessionId;
     if (direct && !coordination.childBindings.has(direct)) {
+      const childSessionIds = [...coordination.childBindings.entries()]
+        .filter(([, binding]) => binding.parentSessionId === direct)
+        .map(([childSessionId]) => childSessionId);
+      options.releaseChildCoordination?.(childSessionIds);
+      for (const childSessionId of childSessionIds) coordination.childBindings.delete(childSessionId);
       persist(direct);
       clearSessionDeadlines(direct);
       coordination.persistenceOwners.delete(direct);
@@ -477,6 +518,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       execute: async (...args: any[]) => {
         const input = toolInput<{ deadline: string; expiryPolicy: ExpiryPolicy; wrapUpMs?: number; plan?: PlanItem[] }>(args);
         const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
         const deadlineInput = parseDeadlineSpec(input.deadline, options.clock?.now() ?? Date.now());
         return textResult(activateSession(ctx, { ...deadlineInput, expiryPolicy: parseExpiryPolicy(input.expiryPolicy), wrapUpMs: input.wrapUpMs }, input.plan ?? []));
       },
@@ -490,6 +532,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       execute: async (...args: any[]) => {
         const input = toolInput<{ assignmentId?: string }>(args);
         const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
         const scope = requireStableScope(ctx);
         return textResult(controller.status(scope.sessionId, assignmentForScope(scope, input.assignmentId)));
       },
@@ -500,7 +543,11 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       label: "Stop wall-clock",
       description: "Stop wall-clock control for the current host session.",
       parameters: EMPTY_SCHEMA,
-      execute: async (...args: any[]) => textResult(stopSession(toolContext(args))),
+      execute: async (...args: any[]) => {
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        return textResult(stopSession(ctx));
+      },
     });
 
     host.registerTool?.({
@@ -510,7 +557,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: STATUS_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ assignmentId?: string }>(args);
-        const scope = requireStableScope(toolContext(args));
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        const scope = requireStableScope(ctx);
         const assignmentId = assignmentForScope(scope, input.assignmentId);
         return textResult({ status: controller.status(scope.sessionId, assignmentId), context: controller.context(scope.sessionId, assignmentId) });
       },
@@ -523,7 +572,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: CHECK_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ toolName: string; action?: ActionClass; assignmentId?: string; input?: unknown }>(args);
-        const scope = requireStableScope(toolContext(args));
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        const scope = requireStableScope(ctx);
         return textResult(controller.decideTool(scope.sessionId, { ...input, assignmentId: assignmentForScope(scope, input.assignmentId), enforceable: false }));
       },
     });
@@ -536,6 +587,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       execute: async (...args: any[]) => {
         const input = toolInput<AssignmentInput>(args);
         const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
         const scope = requireStableScope(ctx);
         if (scope.assignmentId) throw new Error("A child assignment cannot create another assignment");
         const assignment = controller.assign(scope.sessionId, input);
@@ -552,7 +604,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: COMPLETE_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ assignmentId: string; status: "complete" | "partial" | "blocked" | "expired" }>(args);
-        const scope = requireStableScope(toolContext(args));
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        const scope = requireStableScope(ctx);
         const assignmentId = scope.assignmentId ?? input.assignmentId;
         if (scope.assignmentId && input.assignmentId !== scope.assignmentId) throw new Error("A child session can only complete its own assignment");
         const assignment = controller.complete(scope.sessionId, assignmentId, input.status);
@@ -569,7 +623,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: REPORT_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<ChildReportInput>(args);
-        const scope = requireStableScope(toolContext(args));
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        const scope = requireStableScope(ctx);
         const assignmentId = scope.assignmentId ?? input.assignmentId;
         if (scope.assignmentId && input.assignmentId !== scope.assignmentId) throw new Error("A child session can only report its own assignment");
         const report = controller.report(scope.sessionId, { ...input, assignmentId });
@@ -586,7 +642,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       parameters: PLAN_REVISION_SCHEMA,
       execute: async (...args: any[]) => {
         const input = toolInput<{ plan: PlanItem[]; reason: string; sourceAssignmentId?: string }>(args);
-        const scope = requireStableScope(toolContext(args));
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        const scope = requireStableScope(ctx);
         if (scope.assignmentId) throw new Error("Only the parent session can revise the parent plan");
         const revision = controller.setPlan(scope.sessionId, input.plan, input.reason, input.sourceAssignmentId);
         persist(scope.sessionId);
@@ -633,9 +691,14 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         ?? (typeof event?.assignmentId === "string" ? event.assignmentId : undefined)
         ?? (parentSessionId ? controller.assignmentForDelegation(parentSessionId)?.id : undefined);
       if (!parentSessionId || !assignmentId || childIds.length === 0) return;
+      const registeredChildIds = [
+        ...childIds,
+        ...(typeof event?.sessionFile === "string" ? [sessionArtifactPrefix(event.sessionFile)] : []),
+      ];
       if (event.status === "started") {
         controller.attachChild(parentSessionId, assignmentId, childIds.at(-1)!);
-        for (const childId of childIds) coordination.childBindings.set(childId, { parentSessionId, assignmentId });
+        for (const childId of registeredChildIds) coordination.childBindings.set(childId, { parentSessionId, assignmentId });
+        options.publishChildCoordination?.(registeredChildIds, coordination);
         persist(parentSessionId);
       } else if (event.status === "aborted" || event.status === "failed" || event.status === "completed") {
         const snapshot = controller.snapshot(parentSessionId);
@@ -665,7 +728,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
           coordination.actionContexts.delete(linked.actionId);
           coordination.actionAssignments.delete(linkedEntry![0]);
         }
-        for (const childId of childIds) coordination.childBindings.delete(childId);
+        options.releaseChildCoordination?.(registeredChildIds);
+        for (const [childId, binding] of coordination.childBindings) {
+          if (binding.parentSessionId === parentSessionId && binding.assignmentId === assignmentId) {
+            coordination.childBindings.delete(childId);
+          }
+        }
       }
     };
 
@@ -675,6 +743,10 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       host.on("task:subagent:lifecycle", lifecycle as any);
     }
   }
+}
+
+function sessionArtifactPrefix(sessionFile: string): string {
+  return sessionFile.endsWith(".jsonl") ? sessionFile.slice(0, -6) : sessionFile;
 }
 
 function resolveAssignment(
