@@ -392,7 +392,7 @@ class Review {
 // CUSTOMIZE - author this section. Keep the review library above unchanged.
 // -----------------------------------------------------------------------------
 
-const { readdir } = require("node:fs/promises");
+const { readdir, lstat } = require("node:fs/promises");
 const { homedir } = require("node:os");
 const { join } = require("node:path");
 
@@ -418,8 +418,8 @@ type SkillMetadata = {
 const REVIEW_TITLE = "Review model-callable installed skills";
 const AUDIT_HOME = process.env.SKILL_AUDITOR_HOME ?? homedir();
 const AGENTS_DIR = join(AUDIT_HOME, ".agents");
-const SKILLS_DIR =
-  process.env.SKILL_AUDITOR_SKILLS_DIR ?? join(AGENTS_DIR, "skills");
+const CANONICAL_ROOT = join(AGENTS_DIR, "skills");
+const SKILLS_DIR = process.env.SKILL_AUDITOR_SKILLS_DIR ?? CANONICAL_ROOT;
 const LOCK_FILE =
   process.env.SKILL_AUDITOR_LOCK ??
   (process.env.XDG_STATE_HOME
@@ -430,6 +430,7 @@ const STATE_FILE =
   join(AGENTS_DIR, "model-callable-skills-review.json");
 const POSITIVE_LABEL = "keep";
 const NEGATIVE_LABEL = "remove";
+const locationsByName = new Map<string, string[]>();
 
 function errorCode(error: unknown): string | undefined {
   if (error && typeof error === "object" && "code" in error) {
@@ -543,62 +544,133 @@ async function readGlobalLock(): Promise<GlobalLock> {
   }
 }
 
-async function installedSkillNames(): Promise<string[]> {
-  try {
-    const entries = await readdir(SKILLS_DIR, { withFileTypes: true });
-    return entries
-      .filter(
-        (entry) =>
-          !entry.name.startsWith(".") &&
-          (entry.isDirectory() || entry.isSymbolicLink()),
-      )
-      .map((entry) => entry.name)
-      .sort((left, right) =>
-        left.localeCompare(right, undefined, { sensitivity: "base" }),
-      );
-  } catch (error: unknown) {
-    if (errorCode(error) === "ENOENT") return [];
-    throw error;
+function addSkillRoots(roots: Set<string>, base: string): void {
+  for (const suffix of [
+    ["skills"],
+    ["agent", "skills"],
+    ["agents", "skills"],
+    ["data", "skills"],
+    ["antigravity", "skills"],
+    ["antigravity-cli", "skills"],
+    ["windsurf", "skills"],
+    ["harness", "skills"],
+  ]) {
+    roots.add(join(base, ...suffix));
   }
 }
 
+async function existingSkillRoots(): Promise<string[]> {
+  const roots = new Set<string>([CANONICAL_ROOT]);
+  const homeEntries = await readdir(AUDIT_HOME, { withFileTypes: true }).catch(
+    (error: unknown) => {
+      if (errorCode(error) === "ENOENT") return [];
+      throw error;
+    },
+  );
+
+  for (const entry of homeEntries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(".")) continue;
+    addSkillRoots(roots, join(AUDIT_HOME, entry.name));
+  }
+
+  for (const configName of [".config", ".local/share"]) {
+    const configRoot = join(AUDIT_HOME, configName);
+    addSkillRoots(roots, configRoot);
+    const configEntries = await readdir(configRoot, {
+      withFileTypes: true,
+    }).catch((error: unknown) => {
+      if (errorCode(error) === "ENOENT") return [];
+      throw error;
+    });
+    for (const entry of configEntries) {
+      if (!entry.isDirectory()) continue;
+      addSkillRoots(roots, join(configRoot, entry.name));
+    }
+  }
+
+  return [...roots];
+}
+
+async function installedSkillLocations(): Promise<Map<string, string[]>> {
+  const roots = process.env.SKILL_AUDITOR_SKILLS_DIR
+    ? [SKILLS_DIR]
+    : await existingSkillRoots();
+  const locations = new Map<string, string[]>();
+
+  for (const root of roots) {
+    const entries = await readdir(root, { withFileTypes: true }).catch(
+      (error: unknown) => {
+        if (errorCode(error) === "ENOENT") return [];
+        throw error;
+      },
+    );
+    for (const entry of entries) {
+      if (
+        entry.name.startsWith(".") ||
+        (!entry.isDirectory() && !entry.isSymbolicLink())
+      ) {
+        continue;
+      }
+      const path = join(root, entry.name);
+      const current = locations.get(entry.name) ?? [];
+      if (!current.includes(path)) current.push(path);
+      locations.set(entry.name, current);
+    }
+  }
+
+  return locations;
+}
+
 async function loadItems(): Promise<ReviewItem[]> {
-  const [names, lock] = await Promise.all([
-    installedSkillNames(),
+  const [locations, lock] = await Promise.all([
+    installedSkillLocations(),
     readGlobalLock(),
   ]);
+  locationsByName.clear();
   const items: ReviewItem[] = [];
 
-  for (const name of names) {
-    assertSafeSkillName(name);
-    const skillFile = join(SKILLS_DIR, name, "SKILL.md");
-    let raw: string;
-    try {
-      raw = await readFile(skillFile, "utf8");
-    } catch (error: unknown) {
-      if (errorCode(error) === "ENOENT") continue;
-      throw error;
+  for (const name of [...locations.keys()].sort((left, right) =>
+    left.localeCompare(right, undefined, { sensitivity: "base" }),
+  )) {
+    const records: Array<{ path: string; metadata: SkillMetadata }> = [];
+    for (const path of locations.get(name) ?? []) {
+      try {
+        const raw = await readFile(join(path, "SKILL.md"), "utf8");
+        records.push({ path, metadata: readSkillMetadata(raw, name) });
+      } catch (error: unknown) {
+        if (errorCode(error) !== "ENOENT") throw error;
+      }
     }
+    if (records.length > 0) assertSafeSkillName(name);
 
-    const metadata = readSkillMetadata(raw, name);
-    if (!metadata.modelCallable) continue;
+    const callable = records.filter((record) => record.metadata.modelCallable);
+    if (callable.length === 0) continue;
 
+    const primary =
+      callable.find((record) => record.path.startsWith(`${CANONICAL_ROOT}/`)) ??
+      callable[0];
+    const paths = records.map((record) => record.path);
+    locationsByName.set(name, paths);
     const lockEntry = lock.skills?.[name];
     const source =
       lockEntry?.sourceUrl ||
       lockEntry?.source ||
       "Unknown: no global lock entry";
+    const invocation =
+      callable.length === records.length
+        ? "allowed directly in all copies"
+        : `allowed directly in ${callable.length}/${records.length} copies`;
     items.push({
       id: name,
-      title: metadata.title,
-      description: metadata.description,
+      title: primary.metadata.title,
+      description: primary.metadata.description,
       details: [
         ["Name", name],
         ["Source", source],
         ["Source type", lockEntry?.sourceType || "unknown"],
         ["Source path", lockEntry?.skillPath || "not in global lock"],
-        ["Installed path", skillFile],
-        ["Model invocation", "allowed directly"],
+        ["Installed paths", paths.join(", ")],
+        ["Model invocation", invocation],
       ],
     });
   }
@@ -629,11 +701,15 @@ async function verifyRemoved(names: string[]): Promise<void> {
   );
   const installedLeftovers: string[] = [];
   for (const name of names) {
-    try {
-      await readFile(join(SKILLS_DIR, name), "utf8");
-      installedLeftovers.push(name);
-    } catch (error: unknown) {
-      if (errorCode(error) !== "ENOENT") installedLeftovers.push(name);
+    for (const path of locationsByName.get(name) ?? []) {
+      try {
+        await lstat(path);
+        installedLeftovers.push(`${name} at ${path}`);
+      } catch (error: unknown) {
+        if (errorCode(error) !== "ENOENT") {
+          installedLeftovers.push(`${name} at ${path}`);
+        }
+      }
     }
   }
 
