@@ -255,3 +255,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T07:53:46.214Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: After a successful GitHub push and an earlier successful git ls-remote, a repeated read-only ls-remote failed with an intermittent self-signed SSL certificate error. The remote check is not stable in this environment even when the push transport has just succeeded.
+- **2026-08-12T15:23:01.352Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While checking whether wall-clock was installed in Pi or OMP, a broad rg across ~/.omp included the full logs directory and flooded the output. The check should target plugin/profile manifests or exclude logs explicitly.
