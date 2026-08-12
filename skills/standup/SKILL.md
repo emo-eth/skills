@@ -43,6 +43,11 @@ standup. Say `why this matters`, `how we will prove it`, `open work`, and
 - Keep the daily plan to three to five results. Each result names its owner,
   why it matters now, the ticket when one exists, the current status, and how
   we will prove it.
+- Never cite a ticket by number alone. Every ticket reference carries its
+  title and direct link, including in summary blocks such as `At a glance`,
+  `Ticket moves`, and `My update`. A bare `NAT-12` anywhere in the written
+  document is a defect. Keep the Slack thread free of ticket labels
+  entirely (see Section 5).
 - When the route to an outcome is vague, decompose it into small proposed
   tickets before claiming that the outcome is today's work. A model-routing
   result, for example, needs separate work to define the evaluation set, run
@@ -224,8 +229,11 @@ When an explicit request applies an existing-ticket description update, list
 the applied change under `My update`. Do not leave an applied change in
 `Proposed tickets`.
 
-Keep ticket titles and direct links in the written sections. Do not put ticket
-labels in the spoken summary. The spoken summary must still name the concrete
+Keep ticket titles and direct links in the written sections. Never cite a
+ticket by number alone: every written mention carries its title and direct
+link, including inside `At a glance`, `My update`, `Today`, `Open work`,
+`This week`, and `This month`. A bare `NAT-12` in the written document is a
+defect; reviewers flag it. Do not put ticket labels in the spoken summary. The spoken summary must still name the concrete
 feature, action, environment, and remaining proof. Replace abstract labels
 with the action and the proof. For example, write `run the dev workflow with
 a valid model key and confirm the model step, persisted reply, and trace`
