@@ -47,12 +47,12 @@ type Arguments = {
 };
 
 // Ordered most -> least important. Index doubles as the binary-search range.
-const BINS = [
+// Triage targets the no-priority pool and bins into the 4 meaningful tiers.
+const TRIAGE_BINS = [
   { p: 1, label: "Urgent" },
   { p: 2, label: "High" },
   { p: 3, label: "Medium" },
   { p: 4, label: "Low" },
-  { p: 0, label: "No priority" },
 ] as const;
 
 type InputTicket = {
@@ -178,8 +178,9 @@ Options:
       --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
                            star-linear-tickets.ts for Urgent)
       --team <key>          only rank issues in this team (e.g. NAT); default all
-      --bin                 bin EVERY ticket into Urgent/High/Medium/Low/None by
-                            binary-searching the tiers (~2-3 comparisons each)
+      --bin                 triage your no-priority tickets into Urgent/High/
+                            Medium/Low by binary-searching the tiers
+                            (~2 comparisons each); moves them out of no-priority
       --dry-run             rank and show the plan but do NOT write to Linear
   -i, --input <path|->      instead of Linear, rank a local JSON file ('-' = stdin)
   -o, --output <path>       also write the resulting top-k JSON here
@@ -470,19 +471,21 @@ function renderBinCard(ticket: Ticket, index: number, total: number, decided: nu
 }
 
 /**
- * Binary-search a ticket into one of the 5 priority bins by asking whether it
- * is at least as important as the midpoint bin. Cost ~ceil(log2(5)) = 3
+ * Binary-search a ticket into one of the 4 priority tiers by asking whether it
+ * is at least as important as the midpoint tier. Cost ~ceil(log2(4)) = 2
  * comparisons per ticket.
  */
 async function binForTicket(
   ticket: Ticket,
 ): Promise<{ index: number; p: number | undefined; label: string }> {
   let lo = 0;
-  let hi = BINS.length - 1;
+  let hi = TRIAGE_BINS.length - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     clearScreen();
-    console.log(`BIN  |  Is this ticket at least ${paint(BINS[mid].label, BOLD)} priority?`);
+    console.log(
+      `TRIAGE  |  Is this ticket at least ${paint(TRIAGE_BINS[mid].label, BOLD)} priority?`,
+    );
     console.log("-".repeat(72));
     console.log(`${paint("TITLE", BOLD)}: ${ticket.title}`);
     console.log(`${paint("ID", BOLD)}: ${ticket.id}`);
@@ -495,13 +498,18 @@ async function binForTicket(
       lo = mid + 1;
     }
   }
-  const bin = BINS[lo];
+  const bin = TRIAGE_BINS[lo];
   return { index: lo, p: bin.p, label: bin.label };
 }
 
 async function runBin(args: Arguments): Promise<void> {
   const stateFile = args.state;
-  const tickets = await fetchAssignedNotCompleted({ team: args.team });
+  const assigned = await fetchAssignedNotCompleted({ team: args.team });
+  // Triage target: tickets that have no priority yet. The point is to pull
+  // them out of the no-priority pool into one of the 4 meaningful tiers.
+  const tickets = assigned.filter(
+    (t) => t.priority === undefined || t.priority === null || Number(t.priority) === 0,
+  );
   if (args.reset) await removeState(stateFile);
 
   const snapshot = snapshotFor(tickets, args.top);
@@ -517,13 +525,14 @@ async function runBin(args: Arguments): Promise<void> {
   if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
   await writeBinState(stateFile, snapshot, tiers);
 
-  let comparisons = 0;
-  for (const ticket of tickets) {
+  let triaged = 0;
+  for (let index = 0; index < tickets.length; index += 1) {
+    const ticket = tickets[index];
     if (tiers[ticket.id] !== undefined) continue;
     const decided = Object.keys(tiers).length;
-    renderBinCard(ticket, tickets.indexOf(ticket), tickets.length, decided);
+    renderBinCard(ticket, index, tickets.length, decided);
     const result = await binForTicket(ticket);
-    comparisons += 1;
+    triaged += 1;
     if (result.index === -1) {
       await writeBinState(stateFile, snapshot, tiers);
       console.log("Paused. Progress is saved; rerun to resume.");
@@ -537,7 +546,7 @@ async function runBin(args: Arguments): Promise<void> {
   const byTier = new Map<number | undefined, Ticket[]>();
   for (const ticket of tickets) {
     const index = tiers[ticket.id];
-    const key = index === undefined ? undefined : BINS[index]?.p;
+    const key = index === undefined ? undefined : TRIAGE_BINS[index]?.p;
     const list = byTier.get(key) ?? [];
     list.push(ticket);
     byTier.set(key, list);
@@ -549,7 +558,7 @@ async function runBin(args: Arguments): Promise<void> {
     console.log(`\n${label} (${group.length}):`);
     for (const t of group) console.log(`- ${t.id}  ${t.title}`);
   }
-  console.log(`\n${comparisons} comparison-group(s) used.`);
+  console.log(`\n${triaged} ticket(s) triaged into a priority tier.`);
 
   if (args.dryRun) {
     console.log("\nDry run only. No Linear changes made.");
@@ -558,7 +567,7 @@ async function runBin(args: Arguments): Promise<void> {
 
   // Write the meaningful tiers (1..4). No-priority (0) is left as-is.
   const toWrite = tickets.filter((t) => {
-    const p = tiers[t.id] === undefined ? undefined : BINS[tiers[t.id]!]?.p;
+    const p = tiers[t.id] === undefined ? undefined : TRIAGE_BINS[tiers[t.id]!]?.p;
     return p !== undefined && p >= 1 && p <= 4;
   });
   if (toWrite.length === 0) {
@@ -568,7 +577,7 @@ async function runBin(args: Arguments): Promise<void> {
   }
   console.log(`\nPlan: set ${toWrite.length} ticket(s) to their binned priority.`);
   for (const t of toWrite) {
-    const p = BINS[tiers[t.id]!]!.p;
+    const p = TRIAGE_BINS[tiers[t.id]!]!.p;
     console.log(`- ${t.id} -> ${PRIORITY_LABELS[p] ?? p} (${t.title})`);
   }
   if (!(await confirmExact("Type APPLY to write binned priorities to Linear: ", "APPLY"))) {
@@ -576,7 +585,7 @@ async function runBin(args: Arguments): Promise<void> {
     return;
   }
   for (const t of toWrite) {
-    const p = BINS[tiers[t.id]!]!.p;
+    const p = TRIAGE_BINS[tiers[t.id]!]!.p;
     await setPriority(t.id, p);
     console.log(`Updated ${t.id} -> ${PRIORITY_LABELS[p] ?? p}`);
   }
