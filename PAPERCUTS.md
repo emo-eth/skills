@@ -177,3 +177,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T05:33:15Z** `deepseek-v4`
   - cwd: `.`
   - note: Testing subvert-cli invocation for a new skill -> npx subvert-cli mangles brace args in FROM/TO ('facilit{y,ies}'), treating the next token as a path and failing with ENOENT; bunx works fine. Prefer bunx/global install for brace renames.
+- **2026-08-12T05:49:47Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Validating the new skill with a node metadata check -> the shell tool rejected the command because an escaped null-byte test became a literal NUL; retrying with a code-point check.
