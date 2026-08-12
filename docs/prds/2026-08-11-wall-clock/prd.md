@@ -7,7 +7,7 @@ source_vibe: docs/prds/2026-08-11-wall-clock/vibe.md
 
 # Glossary
 - **Wall clock**: Real elapsed time measured against a duration or a local-time deadline.
- 
+
 - **Session**: One agent conversation or work run with its own wall-clock state.
 - **Parent session**: The session that owns the overall plan and can give work to child sessions.
 - **Child session**: A session working on a bounded assignment from a parent session.
