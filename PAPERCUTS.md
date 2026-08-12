@@ -371,3 +371,6 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `PAPERCUTS.md`
   - note: Publishing the skill change -> origin/main advanced with concurrent wrap-it-up work and rejected the direct push; fetching and merging the remote branch was required before retrying.
+- **2026-08-12T22:03:18Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Running the new Claude skill usage parser tests -> Array.map(resolve) passed the index and array into path.resolve, causing an opaque paths[2] type error; wrapping resolve in an arrow fixed it.
