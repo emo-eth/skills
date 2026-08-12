@@ -154,3 +154,12 @@ export async function setPriority(
   }
   runLinear(["issue", "update", issueId, "--priority", String(priority)]);
 }
+
+/**
+ * Permanently delete issues. `--confirm` skips the CLI's internal prompt —
+ * the caller is responsible for gating this behind an explicit user confirmation.
+ */
+export async function deleteIssues(issueIds: string[]): Promise<void> {
+  if (issueIds.length === 0) return;
+  runLinear(["issue", "delete", "--bulk", ...issueIds, "--confirm"]);
+}
