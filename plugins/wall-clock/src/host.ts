@@ -30,6 +30,7 @@ export type RuntimeContext = {
   ui?: { notify?: (message: string, level?: string) => void; setStatus?: (key: string, value: string | undefined) => void };
   signal?: AbortSignal;
   abort?: () => void | Promise<void>;
+  isIdle?: () => boolean;
 };
 
 export type RuntimeHost = {
@@ -39,6 +40,7 @@ export type RuntimeHost = {
   registerTool?: (definition: { name: string; label: string; description: string; parameters: unknown; execute: (...args: any[]) => unknown }) => void;
   appendEntry?: (customType: string, data?: unknown) => void;
   sendMessage?: (message: unknown, options?: unknown) => void;
+  sendUserMessage?: (message: string, options?: { deliverAs?: "steer" | "followUp" }) => void;
   setStatus?: (key: string, value: string | undefined) => void;
 };
 
@@ -99,6 +101,8 @@ export type HostExtensionOptions = {
   enforcement?: HostEnforcement;
   schedule?: (callback: () => void, delayMs: number) => unknown;
   cancelSchedule?: (handle: unknown) => void;
+  scheduleStatus?: (callback: () => void, delayMs: number) => unknown;
+  cancelStatusSchedule?: (handle: unknown) => void;
   publishChildCoordination?: (childSessionIds: string[], coordination: HostCoordination) => void;
   resolveChildCoordination?: (childSessionId: string) => HostCoordination | undefined;
   releaseChildCoordination?: (childSessionIds: string[]) => void;
@@ -119,9 +123,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return handle;
   });
   const cancelSchedule = options.cancelSchedule ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  const scheduleStatus = options.scheduleStatus ?? ((callback: () => void, delayMs: number) => {
+    const handle = setTimeout(callback, delayMs);
+    handle.unref?.();
+    return handle;
+  });
+  const cancelStatusSchedule = options.cancelStatusSchedule ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   let currentDirectSessionId: string | undefined;
   let actionSequence = 0;
   const fastLanes = new Map<string, FastLaneState>();
+  let statusRefresh: { handle: unknown; generation: number } | undefined;
+  let statusRefreshGeneration = 0;
 
   const adoptCoordination = (next: HostCoordination | undefined): void => {
     if (!next?.controller || !next?.childBindings) return;
@@ -202,6 +214,33 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     }
   };
 
+  const clearStatusRefresh = (): void => {
+    statusRefreshGeneration += 1;
+    if (!statusRefresh) return;
+    cancelStatusSchedule(statusRefresh.handle);
+    statusRefresh = undefined;
+  };
+
+  const scheduleStatusRefresh = (sessionId: string, ctx?: RuntimeContext, assignmentId?: string): void => {
+    clearStatusRefresh();
+    const generation = statusRefreshGeneration;
+    const tick = (): void => {
+      if (generation !== statusRefreshGeneration) return;
+      updateStatus(host, controller, sessionId, ctx, assignmentId);
+      scheduleNext();
+    };
+    const scheduleNext = (): void => {
+      const status = controller.status(sessionId, assignmentId);
+      if (status.phase !== "active" && status.phase !== "wrap-up") {
+        statusRefresh = undefined;
+        return;
+      }
+      const handle = scheduleStatus(tick, Math.min(1_000, Math.max(1, status.remainingMs)));
+      statusRefresh = { handle, generation };
+    };
+    scheduleNext();
+  };
+
   const ensureActivationSupport = (expiryPolicy: ExpiryPolicy): void => {
     if (!enforcement?.canBlockNew) {
       throw new Error("Wall-clock activation rejected: this host has no tested pre-action blocking seam");
@@ -261,6 +300,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
+    scheduleStatusRefresh(sessionId, ctx);
     return status;
   };
 
@@ -269,6 +309,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     controller.stop(sessionId);
     fastLanes.delete(sessionId);
     clearSessionDeadlines(sessionId);
+    clearStatusRefresh();
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
     return controller.status(sessionId);
@@ -296,6 +337,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (!controller.status(sessionId).active) return;
     controller.stop(sessionId);
     clearSessionDeadlines(sessionId);
+    clearStatusRefresh();
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
   };
@@ -304,6 +346,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const restoreSession = async (_event: any, ctx: RuntimeContext) => {
     const direct = directSessionId(ctx);
     if (!direct) return;
+    clearStatusRefresh();
     await ensureChildCoordination(ctx);
     const previousDirect = currentDirectSessionId;
     if (previousDirect && previousDirect !== direct && !coordination.childBindings.has(previousDirect)) {
@@ -316,6 +359,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const child = coordination.childBindings.get(direct);
     if (child) {
       updateStatus(host, controller, child.parentSessionId, ctx, child.assignmentId);
+      scheduleStatusRefresh(child.parentSessionId, ctx, child.assignmentId);
       return;
     }
     coordination.persistenceOwners.set(direct, () => writeOwnedState(direct));
@@ -338,6 +382,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       }
     }
     updateStatus(host, controller, direct, ctx);
+    scheduleStatusRefresh(direct, ctx);
   };
 
   host.registerCommand("wallclock", {
@@ -345,11 +390,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     handler: async (args, ctx) => {
       await ensureChildCoordination(ctx);
       rememberContext(ctx);
-      const [command = "status", deadline, expiryPolicy] = args.trim().split(/\s+/, 3);
-      if (command === "start") {
-        if (!deadline || !expiryPolicy) throw new Error("Usage: /wallclock start 30m|5pm block-new|abort-running");
-        const status = activateSession(ctx, { ...parseDeadlineSpec(deadline, options.clock?.now() ?? Date.now()), expiryPolicy: parseExpiryPolicy(expiryPolicy) }, []);
+      const parts = args.trim().split(/\s+/).filter(Boolean);
+      const command = parts.shift() ?? "status";
+      if (command === "start" || (command !== "status" && command !== "stop")) {
+        const deadline = command === "start" ? parts.shift() : command;
+        if (!deadline) throw new Error("Usage: /wallclock [start] 30m|5pm [block-new|abort-running|abort] [prompt...]");
+        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "abort-running";
+        const prompt = parts.join(" ");
+        if (prompt && !host.sendUserMessage) throw new Error("This host cannot submit the wall-clock prompt");
+        const status = activateSession(ctx, { ...parseDeadlineSpec(deadline, options.clock?.now() ?? Date.now()), expiryPolicy }, []);
         notify(ctx, `Wall-clock active: ${status.phase}, ${formatStatus(status)}`, "info");
+        if (prompt) host.sendUserMessage!(prompt, ctx?.isIdle?.() === false ? { deliverAs: "steer" } : undefined);
         return;
       }
       if (command === "stop") {
@@ -357,7 +408,6 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         notify(ctx, "Wall-clock control stopped", "info");
         return;
       }
-      if (command !== "status") throw new Error("Usage: /wallclock start 30m|5pm block-new|abort-running, /wallclock status, or /wallclock stop");
       const scope = requireStableScope(ctx);
       notify(ctx, `${controller.context(scope.sessionId, scope.assignmentId)}\nExpiry policy: ${controller.status(scope.sessionId, scope.assignmentId).expiryPolicy ?? "none"}`, "info");
     },
@@ -584,6 +634,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       clearSessionDeadlines(direct);
       coordination.persistenceOwners.delete(direct);
     }
+    clearStatusRefresh();
     if (direct === currentDirectSessionId) currentDirectSessionId = undefined;
   });
 
@@ -949,8 +1000,13 @@ function messageText(message: unknown): string {
 }
 
 function parseExpiryPolicy(value: string): ExpiryPolicy {
+  if (value === "abort") return "abort-running";
   if (value === "block-new" || value === "abort-running") return value;
   throw new Error("Expiry policy must be block-new or abort-running");
+}
+
+function isExpiryPolicy(value: string | undefined): boolean {
+  return value === "block-new" || value === "abort-running" || value === "abort";
 }
 
 function notify(ctx: RuntimeContext | undefined, message: string, level = "info"): void {

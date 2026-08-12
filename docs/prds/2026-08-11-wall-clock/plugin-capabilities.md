@@ -183,7 +183,7 @@ The exact mechanisms, failure modes, and test files are listed in `plugins/wall-
 - The main session must provide or select the session key for portable calls.
 - A time budget is always a ceiling, never a work quota; agents do not estimate task duration.
 - Every active wall-clock session requires a tested host-enforced expiry policy.
-- The user selects `block-new` or `abort-running` at activation; the host rejects a policy it cannot enforce.
+- Every activation request carries `block-new` or `abort-running`; the native `/wallclock` command supplies `abort-running` when the user omits the choice, and the host rejects a policy it cannot enforce.
 - Parent and child agents receive measured elapsed-time context at every turn.
 - Compressed work preserves a working vertical slice, with evidence and explicit skipped validation, shortcuts, risks, and unknowns.
 - Pi and OMP are the first native enforcement targets. Codex and Claude remain package targets until open enforcement seams are tested; Claude proprietary systems are excluded.

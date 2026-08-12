@@ -23,6 +23,8 @@ class FakeHost {
   readonly commands = new Map<string, any>();
   readonly tools = new Map<string, any>();
   readonly entries: Array<{ customType: string; data: unknown }> = [];
+  readonly userMessages: unknown[] = [];
+  readonly userMessageOptions: unknown[] = [];
   readonly statuses = new Map<string, string | undefined>();
   readonly events: FakeEventBus;
 
@@ -44,6 +46,11 @@ class FakeHost {
 
   appendEntry(customType: string, data: unknown): void {
     this.entries.push({ customType, data });
+  }
+
+  sendUserMessage(message: unknown, options?: unknown): void {
+    this.userMessages.push(message);
+    this.userMessageOptions.push(options);
   }
 
   setStatus(key: string, value: string | undefined): void {
@@ -83,6 +90,157 @@ test("activation fails closed without a tested host enforcement seam", async () 
     host.commands.get("wallclock").handler("start 30m block-new", context()),
     /no tested pre-action blocking seam/,
   );
+});
+
+test("wallclock starts from a deadline and defaults to abort-running", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  await host.commands.get("wallclock").handler("5m", context());
+
+  const status = controller.status("main");
+  assert.equal(status.active, true);
+  assert.equal(status.expiryPolicy, "abort-running");
+});
+
+test("wallclock forwards the trailing prompt after activation", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  const sendUserMessage = host.sendUserMessage.bind(host);
+  host.sendUserMessage = (message, options) => {
+    assert.equal(controller.status("main").active, true);
+    sendUserMessage(message, options);
+  };
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  await host.commands.get("wallclock").handler("5m fix merge conflicts in all open PRs", context());
+
+  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  assert.deepEqual(host.userMessages, ["fix merge conflicts in all open PRs"]);
+});
+
+test("wallclock accepts abort as the short expiry policy", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  await host.commands.get("wallclock").handler("start 5m abort", context());
+
+  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+});
+
+test("wallclock honors explicit start and block-new before forwarding a prompt", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  await host.commands.get("wallclock").handler("start 5m block-new inspect the failing tests", context());
+
+  assert.equal(controller.status("main").expiryPolicy, "block-new");
+  assert.deepEqual(host.userMessages, ["inspect the failing tests"]);
+});
+
+test("wallclock forwards its prompt as normal steering during an active turn", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  await host.commands.get("wallclock").handler(
+    "5m resolve the remaining conflicts",
+    { ...context(), isIdle: () => false },
+  );
+
+  assert.deepEqual(host.userMessages, ["resolve the remaining conflicts"]);
+  assert.deepEqual(host.userMessageOptions, [{ deliverAs: "steer" }]);
+});
+
+test("active wallclock status refreshes from the host clock", async () => {
+  let now = 1_000;
+  const scheduledStatus: Array<() => void> = [];
+  const displayedStatuses = new Map<string, string | undefined>();
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    clock: { now: () => now },
+    schedule: () => "deadline",
+    cancelSchedule: () => undefined,
+    scheduleStatus: (callback) => {
+      scheduledStatus.push(callback);
+      return callback;
+    },
+    cancelStatusSchedule: () => undefined,
+  });
+  const ctx = {
+    ...context(),
+    ui: {
+      notify: () => undefined,
+      setStatus: (key: string, value: string | undefined) => { displayedStatuses.set(key, value); },
+    },
+  };
+
+  await host.commands.get("wallclock").handler("5s block-new", ctx);
+  assert.equal(displayedStatuses.get("wall-clock"), "active 5s (block-new)");
+
+  now = 2_100;
+  scheduledStatus[0]?.();
+  assert.equal(displayedStatuses.get("wall-clock"), "active 4s (block-new)");
+
+  now = 7_000;
+  scheduledStatus[1]?.();
+  assert.equal(displayedStatuses.get("wall-clock"), "expired 0s (block-new)");
+  assert.equal(scheduledStatus.length, 2);
 });
 
 test("inactive host sessions do not change delegation or ordinary tool calls", async () => {

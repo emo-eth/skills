@@ -51,4 +51,5 @@ test("the bundled skill matches its directory name", () => {
   const skill = readFileSync(join(pluginRoot, "skills", "wall-clock", "SKILL.md"), "utf8");
   assert.match(skill, /^---\nname: wall-clock\ndescription: .+\n/);
   assert.match(skill, /The portable Agent Plugins package can provide tools and instructions\./);
+  assert.match(skill, /Use `abort-running` when the user does not select a policy\./);
 });
