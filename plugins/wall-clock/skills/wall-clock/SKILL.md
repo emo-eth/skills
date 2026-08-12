@@ -14,13 +14,17 @@ compatibility: The optional MCP tools require a client that loads mcp.json and N
 - **Wrap-up**: The period before the hard deadline when new delegation and destructive work stop.
 - **Assignment**: A bounded unit of work recorded under the main session.
 - **Acceptance target**: The smallest result that counts as complete for an assignment.
-- **Shortcut**: A deliberate reduction in scope, method, or validation, with its tradeoff recorded.
-- **Model guidance**: Instructions the model may follow; the host does not enforce them.
-- **Host enforcement**: A client event or executor mechanism that blocks or stops work.
+- **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
+- **Host guard**: Native plugin enforcement that limits time, delegation, and ordinary tool calls.
 
 ## Operating contract
 
 Use wall-clock control only when the user gives a deadline, gives a duration, or asks for time-bounded planning. Keep sessions without an explicit time boundary unchanged.
+
+The explicit `/do-it-now` skill is the exception: on a supported native Pi or
+OMP host, its invocation starts a fixed 90-second host guard with
+`abort-running`, no delegation, and a 12-call ordinary-tool limit. Do not call
+portable wall-clock tools to start that lane.
 
 The budget is a ceiling, not a target. Finish when the acceptance target is met. Do not spend unused time on extra scope.
 
