@@ -156,3 +156,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T01:30:16Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Checking new TypeScript MCP code -> the repository has no language server configured, so npm test is the available type-syntax and behavior check.
+- **2026-08-12T03:49:28Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Invoking the newly installed decision-wizard skill -> the current skill router did not discover it immediately, so I read the repository copy directly; refresh is needed after installing a new skill.
