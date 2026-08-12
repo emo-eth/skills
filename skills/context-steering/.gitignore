@@ -1,3 +1,0 @@
-# This skill has no runtime state. Keep local smoke output out of git without hiding committed fixtures or schemas.
-.tmp/
-*.smoke.json
