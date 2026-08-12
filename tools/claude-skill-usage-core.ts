@@ -547,6 +547,37 @@ function explicitSkillFromText(text: string): string | null {
   return url?.[1] ?? null;
 }
 
+function explicitSkillFromToolCalls(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const skill = explicitSkillFromToolCalls(item);
+      if (skill) return skill;
+    }
+    return null;
+  }
+  const object = valueAsObject(value);
+  if (!object) return null;
+  const type = optionalString(object.type)?.toLowerCase() ?? "";
+  const name = optionalString(object.name)?.toLowerCase() ?? "";
+  const isToolCall = type === "toolcall"
+    || type === "tool_call"
+    || type === "function_call"
+    || type === "custom_tool_call"
+    || name === "read";
+  if (isToolCall) {
+    const argumentsObject = valueAsObject(object.arguments ?? object.input ?? object.args);
+    const skill = explicitSkillFromText(
+      optionalString(argumentsObject?.path) ?? optionalString(argumentsObject?.url) ?? "",
+    );
+    if (skill) return skill;
+  }
+  for (const key of ["content", "toolCalls", "tool_calls"]) {
+    const skill = explicitSkillFromToolCalls(object[key]);
+    if (skill) return skill;
+  }
+  return null;
+}
+
 function explicitSkillFromRecord(record: JsonObject, text: string): string | null {
   const type = optionalString(record.type)?.toLowerCase() ?? "";
   if (type.includes("skill")) {
@@ -557,6 +588,20 @@ function explicitSkillFromRecord(record: JsonObject, text: string): string | nul
   if (payload && optionalString(payload.type)?.toLowerCase().includes("skill")) {
     const direct = explicitSkillName(payload.skill) ?? explicitSkillName(payload.name);
     if (direct) return direct;
+  }
+  const message = valueAsObject(record.message);
+  const toolSkill = explicitSkillFromToolCalls(message?.content)
+    ?? explicitSkillFromToolCalls(payload?.content)
+    ?? explicitSkillFromToolCalls(record.content);
+  if (toolSkill) return toolSkill;
+  if (optionalString(record.customType)?.toLowerCase() === "tool_execution_start") {
+    const data = valueAsObject(record.data);
+    const toolName = optionalString(data?.toolName ?? record.toolName)?.toLowerCase();
+    if (toolName === "read") {
+      const argumentsObject = valueAsObject(data?.args ?? data?.arguments);
+      const skill = explicitSkillFromText(optionalString(argumentsObject?.path) ?? "");
+      if (skill) return skill;
+    }
   }
   return explicitSkillFromText(text);
 }
@@ -668,8 +713,8 @@ async function scanLocalSourceFile(
       const { role, text } = roleAndText(object);
       const timestampMs = timestampFromRecord(object);
 
-      if (role === "user") {
-        const invokedSkill = explicitSkillFromRecord(object, text);
+      const invokedSkill = explicitSkillFromRecord(object, text);
+      if (role === "user" || (source !== "claude" && invokedSkill)) {
         currentSkill = invokedSkill;
         if (source !== "claude") {
           addAttributionPoint(index, {

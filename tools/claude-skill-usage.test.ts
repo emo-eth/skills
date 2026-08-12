@@ -257,6 +257,26 @@ test("local Pi and OMP parsers derive explicit skills and preserve unknown event
     { source: "omp", total: 21 },
   ]);
 });
+
+test("derives a skill from an OMP skill:// read inside assistant content", async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
+  const report = await scanAllSources({
+    sources: ["omp"],
+    useMemex: false,
+    sourceRoots: { omp: [join(root, "omp-tool-skill")] },
+  });
+
+  assert.equal(report.requests, 1);
+  assert.deepEqual(
+    report.bySkill.map(({ skill, attribution, requests, total }) => ({
+      skill,
+      attribution,
+      requests,
+      total,
+    })),
+    [{ skill: "epsilon", attribution: "observed", requests: 1, total: 9 }],
+  );
+});
 test("local Codex parser counts cached input once", async () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
   const report = await scanAllSources({
