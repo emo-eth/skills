@@ -23,11 +23,18 @@ existing tickets are. The existing tickets are your **exemplar** — match their
 format and grain exactly, and extend the set that's there rather than replacing
 it. Arriving with a competing set is both a bad look and harder to merge.
 
-If there is no destination yet, use the default fields: ID, name, type
-(build / research / design / ops), priority, one-line description. Priorities
-are **P labels** (P0 = blocks others or the demo, P1 = core path, P2 = polish
-or stretch) — not week or date labels; dates drift, priorities don't. When
-joining an exemplar that schedules differently, mirror the exemplar.
+If there is no destination yet, use the shared ticket contract in
+`standup/references/ticket-contract.md` (canonical) — ID, Title (verb-first,
+one human-sized result), type (build / research / design / ops), Owner (one
+person; `owner unknown` rather than a guess), Priority (**P labels** — P0 =
+blocks a release or another ticket, P1 = core goal, P2 = useful but not
+blocking — never week or date labels; dates drift, priorities don't), Why now,
+Output, Proof needed, Current status, and Destination status. "Proof needed" is
+the ticket's plain-language form of standup's "how we will prove it". Current
+status uses standup's ladder — `not done`, `implemented`, `merged`, `deployed`,
+`measured`, `done` — and when validation remains, `not done: validate ...`;
+never claim `done` without the ticket's stated proof. When joining an exemplar
+that schedules differently, mirror the exemplar.
 
 Completion: you can state the destination's fields, ID scheme, and grain — or
 you have declared the default because none exists.
@@ -52,8 +59,9 @@ art are noted for step 4.
 
 ## 3. Decompose
 
-One ticket = one owner-sized chunk of work with a **done-when**: the observable
-state that closes it. Rules, applied to every ticket:
+One ticket = one owner-sized chunk of work with a **proof needed** (standup's
+"how we will prove it"): the observable check that closes it. Rules, applied to
+every ticket:
 
 - **Decisions are tickets.** A decision gets an owner, a date, and a list of
   the tickets blocked on it. Work that presupposes an undecided choice links
@@ -66,11 +74,11 @@ state that closes it. Rules, applied to every ticket:
 
 When a parent ticket names an outcome but the current work only adds setup,
 make the setup a child ticket and leave the parent open. One PR may close
-multiple child tickets only when each child has its own satisfied done-when; a
+multiple child tickets only when each child has its own satisfied proof needed; a
 merge does not close a parent whose proof still needs live behavior or a
 measurement.
 
-Completion: every ticket has a done-when, a priority, a type, and one
+Completion: every ticket has a proof needed, a priority, a type, and one
 deliverable; no research ticket lacks a named artifact.
 
 ## 4. Diff against what exists
@@ -98,7 +106,10 @@ teammate would say out loud (elicitation, durable artifact, arming, posture,
 surface, leverage). Read each description aloud; if it sounds like a bot,
 rewrite it from what a person would actually say: *"'Actually, pause that' has
 to work."* A term the project genuinely needs gets defined once at the top of
-the output, then used plainly everywhere else.
+the output, then used plainly everywhere else. Standup holds the same line on
+its own prose — it swaps `done-when` for `how we will prove it` — so a ticket
+and the standup that reads it should use the same plain terms, not two
+jargons.
 
 Completion: the read-aloud pass ran on every description; at most one or two
 defined terms survive, defined once.

@@ -13,7 +13,7 @@ A daily standup is one short decision document. It answers:
 3. What is blocked?
 4. What must the owner decide?
 
-Do not read or create a glossary for a standup. Use normal words. Do not use
+Use normal language that humans would use and easily parse. For example, do not use phrases like
 `goal path`, `done-when`, `unattached work`, or `evidence state` in the
 standup. Say `why this matters`, `how we will prove it`, `open work`, and
 `current status` instead.
@@ -215,6 +215,11 @@ Use this order:
 7. `This week` - a short preview of current priorities, not a second plan.
 8. `This month` - a short preview of monthly outcomes and this week's part.
 9. `Sources used` - the sources behind the claims.
+10. `For the Slack thread` - three to five bullet points the owner can paste
+    as-is into the `what are your priorities today?` thread. One short line
+    per bullet: the result in plain words and why it matters now. No ticket
+    labels, no status words, no measurements, no explanation of how. Keep the
+    whole block drop-in ready and short enough to post with no edits.
 When an explicit request applies an existing-ticket description update, list
 the applied change under `My update`. Do not leave an applied change in
 `Proposed tickets`.

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Context Steering"
-  short_description: "Detect root-context drift before mutation"
-  default_prompt: "Use $context-steering to run a read-only root-context reflection before the next major mutation."

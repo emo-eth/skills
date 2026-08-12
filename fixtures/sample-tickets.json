@@ -1,0 +1,45 @@
+[
+  {
+    "id": "ABC-101",
+    "title": "Auth: add refresh token rotation",
+    "description": "Rotate refresh tokens on reuse to limit replay window.",
+    "state": "Todo",
+    "priority": "High",
+    "url": "https://linear.app/acme/issue/ABC-101"
+  },
+  {
+    "id": "ABC-102",
+    "title": "Fix billing precision on invoicing",
+    "description": "Round line totals to match downstream ledger; current rounding loses cents on export.",
+    "state": "In Progress",
+    "priority": "Urgent"
+  },
+  {
+    "id": "ABC-103",
+    "title": "Dark mode for settings page",
+    "description": "Add a dark theme toggle and persist the preference.",
+    "state": "Backlog",
+    "priority": "Low"
+  },
+  {
+    "id": "ABC-104",
+    "title": "Rate-limit login attempts",
+    "description": "Add exponential backoff and account lockout after repeated failures.",
+    "state": "Todo",
+    "priority": "High"
+  },
+  {
+    "id": "ABC-105",
+    "title": "Migrate CI to new runner image",
+    "description": "Upgrade the base image to fix the flaky integration step.",
+    "state": "Todo",
+    "priority": "Medium"
+  },
+  {
+    "id": "ABC-106",
+    "title": "Export board as CSV",
+    "description": "Add a CSV export action to the board header menu.",
+    "state": "Backlog",
+    "priority": "Low"
+  }
+]
