@@ -1,20 +1,22 @@
+import { createInterface } from "node:readline";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createInterface } from "node:readline";
 import { WallClockController } from "./controller.ts";
 import { parseDeadlineSpec } from "./time.ts";
+import { isPersistedState } from "./store.ts";
 import type {
   ActionClass,
   AssignmentInput,
-  ChildReport,
+  ChildReportInput,
+  ExpiryPolicy,
   PersistedState,
   PlanItem,
   StateStore,
   ToolProposal,
 } from "./types.ts";
 
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.2.0";
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
 type JsonRpcId = string | number | null;
@@ -32,45 +34,42 @@ type McpTool = {
   inputSchema: JsonObject;
 };
 
+const PLAN_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "title", "status"],
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    status: { type: "string", enum: ["pending", "active", "complete", "blocked", "deferred"] },
+  },
+};
+
 const TOOLS: McpTool[] = [
   {
     name: "wallclock_start",
-    description: "Start wall-clock control for a session using a duration such as 30m or a local time such as 5pm.",
+    description: "Request wall-clock activation. A native host must enforce the selected policy; portable MCP alone rejects activation.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["sessionId", "deadline"],
+      required: ["sessionId", "deadline", "expiryPolicy"],
       properties: {
         sessionId: { type: "string", minLength: 1 },
-        deadline: { type: "string", description: "A duration or future local time, for example 30m or 5pm." },
+        deadline: { type: "string", description: "A positive duration or future local time, for example 30m or 5pm." },
+        expiryPolicy: { type: "string", enum: ["block-new", "abort-running"] },
         wrapUpMs: { type: "number", exclusiveMinimum: 0 },
-        plan: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["id", "title", "status"],
-            properties: {
-              id: { type: "string" },
-              title: { type: "string" },
-              status: { type: "string", enum: ["pending", "active", "complete", "blocked", "deferred"] },
-            },
-          },
-        },
+        plan: { type: "array", items: PLAN_ITEM_SCHEMA },
       },
     },
   },
   {
     name: "wallclock_status",
-    description: "Read the current wall-clock phase, remaining time, deadline, and optional assignment state.",
+    description: "Read the current wall-clock phase, measured elapsed-time context, deadline, policy, and assignment state.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["sessionId"],
-      properties: {
-        sessionId: { type: "string", minLength: 1 },
-        assignmentId: { type: "string" },
-      },
+      properties: { sessionId: { type: "string", minLength: 1 }, assignmentId: { type: "string" } },
     },
   },
   {
@@ -85,20 +84,17 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "wallclock_context",
-    description: "Return the current wall-clock instructions for a session or assignment.",
+    description: "Return measured current time, elapsed time, current phase, policy, assignment state, and the permitted next action.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["sessionId"],
-      properties: {
-        sessionId: { type: "string", minLength: 1 },
-        assignmentId: { type: "string" },
-      },
+      properties: { sessionId: { type: "string", minLength: 1 }, assignmentId: { type: "string" } },
     },
   },
   {
     name: "wallclock_check",
-    description: "Check whether a proposed action fits the remaining time and current risk phase.",
+    description: "Return the current wall-clock decision for a proposed action. The native host gate remains authoritative.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -108,7 +104,6 @@ const TOOLS: McpTool[] = [
         toolName: { type: "string", minLength: 1 },
         input: {},
         action: { type: "string", enum: ["read", "write", "destructive", "delegate", "finalize", "other"] },
-        estimatedMs: { type: "number", minimum: 0 },
         assignmentId: { type: "string" },
       },
     },
@@ -148,7 +143,7 @@ const TOOLS: McpTool[] = [
   },
   {
     name: "wallclock_report",
-    description: "Record assignment evidence, shortcuts, skipped validation, risks, unknowns, and the next parent action.",
+    description: "Record assignment evidence, shortcuts, skipped validation, risks, unknowns, measured elapsed time, and the next parent action.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -175,18 +170,24 @@ const TOOLS: McpTool[] = [
         partial: { type: "array", items: { type: "string" } },
         skipped: { type: "array", items: { type: "string" } },
         validation: { type: "array", items: { type: "string" } },
-        shortcuts: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["choice", "tradeoff"],
-            properties: { choice: { type: "string" }, tradeoff: { type: "string" } },
-          },
-        },
+        shortcuts: { type: "array", items: { type: "object" } },
         risks: { type: "array", items: { type: "string" } },
         unknowns: { type: "array", items: { type: "string" } },
         recommendedParentAction: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "wallclock_revise_plan",
+    description: "Record a parent plan revision after a bounded result or time contraction.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["sessionId", "plan", "reason"],
+      properties: {
+        sessionId: { type: "string", minLength: 1 },
+        plan: { type: "array", items: PLAN_ITEM_SCHEMA },
+        reason: { type: "string", minLength: 1 },
       },
     },
   },
@@ -221,7 +222,6 @@ export class JsonFileStore implements StateStore {
       return {};
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-
     const states: Record<string, PersistedState> = {};
     for (const [sessionId, value] of Object.entries(parsed)) {
       if (isPersistedState(value) && value.sessionId === sessionId) states[sessionId] = value;
@@ -240,13 +240,9 @@ export class WallClockMcpServer {
   }
 
   handle(message: unknown): JsonRpcResponse | undefined {
-    if (!message || typeof message !== "object" || Array.isArray(message)) {
-      return rpcError(null, -32600, "Invalid JSON-RPC request");
-    }
+    if (!message || typeof message !== "object" || Array.isArray(message)) return rpcError(null, -32600, "Invalid JSON-RPC request");
     const request = message as JsonObject;
-    if (request.jsonrpc !== "2.0" || typeof request.method !== "string") {
-      return rpcError(null, -32600, "Invalid JSON-RPC request");
-    }
+    if (request.jsonrpc !== "2.0" || typeof request.method !== "string") return rpcError(null, -32600, "Invalid JSON-RPC request");
 
     const hasId = Object.prototype.hasOwnProperty.call(request, "id");
     const id = hasId && isJsonRpcId(request.id) ? request.id : null;
@@ -274,15 +270,13 @@ export class WallClockMcpServer {
   private initialize(id: JsonRpcId, params: unknown): JsonRpcResponse {
     const paramsObject = params && typeof params === "object" && !Array.isArray(params) ? params as JsonObject : undefined;
     const requested = typeof paramsObject?.protocolVersion === "string" ? paramsObject.protocolVersion : undefined;
-    this.protocolVersion = requested && SUPPORTED_PROTOCOL_VERSIONS.includes(requested as (typeof SUPPORTED_PROTOCOL_VERSIONS)[number])
-      ? requested
-      : SUPPORTED_PROTOCOL_VERSIONS[0];
+    this.protocolVersion = requested && SUPPORTED_PROTOCOL_VERSIONS.includes(requested as (typeof SUPPORTED_PROTOCOL_VERSIONS)[number]) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0];
     this.initialized = false;
     return rpcResult(id, {
       protocolVersion: this.protocolVersion,
       capabilities: { tools: {} },
       serverInfo: { name: "wall-clock", version: SERVER_VERSION },
-      instructions: "Use wallclock_start before time-bounded work. The MCP check tool is guidance unless the host provides a pre-tool gate.",
+      instructions: "MCP is a portable control and inspection surface. A native host must enforce wall-clock activation and pre-action decisions.",
     });
   }
 
@@ -298,10 +292,7 @@ export class WallClockMcpServer {
       const value = this.executeTool(paramsObject.name, input);
       return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
     } catch (error) {
-      return {
-        isError: true,
-        content: [{ type: "text", text: errorMessage(error) }],
-      };
+      return { isError: true, content: [{ type: "text", text: errorMessage(error) }] };
     }
   }
 
@@ -309,13 +300,8 @@ export class WallClockMcpServer {
     const sessionId = requiredString(input, "sessionId");
 
     switch (name) {
-      case "wallclock_start": {
-        const deadline = requiredString(input, "deadline");
-        const deadlineInput = parseDeadlineSpec(deadline);
-        if (input.wrapUpMs !== undefined) deadlineInput.wrapUpMs = positiveNumber(input.wrapUpMs, "wrapUpMs");
-        const status = this.controller.activate(sessionId, deadlineInput, planItems(input.plan));
-        return { status, context: this.controller.context(sessionId) };
-      }
+      case "wallclock_start":
+        throw new Error("MCP cannot activate wall-clock: use a native Pi or OMP adapter with host enforcement");
       case "wallclock_status": {
         const assignmentId = optionalString(input, "assignmentId");
         return this.controller.status(sessionId, assignmentId);
@@ -332,8 +318,8 @@ export class WallClockMcpServer {
           toolName: requiredString(input, "toolName"),
           input: input.input,
           action: optionalAction(input, "action"),
-          estimatedMs: input.estimatedMs === undefined ? undefined : nonNegativeNumber(input.estimatedMs, "estimatedMs"),
           assignmentId: optionalString(input, "assignmentId"),
+          enforceable: false,
         };
         return this.controller.decideTool(sessionId, proposal);
       }
@@ -356,7 +342,7 @@ export class WallClockMcpServer {
         return this.controller.complete(sessionId, assignmentId, status);
       }
       case "wallclock_report": {
-        const report: ChildReport = {
+        const report: ChildReportInput = {
           assignmentId: requiredString(input, "assignmentId"),
           status: reportStatus(input.status),
           completed: stringArray(input.completed, "completed"),
@@ -369,8 +355,12 @@ export class WallClockMcpServer {
           unknowns: stringArray(input.unknowns, "unknowns"),
           recommendedParentAction: requiredString(input, "recommendedParentAction"),
         };
-        this.controller.report(sessionId, report);
-        return { recorded: true, status: this.controller.status(sessionId, report.assignmentId) };
+        return { report: this.controller.report(sessionId, report), status: this.controller.status(sessionId, report.assignmentId) };
+      }
+      case "wallclock_revise_plan": {
+        const plan = planItems(input.plan);
+        const revision = this.controller.setPlan(sessionId, plan, requiredString(input, "reason"));
+        return { revision, status: this.controller.status(sessionId) };
       }
       default:
         throw new Error(`Unknown wall-clock tool: ${name}`);
@@ -410,7 +400,6 @@ function rpcError(id: JsonRpcId, code: number, message: string, data?: unknown):
   return { jsonrpc: "2.0", id, error: data === undefined ? { code, message } : { code, message, data } };
 }
 
-
 function isJsonRpcId(value: unknown): value is JsonRpcId {
   return value === null || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 }
@@ -432,30 +421,21 @@ function positiveNumber(value: unknown, key: string): number {
   return value;
 }
 
-function nonNegativeNumber(value: unknown, key: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error(`${key} must be a non-negative number`);
-  return value;
-}
-
 function stringArray(value: unknown, key: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error(`${key} must be an array of strings`);
   return value;
 }
 
 function planItems(value: unknown): PlanItem[] {
-  if (value === undefined) return [];
   if (!Array.isArray(value)) throw new Error("plan must be an array");
   return value.map((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`plan[${index}] must be an object`);
     const planItem = item as JsonObject;
     const status = planItem.status;
-    if (status !== "pending" && status !== "active" && status !== "complete" && status !== "blocked" && status !== "deferred") {
-      throw new Error(`plan[${index}].status is invalid`);
-    }
+    if (status !== "pending" && status !== "active" && status !== "complete" && status !== "blocked" && status !== "deferred") throw new Error(`plan[${index}].status is invalid`);
     return { id: requiredString(planItem, "id"), title: requiredString(planItem, "title"), status };
   });
 }
- 
 
 function optionalAction(input: JsonObject, key: string): ActionClass | undefined {
   const value = input[key];
@@ -469,39 +449,22 @@ function assignmentStatus(value: unknown): "complete" | "partial" | "blocked" | 
   throw new Error("status is invalid");
 }
 
-function reportStatus(value: unknown): ChildReport["status"] {
+function reportStatus(value: unknown): ChildReportInput["status"] {
   return assignmentStatus(value);
 }
 
-function shortcuts(value: unknown): ChildReport["shortcuts"] {
+function shortcuts(value: unknown): ChildReportInput["shortcuts"] {
   if (!Array.isArray(value)) throw new Error("shortcuts must be an array");
   return value.map((item, index) => {
-    const shortcut = item;
-    if (!shortcut || typeof shortcut !== "object" || Array.isArray(shortcut)) throw new Error(`shortcuts[${index}] must be an object`);
-    const shortcutObject = shortcut as JsonObject;
-    return { choice: requiredString(shortcutObject, "choice"), tradeoff: requiredString(shortcutObject, "tradeoff") };
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`shortcuts[${index}] must be an object`);
+    const shortcut = item as JsonObject;
+    return { choice: requiredString(shortcut, "choice"), tradeoff: requiredString(shortcut, "tradeoff") };
   });
-}
-
-function isPersistedState(value: unknown): value is PersistedState {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const state = value as JsonObject;
-  return state.version === 1
-    && typeof state.sessionId === "string"
-    && typeof state.issuedAt === "number"
-    && typeof state.hardDeadline === "number"
-    && typeof state.wrapUpAt === "number"
-    && Array.isArray(state.plan)
-    && Array.isArray(state.assignments)
-    && Array.isArray(state.reports)
-    && typeof state.revision === "number"
-    && typeof state.stopped === "boolean";
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-
 function isMainModule(): boolean {
   const entrypoint = process.argv[1];
   return Boolean(entrypoint && resolve(entrypoint) === fileURLToPath(import.meta.url));

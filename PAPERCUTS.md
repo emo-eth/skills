@@ -150,3 +150,12 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T01:30:16Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Checking new TypeScript MCP code -> the repository has no language server configured, so npm test is the available type-syntax and behavior check.
+- **2026-08-12T03:39:20Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Resuming an archived wall-clock conversation -> the documented comeback-recovery skill was listed but its installed SKILL.md path was missing, so recovery had to use repository state directly.
+- **2026-08-12T04:00:44Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Resuming an archived session -> the required comeback-recovery skill was listed but its installed SKILL.md path was missing, so recovery instructions could not be loaded directly.
+- **2026-08-12T04:22:15Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Preparing a session handoff -> the required session-handoff skill was listed but its installed SKILL.md path was missing, so I used the repo copy instead.

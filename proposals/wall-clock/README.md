@@ -21,4 +21,4 @@ Nothing in this directory is discovered by `npx skills`: only directories under 
 - [Design](design.md)
 - [Future work](future-work.md)
 - [Review answers](review-answers.md)
-- [Decisions](decisions.md)
+- [Decisions](../../docs/DECISIONS.md)
