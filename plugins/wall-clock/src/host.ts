@@ -505,7 +505,11 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   host.on("agent_end", async (_event, ctx) => {
     const scope = rememberContext(ctx);
-    if (scope && scope.assignmentId === undefined) stopFastLane(scope.sessionId, ctx);
+    if (scope && scope.assignmentId === undefined) {
+      const status = controller.status(scope.sessionId);
+      // Keep an expired fast lane active so post-run work cannot bypass its gate.
+      if (status.phase !== "expired") stopFastLane(scope.sessionId, ctx);
+    }
     return undefined;
   });
 
