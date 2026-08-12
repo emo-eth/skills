@@ -252,3 +252,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T07:53:15.261Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While checking the final OMP and Pi versions, I assumed the repository root had package.json; this repo keeps the wall-clock package below plugins/wall-clock, so root-level Node package checks fail.
+- **2026-08-12T07:53:46.214Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: After a successful GitHub push and an earlier successful git ls-remote, a repeated read-only ls-remote failed with an intermittent self-signed SSL certificate error. The remote check is not stable in this environment even when the push transport has just succeeded.
