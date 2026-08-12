@@ -59,7 +59,7 @@ owned by `lc-project-state` — one skill, because there is no moment you sync t
 map without wanting the readiness record re-checked too. It keeps them separate
 files and re-checks them at different costs (see its four modes below).
 
-## The five
+## The six
 
 | Skill | Owns | Fires when | Invoked by |
 | --- | --- | --- | --- |
@@ -67,13 +67,14 @@ files and re-checks them at different costs (see its four modes below).
 | `lc-review-capture` | `docs/DECISIONS.md`, `docs/taste.md` | every human review round, always | auto — never you |
 | `lc-project-state` | `docs/STATE.md` (the map) + `docs/readiness.md` (the readiness record) | bootstrap once per repo; sync every session; status / audit on demand | you, or session end |
 | `lc-ticketize` | tracker items (Notion / Linear / Issues) | a settled plan must become assigned work | you |
+| `branch-closure` | the current branch's closure map and verified next action | a branch or worktree has unclear ticket scope, unfinished proof, or an oversized ticket | you |
 | `lc-phase-tracker` | `.context/progress.md` (gitignored) | inside one task of 3+ sequential phases | auto, mid-task |
 
 `docs/DECISIONS.md` is one append-only decision log, not a directory of ADR
 files — see *Resolved conflicts* §2 for why, and for how ADR's depth was folded
 back in.
 
-Read the trigger column. **Two of the five are never yours to type:**
+Read the trigger column. **Two of the six are never yours to type:**
 `lc-review-capture` runs itself after every review round, and `lc-phase-tracker`
 fires *inside* a task rather than at its start. If you have been trying to
 remember when to invoke those, that is why it felt wrong — they are not commands.
