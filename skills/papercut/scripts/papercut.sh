@@ -5,15 +5,20 @@ papercut_usage() {
   cat <<'EOF'
 Usage: papercut -m <agent-or-model> [options] "what happened"
 
-Append a small friction note to PAPERCUTS.md at the nearest Git repo root.
+Append a small friction note to a user-global PAPERCUTS.md file.
+
+The default output file is $PAPERCUTS_PATH, or ~/PAPERCUTS.md when
+unset. The repository is never written to; --path only changes this
+global output location.
 
 Options:
   -m, --agent <name>   Agent/model name to record
       --model <name>   Alias for --agent
-      --repo <path>    Repository root override
+      --path <file>    Output file (overrides $PAPERCUTS_PATH / default)
+      --repo <path>    Repository root override (metadata only, not output)
       --file <path>    Related file; repeatable
       --json           Print machine-readable receipt
-      --dry-run        Build the receipt without writing PAPERCUTS.md
+      --dry-run        Build the receipt without writing anything
   -h, --help           Show this help
 
 Message can also be piped on stdin.
@@ -28,6 +33,7 @@ papercut_error() {
 
 papercut_agent=""
 papercut_repo_override=""
+papercut_output_path=""
 papercut_files=()
 papercut_message_parts=()
 papercut_json=0
@@ -43,6 +49,12 @@ while (($# > 0)); do
       (($# >= 2)) || papercut_error "$1 requires a value"
       [[ "$2" != -* ]] || papercut_error "$1 requires a value"
       papercut_agent="$2"
+      shift 2
+      ;;
+    --path)
+      (($# >= 2)) || papercut_error "--path requires a value"
+      [[ "$2" != -* ]] || papercut_error "--path requires a value"
+      papercut_output_path="$2"
       shift 2
       ;;
     --repo)
@@ -114,25 +126,65 @@ papercut_message="${papercut_message##+([[:space:]])}"
 papercut_message="${papercut_message%%+([[:space:]])}"
 [[ -n "$papercut_message" ]] || papercut_error "papercut message cannot be empty"
 
-papercut_find_repo_root() {
-  git -C "$1" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$1"
-}
-
-papercut_absolute_path() {
-  case "$1" in
-    /*) printf '%s\n' "$1" ;;
-    *) printf '%s/%s\n' "$papercut_cwd" "$1" ;;
+papercut_expand_tilde() {
+  local papercut_value="$1"
+  case "$papercut_value" in
+    '~'|'~/'*) printf '%s/%s\n' "$HOME" "${papercut_value#\~/}" ;;
+    *) printf '%s\n' "$papercut_value" ;;
   esac
 }
 
-if [[ -n "$papercut_repo_override" ]]; then
-  papercut_repo_root="$(papercut_absolute_path "$papercut_repo_override")"
+papercut_absolute_path() {
+  local papercut_value="$1"
+  case "$papercut_value" in
+    /*) printf '%s\n' "$papercut_value" ;;
+    *) printf '%s/%s\n' "$papercut_cwd" "$papercut_value" ;;
+  esac
+}
+
+# Resolve the global output file. --path wins, then $PAPERCUTS_PATH,
+# then ~/PAPERCUTS.md. This is never inside the repository.
+if [[ -n "$papercut_output_path" ]]; then
+  papercut_output_path="$(papercut_expand_tilde "$papercut_output_path")"
+  papercut_output_path="$(papercut_absolute_path "$papercut_output_path")"
 else
-  papercut_repo_root="$(papercut_find_repo_root "$papercut_cwd")"
+  papercut_output_path="${PAPERCUTS_PATH:-$HOME/PAPERCUTS.md}"
+  papercut_output_path="$(papercut_expand_tilde "$papercut_output_path")"
+fi
+
+# Physical worktree: the git top-level we are actually in, if any.
+papercut_git_top=""
+if git -C "$papercut_cwd" rev-parse --show-toplevel >/dev/null 2>&1; then
+  papercut_git_top="$(git -C "$papercut_cwd" rev-parse --show-toplevel)"
+  papercut_git_top="$(cd "$papercut_git_top" && pwd -P)"
+fi
+
+# Metadata repository root: --repo override, else the detected worktree,
+# else the current directory. This only affects metadata, never output.
+if [[ -n "$papercut_repo_override" ]]; then
+  papercut_repo_root="$(papercut_expand_tilde "$papercut_repo_override")"
+  papercut_repo_root="$(papercut_absolute_path "$papercut_repo_root")"
+elif [[ -n "$papercut_git_top" ]]; then
+  papercut_repo_root="$papercut_git_top"
+else
+  papercut_repo_root="$papercut_cwd"
 fi
 
 if [[ -d "$papercut_repo_root" ]]; then
   papercut_repo_root="$(cd "$papercut_repo_root" && pwd -P)"
+fi
+papercut_repo_name="$(basename "$papercut_repo_root")"
+
+# Branch or detached commit, collected from the physical worktree when git.
+papercut_branch=""
+papercut_commit=""
+papercut_detached=0
+if [[ -n "$papercut_git_top" ]]; then
+  papercut_branch="$(git -C "$papercut_cwd" symbolic-ref --short -q HEAD 2>/dev/null || true)"
+  papercut_commit="$(git -C "$papercut_cwd" rev-parse --short HEAD 2>/dev/null || true)"
+  if [[ -z "$papercut_branch" && -n "$papercut_commit" ]]; then
+    papercut_detached=1
+  fi
 fi
 
 papercut_relative_or_absolute() {
@@ -163,8 +215,7 @@ if ((${#papercut_files[@]} > 0)); then
 fi
 
 papercut_timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-papercut_path="$papercut_repo_root/PAPERCUTS.md"
-papercut_heading=$'# Papercuts\n\nSmall frictions agents hit while working in this repository. These are not full bug reports; they are sandpaper notes for later cleanup.\n\n## Entries\n\n'
+papercut_heading=$'# Papercuts\n\nSmall frictions agents hit while working. These are not full bug reports; they are sandpaper notes for later cleanup. Each entry records the repository identity, worktree, branch (or detached commit), cwd, agent, related files, and note.\n\n## Entries\n\n'
 
 papercut_format_code() {
   local papercut_code_value="$1"
@@ -175,6 +226,21 @@ papercut_format_code() {
 papercut_append_entry() {
   {
     printf -- '- **%s** %s\n' "$papercut_timestamp" "$(papercut_format_code "$papercut_agent")"
+    printf '  - repo: %s root: %s\n' \
+      "$(papercut_format_code "$papercut_repo_name")" \
+      "$(papercut_format_code "$papercut_repo_root")"
+    if [[ -n "$papercut_git_top" ]]; then
+      printf '  - worktree: %s\n' "$(papercut_format_code "$papercut_git_top")"
+      if ((papercut_detached == 1)); then
+        printf '  - commit: %s (detached)\n' "$(papercut_format_code "$papercut_commit")"
+      elif [[ -n "$papercut_branch" ]]; then
+        printf '  - branch: %s' "$(papercut_format_code "$papercut_branch")"
+        if [[ -n "$papercut_commit" ]]; then
+          printf ' @ %s' "$(papercut_format_code "$papercut_commit")"
+        fi
+        printf '\n'
+      fi
+    fi
     printf '  - cwd: %s\n' "$(papercut_format_code "$papercut_cwd_display")"
 
     if ((${#papercut_file_display[@]} > 0)); then
@@ -199,23 +265,23 @@ papercut_append_entry() {
     else
       printf '  - note: %s\n' "$papercut_message"
     fi
-  } >> "$papercut_path"
+  } >> "$papercut_output_path"
 }
 
 if ((papercut_dry_run == 0)); then
-  mkdir -p "$papercut_repo_root"
+  mkdir -p "$(dirname "$papercut_output_path")"
 
-  if [[ ! -e "$papercut_path" ]]; then
-    printf '%s' "$papercut_heading" > "$papercut_path"
+  if [[ ! -e "$papercut_output_path" ]]; then
+    printf '%s' "$papercut_heading" > "$papercut_output_path"
   else
-    papercut_existing="$(<"$papercut_path")"
+    papercut_existing="$(<"$papercut_output_path")"
     if [[ -z "$papercut_existing" ]]; then
-      printf '%s' "$papercut_heading" > "$papercut_path"
-    elif ! grep -Fq '## Entries' "$papercut_path"; then
-      printf '\n\n## Entries\n\n' >> "$papercut_path"
+      printf '%s' "$papercut_heading" > "$papercut_output_path"
+    elif ! grep -Fq '## Entries' "$papercut_output_path"; then
+      printf '\n\n## Entries\n\n' >> "$papercut_output_path"
     else
-      papercut_last_byte="$(tail -c 1 "$papercut_path" | od -An -t x1 | tr -d ' \n')"
-      [[ "$papercut_last_byte" == "0a" ]] || printf '\n' >> "$papercut_path"
+      papercut_last_byte="$(tail -c 1 "$papercut_output_path" | od -An -t x1 | tr -d ' \n')"
+      [[ "$papercut_last_byte" == "0a" ]] || printf '\n' >> "$papercut_output_path"
     fi
   fi
 
@@ -232,13 +298,30 @@ papercut_json_escape() {
   printf '%s' "$papercut_json_value"
 }
 
+# JSON null-or-string helper: emit the value if non-empty, else null.
+papercut_json_nullable() {
+  if [[ -n "$1" ]]; then
+    printf '"%s"' "$(papercut_json_escape "$1")"
+  else
+    printf 'null'
+  fi
+}
+
 if ((papercut_json == 1)); then
   printf '{\n'
-  printf '  "schema": "springfield.papercut.v1",\n'
-  printf '  "repoRoot": "%s",\n' "$(papercut_json_escape "$papercut_repo_root")"
-  printf '  "papercutsPath": "%s",\n' "$(papercut_json_escape "$papercut_path")"
+  printf '  "schema": "springfield.papercut.v2",\n'
   printf '  "timestamp": "%s",\n' "$papercut_timestamp"
   printf '  "agent": "%s",\n' "$(papercut_json_escape "$papercut_agent")"
+  printf '  "repoRoot": "%s",\n' "$(papercut_json_escape "$papercut_repo_root")"
+  printf '  "repoName": "%s",\n' "$(papercut_json_escape "$papercut_repo_name")"
+  if [[ -n "$papercut_git_top" ]]; then
+    printf '  "worktree": "%s",\n' "$(papercut_json_escape "$papercut_git_top")"
+  else
+    printf '  "worktree": null,\n'
+  fi
+  printf '  "branch": %s,\n' "$(papercut_json_nullable "$papercut_branch")"
+  printf '  "commit": %s,\n' "$(papercut_json_nullable "$papercut_commit")"
+  printf '  "detached": %s,\n' "$((papercut_detached))"
   printf '  "cwd": "%s",\n' "$(papercut_json_escape "$papercut_cwd_display")"
   printf '  "files": ['
   if ((${#papercut_file_display[@]} > 0)); then
@@ -249,6 +332,7 @@ if ((papercut_json == 1)); then
   fi
   printf '],\n'
   printf '  "message": "%s",\n' "$(papercut_json_escape "$papercut_message")"
+  printf '  "papercutsPath": "%s",\n' "$(papercut_json_escape "$papercut_output_path")"
   if ((papercut_dry_run == 1)); then
     printf '  "written": false\n'
   else
@@ -257,8 +341,8 @@ if ((papercut_json == 1)); then
   printf '}\n'
 else
   if ((papercut_dry_run == 1)); then
-    printf 'dry-run: %s\n' "$papercut_path"
+    printf 'dry-run: %s\n' "$papercut_output_path"
   else
-    printf 'logged: %s\n' "$papercut_path"
+    printf 'logged: %s\n' "$papercut_output_path"
   fi
 fi
