@@ -1,27 +1,30 @@
 ---
 name: standup-fanout
-description: "Fork the daily standup's Today outcomes into isolated Herdr worktrees, run each as its own coding agent in parallel, then integrate only verified changes back into the standup and the source of truth. Use when the standup lists three or more Today outcomes that can be worked independently, and the owner wants them done in parallel instead of one after another. Runs after a standup exists."
+description: "Fork the daily standup's Today work into isolated Herdr worktrees, assign each worktree specific tickets it aims to close, run one or more coding agents per tree under Herdr orchestration, and integrate only verified results back into the standup and the source of truth. Use when the standup lists three or more tickets that can be worked independently, and the owner wants them done in parallel instead of one after another. Runs after a standup exists."
 argument-hint: "[standup date or file]"
 ---
 
 # Standup Fanout
 
-The standup lists Today outcomes. Each is a candidate for parallel work. A
-fanout takes one outcome, assigns it one isolated worktree and one agent, and
-collects only the results that survive verification. It turns the standup from
-a plan into a done list in one working session.
+The standup names Today's work. Each work item resolves to tickets. A fanout
+takes one ticket (or one tightly-coupled group), assigns it one isolated
+worktree, and asks Herdr to drive the coding agent in that tree toward closing
+the ticket's sub-tickets. It turns the standup from a plan into a list of
+closed or proven tickets in one working session.
 
-The failure this defends against: working all of today's outcomes in one
-shared tree, so a half-finished change leaks into unrelated work, proof gets
-mixed between outcomes, and a broken run has to be unwound all at once.
+The failure this defends against: working all of today's tickets in one shared
+tree, so a half-finished change leaks into unrelated work, proof gets mixed
+between tickets, an agent can stall waiting for an input it may never get, and
+a broken run has to be unwound all at once.
 
-Boundary: this is the execution half. The standup must already exist. This
-skill never writes the standup's plan or proposes tickets; build the standup
-and the goal chain with `standup` first. This skill only runs each planned
-outcome and reports what actually happened.
+Boundary: this is the execution half. The standup and its tickets must already
+exist. This skill never writes the standup's plan; build the standup and the
+goal chain with `standup` first. This skill only drives tickets toward done and
+reports what actually happened.
 
-You must be inside a Herdr-managed session. Herdr tools are the only safe
-place to run and coordinate agents in parallel. Confirm before you start:
+You must be inside a Herdr-managed session. Herdr is the orchestrator here; it
+owns panes, agents, worktrees, and cross-agent communication. Confirm before
+you start:
 
 ```bash
 test "${HERDR_ENV:-}" = 1 && echo herdr-ready
@@ -36,187 +39,269 @@ do not try to emulate Herdr from outside it.
   report is a claim. You apply it only after a focused check reproduces or
   matches it. Do not copy an agent's sentence into the standup because the
   agent said so.
-- One outcome gets one tree, one agent, one done-when. Do not merge two
-  outcomes into one agent to save a workspace. A tree can hold several related
-  source changes only if they share one owner, one done-when, and one result.
+- One worktree holds the tickets it can close. A worktree may carry several
+  related source changes only if they share one owner, one done-when, and one
+  result. Two tickets with different done-when or proof belong in different
+  worktrees.
+- A ticket that cannot be implemented atomically in one worktree is not crammed
+  into a tree. It is broken into sub-tickets, each of which fits one tree or one
+  tree's proof. Do the breakdown visibly and get owner sign-off before you
+  create sub-tickets.
 - Keep evidence states distinct: planned, in progress, merged, deployed,
   measured, and verified-live are different claims. Report the strongest state
   the evidence supports.
-- Never mutate an external ticket, merge a branch, or deploy to an
-  environment without the owner's explicit approval. The fanout works code in
-  isolated trees; it does not publish.
+- Never mutate an external ticket, merge a branch, or deploy to an environment
+  without the owner's explicit approval. The fanout drives tickets toward done
+  in isolated trees; it publishes only what the owner approves.
+- An agent asks for human input when it needs an answer only a person has:
+  a decision between options, a missing credential or value, an approval, or a
+  fact the code cannot reveal. An agent that needs such input stops and asks
+  rather than guessing. Relay the question to the owner with the exact context
+  the agent needs; do not let the agent guess a secret or a policy choice.
 - Do not touch other people's worktrees or agents. You created the fanout
   workspaces; you close or revert only those.
-- The standup is the reporting owner's plan. Assign work the owner owns; do
-  not reassign other people's outcomes.
+- The standup is the reporting owner's plan. Assign tickets the owner owns; do
+  not reassign other people's tickets.
 - A seed check that fails is the tree's problem, not a reason to skip the
   check. Do not proceed on a tree whose seed did not pass.
 
-## 1. Read the standup and map the fanout
+## 1. Read the standup and map tickets to worktrees
 
 Read today's standup file:
 `docs/log/YYYY-MM-DD-standup.md` (the date is the reporting day, not today's
 clock date).
 
-From the standup's `Today` section, list every outcome. For each outcome,
+From the standup, list every ticket today's work points to. For each ticket
 write down:
 
-- the outcome (exact result, not a label),
-- the done-when (how you prove it),
+- the ticket title and direct link (verify it exists in the destination; never
+  cite a bare number),
+- its done-when (how you prove it),
 - the owner,
-- the ticket and its link, if the standup names one,
-- the evidence state the standup claims for it now.
+- the type (build, research, design, ops, or the destination's equivalent),
+- the current evidence state the standup claims for it.
 
-Combine outcomes with the same owner, done-when, and result into one slice.
-Keep the rest separate. Do not exceed the session's concurrency cap; if the
-standup lists more independent outcomes than you can run at once, rank them by
-owner priority and run the rest after the first wave.
+Group tickets that must land together (one owner, one merge, one result) into
+one worktree. Keep the rest separate. Do not exceed the session's concurrency
+cap; if the standup names more independent groups than you can run at once,
+rank by owner priority and run the rest after the first wave.
 
-Outcome without a done-when is not fanout-ready: mark it `GAP`, leave it in the
-standup, and put it in the follow-up's open questions. Do not invent a
+A ticket without a done-when is not fanout-ready: mark it `GAP`, leave it in
+the standup, and put it in the follow-up's open questions. Do not invent a
 done-when.
 
-Completion: every Today outcome is either assigned a slice with a done-when or
-marked `GAP`; the slices fit the concurrency cap.
+Repeat this phrase for the owner before dispatching: every worktree closes a
+named set of tickets, and every ticket that is too big for one tree becomes
+sub-tickets.
 
-## 2. Open one isolated worktree per slice
+Completion: every Today ticket is assigned to a worktree with a done-when, or
+marked `GAP`; the worktree count fits the concurrency cap.
 
-Create one Herdr worktree workspace per slice. A worktree for a fanout uses a
-branch with a name that says what this slice will change, so the branch itself
-documents the intent:
+## 2. Decide what each worktree closes
+
+For each worktree's ticket, decide how it reaches done. A ticket closes when
+its proof is satisfied. Proof is satisfied one of three ways:
+
+- merge: the ticket's code change is written, tested, and merged;
+- observe: the ticket's question is answered by observing deployed state, a
+  live environment, or the results of running tests or an eval;
+- research: the ticket produces its stated output (comparison, measurement,
+  recommendation, or another concrete artifact).
+
+Write down, per ticket, which of the three will satisfy it and the exact proof
+needed.
+
+If a ticket cannot be implemented atomically in a single worktree — because it
+spans layers, needs a separate deploy before it can be verified, mixes build
+and research, or has more than one independent done-when — break it into
+sub-tickets:
+
+- each sub-ticket has one owner, one done-when, one output, and one proof;
+- build sub-tickets land code; observe sub-tickets verify deployed or live
+  state; research sub-tickets produce the artifact;
+- a parent ticket stays open until its sub-tickets' proofs are satisfied.
+
+Show the owner the proposed breakdown (parent, sub-tickets, and how each
+sub-ticket's proof connects to the parent's done-when) and get explicit
+approval before creating any sub-ticket. Until approval, mark the breakdown
+`proposed, not created`.
+
+The sub-ticket breakdown process itself is not settled. If the fanout reaches
+this step, do not invent a new convention: propose it in the follow-up, and
+record it. The owner is tracking how this should work through a dedicated
+ticket; check whether that ticket still needs input and flag anything new the
+fanout revealed. Use `references/ticket-contract.md` for the fields every
+proposed ticket must carry before the breakdown goes to the owner.
+
+Completion: every worktree has a decided exit (merge, observe, or research)
+with the exact proof; oversized tickets have an approved sub-ticket breakdown
+or a `proposed, not created` one in the follow-up.
+
+## 3. Open one isolated worktree per ticket group
+
+Create one Herdr worktree workspace per group. A worktree for a fanout uses a
+branch whose name says what this group changes, so the branch documents the
+intent:
 
 ```bash
 herdr worktree create \
   --base <current-shared-ref> \
-  --branch <owner>/<slice-slug> \
+  --branch <owner>/<ticket-slug> \
   --cwd <the-repo> \
   --no-focus
 ```
 
 Read the new workspace ID and worktree path from the command's JSON response;
-do not guess them. The slice slug is short and names the outcome (for example
-`prod-observability`, `opus5-baseline`, `reset-check`), not the date.
+do not guess them. The slug is short and names the ticket (for example
+`synthetic-apex-age`, `opus5-baseline`, `reset-check`), not the date.
 
-Record which workspace, branch, and path belong to which slice before you move
-on. If a worktree already exists for a slice from an earlier run, open it
-instead of creating another; do not stack two checkouts of the same branch.
+Record which workspace, branch, and path belong to which ticket group before
+you move on. If a worktree already exists for a group from an earlier run, open
+it instead of creating another; do not stack two checkouts of the same branch.
 
-Completion: every slice has its own open worktree on its own branch, and each
-slice maps to one workspace ID and one path.
+Completion: every group has its own open worktree on its own branch, and each
+worktree maps to one workspace ID and one path.
 
-## 3. Seed each tree and verify the seed
+## 4. Seed each tree, verify the seed, and launch its agent
 
 Give each agent the prerequisites it needs before it can work. In each tree,
 run the seed in the tree's directory: install dependencies, generate code the
-build needs (for example Prisma), and compile if the slice will edit code.
-Confirm the seed actually passes where the fanout runs; do not assume the
-parent tree's state carries over.
+build needs (for example Prisma), and compile if the group edits code. Confirm
+the seed actually passes where the fanout runs; do not assume the parent tree's
+state carries over.
 
-Then dispatch one agent per slice with a prompt that carries the full
-contract, because an agent does not see this conversation:
+Then launch one or more coding agents per tree through Herdr. Herdr is the
+orchestrator: it starts agents, watches their lifecycle, and lets them
+communicate when a tree needs more than one agent or when work crosses trees.
+Use multiple agents when one tree spans independent sub-tickets or when two
+trees' work depends on the same knowledge; let Herdr route the discussion. Do
+not run agents side by side without Herdr as the coordinator.
+
+Each agent prompt carries the full contract, because an agent does not see this
+conversation:
 
 - the starter branch and its directory,
-- the outcome, done-when, and owner,
-- the ticket title and link, if any,
+- the ticket or sub-ticket title and link, and its done-when,
+- the exit chosen (merge, observe, or research) and the exact proof,
 - the evidence state the standup currently claims,
 - the rule to run the seed first and stop if it fails,
 - the rule to record every observed result in a dated log in the tree, with
   the exact object, current state, next action, environment, and proof,
 - the rule to write `GAP` or `not verified` for anything unknown instead of
   inventing a value,
-- the rule to make no external ticket, branch, or deployment change.
+- the rule to make no external ticket, branch, or deployment change,
+- the rule to stop and ask for human input when a decision, credential, value,
+  or approval only a person can provide is required — and to never guess it.
 
-Use the Herdr agent surface to start and address each slice's agent by the
-slice name. Read each agent's result from its own pane once it settles.
+Use the Herdr agent surface to start and address each agent by name. Read each
+agent's result from its own pane once it settles. If Herdr reports an agent
+`blocked` (an approval or question UI), relay the material to the owner and do
+not let the agent guess past it.
 
 Completion: every tree's seed passes, every agent is running with a complete,
-self-contained contract, and each agent knows to leave external state alone.
+self-contained contract under Herdr coordination, and each knows to leave
+external state alone and to ask for human input rather than guess.
 
-## 4. Verify before you integrate
+## 5. Verify before you integrate
 
-An agent settling is not proof. For each slice, take the agent's claimed
-result and test it at its own level: run the focused command or check that
-exercises the changed behavior in that tree and read the output. Confirm the
-claimed result matches a reproduced result, not the agent's report.
+An agent settling is not proof. For each tree, take the agent's claimed result
+and test it at its own level: run the focused command or check that exercises
+the changed behavior in that tree and read the output. Confirm the claimed
+result matches a reproduced result, not the agent's report.
 
-Then classify each slice's outcome as one of:
+Then classify each ticket as one of:
 
-- verified: a focused check reproduced the claimed result,
+- done: the proof for its exit was satisfied and reproduced,
+- verified: the claimed result matched a reproduced check,
 - unverified: claimed but not reproduced,
-- failed: a check shows the outcome did not happen,
+- failed: a check shows the proof did not happen,
+- awaiting input: the agent blocked on a decision, credential, value, or
+  approval that only a person can provide,
 - not done: the agent stopped before the done-when, or marked a needed input
   `GAP`.
 
-For unverified, failed, or not done slices, decide whether a second focused
+For any ticket awaiting input, collect the concrete question(s) and bring them
+to the owner in one list with the exact context each answer needs. Do not
+restart the agent until the owner answers; do not let it guess.
+
+For unverified, failed, or not done tickets, decide whether a second focused
 attempt in the same tree is worth one more round. Do not keep restarting the
 same claim; after two failures, record it as not done and move on.
 
-Completion: every slice has a classification backed by a focused check result,
-and no `verified` slice lacks its reproducing check.
+Completion: every ticket has a classification backed by a focused check, no
+`done` or `verified` ticket lacks its reproducing check, and every awaiting-input
+question is queued for the owner.
 
-## 5. Apply and record only what is verified
+## 6. Apply and record only what is verified
 
-Bring verified source changes back as the standup's record. How you apply each
-change depends on what it is:
+Bring verified results back as the standup's record. How you apply each change
+depends on what it is:
 
-- a source or test change: merge the slice's branch into the shared ref you
+- a source or test change: merge the tree's branch into the shared ref you
   opened the worktrees from, or apply the concrete diff to the source tree
   when the fanout runs on the actual source branch;
-- a dated evidence log: move or copy the slice's log into
+- a dated evidence log: move or copy the tree's log into
   `docs/log/YYYY-MM-DD-<name>.md` in the shared source and name the
   environment and date it ran on;
 - a claimed change to a doc or ticket: this is still unverified unless a check
   reproduced it. Update the standup only with what a check supports.
 
-Leave the slice's worktree open until the branch is merged or the diff is
-applied. Do not delete a worktree or branch that still holds unverified or
-unmerged work.
+Leave the worktree open until the branch is merged or the diff is applied. Do
+not delete a worktree or branch that still holds unverified or unmerged work.
 
 Read the outside tool's actual result for any change that touches a ticket,
 branch, or deployment: a fanout may propose it, but the verification is the
-real read, not the agent's sentence.
+real read, not the agent's sentence. Do not close a ticket on a merge alone
+when its proof also requires deploy, observe, research, or owner sign-off.
 
 Completion: only verified changes landed in the source of truth, every
-verified slice has its log in `docs/log/`, and no unverified claim appears in
-the standup.
+verified ticket's log is in `docs/log/`, and no unverified claim appears in the
+standup.
 
-## 6. Fold results back into the standup
+## 7. Fold results back into the standup
 
 Reconcile the verified outcomes into the shared source and the standup:
 
-- Move each verified slice's evidence into the matching standup position and
+- Move each verified ticket's evidence into the matching standup position and
   update its evidence state to the strongest one the check supports.
-- Move any `GAP` or failed slice into the standup's open questions or a dated
-  follow-up document, with the next action, owner, and done-when.
+- Move any `GAP`, `failed`, `not done`, or `awaiting input` ticket into the
+  standup's open questions or a dated follow-up document, with the next action,
+  owner, and done-when.
+- Put every proposed sub-ticket breakdown and proposed ticket close in the
+  follow-up, marked `proposed, not created` or `proposed, not applied`, and ask
+  the owner before any external write.
 - Update `docs/STATE.md` if the project picture changed, in the same change
   as the standup update.
 - Do not update a decision log for routine wording. Update it only when a
   decision reversing it would change future behavior.
-- Do not close, reprioritize, or create tickets. Put any proposed ticket
-  changes in the same follow-up document, marked `proposed, not applied`, and
-  ask the owner before any external write.
+- Record what the fanout learned about breaking tickets into sub-tickets, so
+  the owner's dedicated ticket on that mechanism gets real evidence.
 
 Completion: the standup, its follow-up, the source logs, and `docs/STATE.md`
-agree; every verified outcome shows its real evidence state; every gap and
-failure has an owner, next action, and done-when; and no external mutation
-happened without approval.
+agree; every verified ticket shows its real evidence state; every gap, failure,
+and awaiting-input question has an owner, next action, and done-when; and no
+external mutation happened without approval.
 
-## 7. Report the fanout
+## 8. Report the fanout
 
 Give the owner a short result, in this order:
 
-1. Per slice, the outcome, evidence state, and the focused check that proved
-   it.
-2. The held-back slices: unverified, failed, or not done, each with why and
+1. Per worktree, the tickets it closed or proved, each with its evidence state
+   and the focused check that proved it.
+2. The tickets awaiting input: the exact question, the context the agent needs,
+   and the worktree it blocks.
+3. The held-back tickets: unverified, failed, or not done, each with why and
    the next concrete action.
-3. The workspace IDs and paths for the trees that still hold work.
-4. Any proposed ticket delta, marked `proposed, not applied`.
-5. The follow-up document link and any open questions needing owner input.
+4. Any proposed sub-ticket breakdown, marked `proposed, not created`, and any
+   proposed ticket close, marked `proposed, not applied`.
+5. The workspace IDs and paths for the trees that still hold work.
+6. The follow-up document link and any open questions needing owner input.
 
 Use normal language for owners. The reader should repeat what changed, what
 was proven, and what is blocked after reading it. Name each environment the
 result ran on. Do not name a ticket by bare number: use the title and a direct
 link, and only after verifying the ticket exists.
 
-Completion: the owner can act on the fanout from the report alone, and every
-claim in it is grounded in a reproduced check or marked a gap.
+Completion: the owner can act on the fanout from the report alone, every claim
+in it is grounded in a reproduced check or marked a gap, and every question an
+agent needs answered is on one list the owner can answer.
