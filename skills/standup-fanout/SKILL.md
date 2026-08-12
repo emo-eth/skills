@@ -53,6 +53,10 @@ do not try to emulate Herdr from outside it.
 - Never mutate an external ticket, merge a branch, or deploy to an environment
   without the owner's explicit approval. The fanout drives tickets toward done
   in isolated trees; it publishes only what the owner approves.
+- Branches land in `dev` only through a pull request, and that PR must be
+  merged by a human. The fanout and its agents open the PR and prepare it for
+  merge; they never merge into `dev` themselves. A branch is not merged into
+  `dev` by automation, by an agent, or by the fanout orchestrator.
 - An agent asks for human input when it needs an answer only a person has:
   a decision between options, a missing credential or value, an approval, or a
   fact the code cannot reveal. An agent that needs such input stops and asks
@@ -239,17 +243,19 @@ question is queued for the owner.
 Bring verified results back as the standup's record. How you apply each change
 depends on what it is:
 
-- a source or test change: merge the tree's branch into the shared ref you
-  opened the worktrees from, or apply the concrete diff to the source tree
-  when the fanout runs on the actual source branch;
+- a source or test change: open a pull request from the tree's branch into
+  `dev` (the base the worktrees branched from), with the evidence and
+  evidence-state recorded. Do not merge the branch into `dev` yourself: a
+  human must review and merge the PR. The tree's branch stays open until that
+  human merge happens;
 - a dated evidence log: move or copy the tree's log into
   `docs/log/YYYY-MM-DD-<name>.md` in the shared source and name the
   environment and date it ran on;
 - a claimed change to a doc or ticket: this is still unverified unless a check
   reproduced it. Update the standup only with what a check supports.
 
-Leave the worktree open until the branch is merged or the diff is applied. Do
-not delete a worktree or branch that still holds unverified or unmerged work.
+Leave the worktree open until a human merges the PR into `dev`. Do not delete
+a worktree or branch that still holds unverified or unmerged work.
 
 Read the outside tool's actual result for any change that touches a ticket,
 branch, or deployment: a fanout may propose it, but the verification is the
