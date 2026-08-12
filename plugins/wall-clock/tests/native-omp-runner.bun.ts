@@ -213,7 +213,7 @@ test("OMP native wallclock command starts the trailing prompt after activation",
 
     expect(created.mock.calls).toHaveLength(1);
     expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("fix merge conflicts in all open PRs");
-    expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("Expiry policy: abort-running");
+    expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("Expiry policy: block-new");
   } finally {
     await created.session.dispose();
     created.authStorage.close();

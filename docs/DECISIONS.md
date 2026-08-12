@@ -141,3 +141,13 @@ Consequences: The native host, bundled skills, documentation, and focused host t
 Status: active
 Scope: v0
 Load-bearing: no
+
+## D15 - 2026-08-12 - Default native expiry policy to block-new
+
+Decision: The native `/wallclock` command defaults an omitted expiry policy to `block-new`; users must opt into `abort-running` or its `abort` short spelling.
+Why: The safe default must reject new work at expiry without stopping work that was already admitted. Aborting running work requires an explicit choice and a host that can prove safe cancellation.
+Alternatives: Keep `abort-running` as the default (rejected because it can stop admitted work without an explicit user choice); require an explicit policy (rejected because the direct-start command should remain concise).
+Consequences: Direct-start commands without a policy use `block-new`; explicit operation-tool inputs and explicit native policies remain unchanged. Documentation and focused native-command tests must show the new default.
+Status: active
+Scope: v0
+Load-bearing: yes

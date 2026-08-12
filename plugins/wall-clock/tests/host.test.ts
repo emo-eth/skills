@@ -92,7 +92,7 @@ test("activation fails closed without a tested host enforcement seam", async () 
   );
 });
 
-test("wallclock starts from a deadline and defaults to abort-running", async () => {
+test("wallclock starts from a deadline and defaults to block-new", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as any, {
@@ -112,7 +112,7 @@ test("wallclock starts from a deadline and defaults to abort-running", async () 
 
   const status = controller.status("main");
   assert.equal(status.active, true);
-  assert.equal(status.expiryPolicy, "abort-running");
+  assert.equal(status.expiryPolicy, "block-new");
 });
 
 test("wallclock forwards the trailing prompt after activation", async () => {
@@ -138,7 +138,7 @@ test("wallclock forwards the trailing prompt after activation", async () => {
 
   await host.commands.get("wallclock").handler("5m fix merge conflicts in all open PRs", context());
 
-  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  assert.equal(controller.status("main").expiryPolicy, "block-new");
   assert.deepEqual(host.userMessages, ["fix merge conflicts in all open PRs"]);
 });
 

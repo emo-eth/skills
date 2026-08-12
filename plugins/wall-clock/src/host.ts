@@ -417,7 +417,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       if (command === "start" || (command !== "status" && command !== "stop")) {
         const deadline = command === "start" ? parts.shift() : command;
         if (!deadline) throw new Error("Usage: /wallclock [start] 30m|5pm [block-new|abort-running|abort] [prompt...]");
-        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "abort-running";
+        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "block-new";
         const prompt = parts.join(" ");
         if (prompt && !host.sendUserMessage) throw new Error("This host cannot submit the wall-clock prompt");
         const status = activateSession(ctx, { ...parseDeadlineSpec(deadline, options.clock?.now() ?? Date.now()), expiryPolicy }, []);

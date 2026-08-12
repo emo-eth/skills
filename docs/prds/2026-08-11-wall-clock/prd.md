@@ -127,9 +127,9 @@ A user can give a supported agent session a real time boundary and trust the hos
 
 ### R11. Host-enforced in-flight expiry policy
 
-- Requirement: Activation must carry one of two expiry policies: `block-new`, which enforces the deadline by rejecting new work while admitted work may finish, or `abort-running`, which enforces the deadline by rejecting new work and aborting every wall-clock-owned running action at expiry. The native slash command defaults to `abort-running` and lets the user override it with `block-new`. The host must reject `abort-running` when an admitted action has no abortable executor.
-- Rationale: The common command should be concise, while the user must still be able to choose whether reaching the deadline ends only admission or also ends running work. The product must enforce the effective policy and show it in status.
-- Acceptance: The selected policy is visible in status and reports. `block-new` never claims that running work stopped. `abort-running` emits and observes an abort signal for every owned running action, or rejects the action before it starts when cancellation cannot be enforced.
+- Requirement: Activation must carry one of two expiry policies: `block-new`, which enforces the deadline by rejecting new work while admitted work may finish, or `abort-running`, which enforces the deadline by rejecting new work and aborting every wall-clock-owned running action at expiry. The native slash command defaults to `block-new`; the user can opt into `abort-running` or its `abort` short spelling. The host must reject `abort-running` when an admitted action has no abortable executor.
+- Rationale: The safe direct-start command should reject new work at expiry without stopping admitted work unless the user explicitly chooses that behavior. The product must still let the user choose whether reaching the deadline ends only admission or also ends running work, and must enforce the effective policy and show it in status.
+- Acceptance: The selected policy is visible in status and reports. An omitted native slash-command policy produces `block-new`. `block-new` never claims that running work stopped. `abort-running` emits and observes an abort signal for every owned running action, or rejects the action before it starts when cancellation cannot be enforced.
 - Not acceptable: The product uses an undocumented default, silently changes an active policy, reports an in-flight action as cancelled without an observed abort, or allows an unabortable action under `abort-running`.
 
 ### R12. Parent plan revision
