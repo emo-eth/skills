@@ -15,6 +15,14 @@ argument-hint: "[small, explicit request]"
 - **Side effect**: Any change outside the requested result, including an external
   mutation, new document, cleanup, or process lifecycle change.
 
+- **Host guard**: Native plugin enforcement that limits this lane's time, delegation, and tool calls.
+
+On Pi or OMP with the wall-clock plugin enabled, this explicit invocation also
+activates a host guard: a 90-second hard deadline, `abort-running` cancellation
+for supported actions, no delegation, and a 12-call limit for ordinary tools.
+Without that native plugin, the skill instructions still narrow model behavior
+but cannot force a stop.
+
 Use this skill only through an explicit `/do-it-now` invocation. It is for a
 small request that should finish in one focused pass. It is not a general
 planning, research, review, refactor, or project-management mode.
@@ -98,9 +106,11 @@ Then respond with only:
 - the focused check performed;
 - one blocker, if any.
 
-Do not claim that this skill guarantees a wall-clock duration. A skill can
-constrain behavior, but only a host-enforced deadline or cancellation mechanism
-can force a model or process to stop.
+Do not claim that this skill alone guarantees a wall-clock duration. With the
+wall-clock plugin enabled on a supported native host, the host guard enforces
+the stated deadline and cancellation policy. The guard cannot infer semantic
+scope from arbitrary tool input, so the model instructions remain responsible
+for avoiding unrelated reads, writes, and research.
 
 ## Example
 

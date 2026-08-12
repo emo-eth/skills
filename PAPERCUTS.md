@@ -325,3 +325,11 @@ Small frictions agents hit while working in this repository. These are not full 
   - cwd: `.`
   - files: `PAPERCUTS.md`
   - note: Checking the required main checkout before pushing -> the documented /Users/emo/dev/skills path does not exist on this machine, so the status check failed; the actual repository location must be resolved before fast-forwarding main.
+- **2026-08-12T19:31:27Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Running the wall-clock TypeScript check -> npm reported tsc not found because this checkout has no installed plugin dependencies; verification must use the available runtime or install first.
+- **2026-08-12T19:37:05Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - files: `PAPERCUTS.md`
+  - note: Running the wall-clock suite after installing dependencies -> the existing OMP MCP discovery test failed because /tools output no longer contained the expected mcp__wall_clock_wall_clock_wallclock_* names; the focused host and real OMP runner tests passed, so the failure is outside the fast-lane path.

@@ -100,6 +100,89 @@ test("inactive host sessions do not change delegation or ordinary tool calls", a
   assert.equal(controller.runningActions("main").length, 0);
 });
 
+test("do-it-now arms a bounded fast lane and blocks delegation", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: [
+      '[IMPORTANT: User invoked the "do-it-now" skill; follow its instructions. Full skill below.]',
+      "# Do It Now",
+      "---",
+      "[Skill directory: /skills/do-it-now]",
+      "User: update the ticket title",
+    ].join("\n"),
+  }, ctx);
+
+  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  const contextResult = await host.emit("context", { messages: [] }, ctx) as any;
+  assert.match(contextResult.messages[0].content[0].text, /update the ticket title/);
+  assert.match(contextResult.messages[0].content[0].text, /12 tool calls remain/);
+
+  const delegated = await host.emit("tool_call", {
+    toolCallId: "delegated",
+    toolName: "task",
+    input: { task: "Update the title" },
+  }, ctx) as any;
+  assert.equal(delegated.block, true);
+  assert.match(delegated.reason, /blocks delegation/);
+
+  for (let index = 0; index < 12; index += 1) {
+    const toolCallId = `fast-lane-${index}`;
+    assert.equal(await host.emit("tool_call", { toolCallId, toolName: "read", input: {} }, ctx), undefined);
+    await host.emit("tool_result", { toolCallId, toolName: "read", isError: false }, ctx);
+  }
+  const overLimit = await host.emit("tool_call", {
+    toolCallId: "over-limit",
+    toolName: "read",
+    input: {},
+  }, ctx) as any;
+  assert.equal(overLimit.block, true);
+  assert.match(overLimit.reason, /12-tool limit/);
+});
+
+test("do-it-now custom skill messages arm the host guard", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-pi",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  await host.emit("message_start", {
+    type: "message_start",
+    message: {
+      role: "custom",
+      details: { name: "do-it-now", args: "refresh the list" },
+      content: "skill body",
+    },
+  }, context());
+
+  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  const contextResult = await host.emit("context", { messages: [] }, context()) as any;
+  assert.match(contextResult.messages[0].content[0].text, /refresh the list/);
+});
+
 test("Pi-shaped host injects measured context and blocks expired work before execution", async () => {
   let now = 1_000;
   const controller = new WallClockController({ now: () => now }, new MemoryStore());

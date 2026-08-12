@@ -13,6 +13,16 @@ import type {
   ToolProposal,
 } from "./types.ts";
 
+const FAST_LANE_DURATION_MS = 90_000;
+const FAST_LANE_WRAP_UP_MS = 15_000;
+const FAST_LANE_MAX_TOOL_CALLS = 12;
+
+type FastLaneState = {
+  request: string;
+  toolCalls: number;
+};
+
+
 export type RuntimeContext = {
   sessionId?: string;
   assignmentId?: string;
@@ -111,6 +121,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const cancelSchedule = options.cancelSchedule ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   let currentDirectSessionId: string | undefined;
   let actionSequence = 0;
+  const fastLanes = new Map<string, FastLaneState>();
 
   const adoptCoordination = (next: HostCoordination | undefined): void => {
     if (!next?.controller || !next?.childBindings) return;
@@ -256,11 +267,39 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const stopSession = (ctx: RuntimeContext | undefined) => {
     const sessionId = requireOwnerSession(ctx);
     controller.stop(sessionId);
+    fastLanes.delete(sessionId);
     clearSessionDeadlines(sessionId);
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
     return controller.status(sessionId);
   };
+
+  const startFastLane = (ctx: RuntimeContext | undefined, request: string) => {
+    const sessionId = requireOwnerSession(ctx);
+    const existing = fastLanes.get(sessionId);
+    if (existing) return controller.status(sessionId);
+    if (controller.status(sessionId).active) {
+      throw new Error("Do-it-now requires an inactive wall-clock session");
+    }
+    const status = activateSession(ctx, {
+      durationMs: FAST_LANE_DURATION_MS,
+      wrapUpMs: FAST_LANE_WRAP_UP_MS,
+      expiryPolicy: "abort-running",
+    });
+    fastLanes.set(sessionId, { request: request || "the current user request", toolCalls: 0 });
+    notify(ctx, "Do-it-now active: 90s hard deadline, abort-running, delegation blocked, 12 tool calls maximum", "info");
+    return status;
+  };
+
+  const stopFastLane = (sessionId: string, ctx?: RuntimeContext): void => {
+    if (!fastLanes.delete(sessionId)) return;
+    if (!controller.status(sessionId).active) return;
+    controller.stop(sessionId);
+    clearSessionDeadlines(sessionId);
+    persist(sessionId);
+    updateStatus(host, controller, sessionId, ctx);
+  };
+
 
   const restoreSession = async (_event: any, ctx: RuntimeContext) => {
     const direct = directSessionId(ctx);
@@ -268,6 +307,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     await ensureChildCoordination(ctx);
     const previousDirect = currentDirectSessionId;
     if (previousDirect && previousDirect !== direct && !coordination.childBindings.has(previousDirect)) {
+      stopFastLane(previousDirect);
       persist(previousDirect);
       clearSessionDeadlines(previousDirect);
       coordination.persistenceOwners.delete(previousDirect);
@@ -337,10 +377,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const status = controller.status(scope.sessionId, scope.assignmentId);
     if (!status.active || !status.context) return undefined;
     const messages = Array.isArray(event?.messages) ? event.messages : [];
+    const fastLane = fastLanes.get(scope.sessionId);
+    const contextText = [
+      controller.context(scope.sessionId, scope.assignmentId),
+      fastLane
+        ? `Do-it-now host guard: execute only ${fastLane.request}; do not delegate or add adjacent work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
+        : undefined,
+    ].filter((part): part is string => part !== undefined).join("\n");
     return {
       messages: [
         ...messages,
-        { role: "user", content: [{ type: "text", text: controller.context(scope.sessionId, scope.assignmentId) }], timestamp: status.context.currentTimeMs },
+        { role: "user", content: [{ type: "text", text: contextText }], timestamp: status.context.currentTimeMs },
       ],
     };
   });
@@ -352,7 +399,26 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return undefined;
   });
 
+  host.on("before_agent_start", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
+    const scope = rememberContext(ctx, event);
+    if (scope?.assignmentId === undefined) {
+      const request = parseFastLaneRequest(event);
+      if (request !== null) startFastLane(ctx, request);
+    }
+    return undefined;
+  });
+
+  host.on("message_start", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
+    const scope = rememberContext(ctx, event);
+    const request = parseFastLaneRequest(event?.message ?? event);
+    if (scope?.assignmentId === undefined && request !== null) startFastLane(ctx, request);
+    return undefined;
+  });
+
   host.on("message_end", async (event, ctx) => {
+    await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx);
     const role = event?.message?.role ?? event?.role;
     if (scope && role === "assistant") controller.endInference(scope.sessionId);
@@ -362,6 +428,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("turn_end", async (_event, ctx) => {
     const scope = rememberContext(ctx);
     if (scope) controller.endInference(scope.sessionId);
+    return undefined;
+  });
+
+  host.on("agent_end", async (_event, ctx) => {
+    const scope = rememberContext(ctx);
+    if (scope && scope.assignmentId === undefined) stopFastLane(scope.sessionId, ctx);
     return undefined;
   });
 
@@ -390,6 +462,15 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const input = event?.input;
     const action = (event?.action as ActionClass | undefined) ?? classifyAction(toolName, input);
     const nativeTool = toolName.toLowerCase().startsWith("wallclock_");
+    const fastLane = fastLanes.get(scope.sessionId);
+    if (fastLane && !nativeTool) {
+      if (action === "delegate" || /task|spawn|delegate|assign/i.test(toolName)) {
+        return { block: true, reason: "Do-it-now blocks delegation; complete the current request in this session" };
+      }
+      if (fastLane.toolCalls >= FAST_LANE_MAX_TOOL_CALLS) {
+        return { block: true, reason: `Do-it-now reached its ${FAST_LANE_MAX_TOOL_CALLS}-tool limit` };
+      }
+    }
     const suppliedActionId = existingActionId(event);
     if (!nativeTool && controller.status(scope.sessionId, scope.assignmentId).expiryPolicy === "abort-running" && !suppliedActionId) {
       return { block: true, reason: "Abort-running requires a host action identifier before execution" };
@@ -433,6 +514,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         return { block: true, reason: "Abort-running allows only one admitted action at a time in each host session because its abort signal is session-wide" };
       }
     }
+    if (fastLane && !nativeTool) fastLane.toolCalls += 1;
     if (!nativeTool) {
       controller.startAction(scope.sessionId, actionId, toolName, action, assignmentId);
       if (ctx) coordination.actionContexts.set(actionId, ctx);
@@ -820,9 +902,50 @@ function findActionLink(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
-function existingActionId(event: any): string | undefined {
-  const id = event?.toolCallId ?? event?.callId ?? event?.id;
-  return typeof id === "string" && id.trim() ? id : undefined;
+function existingActionId(event: unknown): string | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  if ("toolCallId" in event && typeof event.toolCallId === "string" && event.toolCallId.trim()) return event.toolCallId;
+  if ("callId" in event && typeof event.callId === "string" && event.callId.trim()) return event.callId;
+  if ("id" in event && typeof event.id === "string" && event.id.trim()) return event.id;
+  return undefined;
+}
+
+function parseFastLaneRequest(message: unknown): string | null {
+  if (!message || typeof message !== "object") return null;
+  if ("details" in message && message.details && typeof message.details === "object" && !Array.isArray(message.details)) {
+    const details = message.details;
+    if ("name" in details && details.name === "do-it-now") {
+      const args = "args" in details ? details.args : undefined;
+      return typeof args === "string" ? args.trim() : "";
+    }
+  }
+  const text = messageText(message);
+  const marker = /^\[IMPORTANT: User invoked the "do-it-now" skill; follow its instructions\. Full skill below\.\]/i;
+  if (marker.test(text)) {
+    const args = /\nUser:\s*([\s\S]*)$/i.exec(text);
+    return args ? args[1].trim() : "";
+  }
+  const match = /^\s*\/(?:skill:)?do-it-now(?:\s+([\s\S]*?))?\s*$/i.exec(text);
+  return match ? (match[1] ?? "").trim() : null;
+}
+
+function messageText(message: unknown): string {
+  if (!message || typeof message !== "object") return "";
+  if ("content" in message) {
+    const content = message.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content
+        .map((part: unknown) => {
+          if (typeof part === "string") return part;
+          if (!part || typeof part !== "object" || !("text" in part)) return "";
+          return typeof part.text === "string" ? part.text : "";
+        })
+        .join("");
+    }
+  }
+  if ("prompt" in message && typeof message.prompt === "string") return message.prompt;
+  return "text" in message && typeof message.text === "string" ? message.text : "";
 }
 
 function parseExpiryPolicy(value: string): ExpiryPolicy {
