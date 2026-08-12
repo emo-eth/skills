@@ -147,3 +147,12 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T03:41:48Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Merging the current remote main -> Git refused because the papercut log itself was unstaged; commit or stash the agent-owned log before integrating remote changes, while leaving unrelated user edits untouched.
+- **2026-08-12T01:13:49Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Inspecting recent history -> I used a forbidden head pipeline to limit output instead of the repository-safe read or a bounded command.
+- **2026-08-12T01:29:56Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Validating the Agent Skill frontmatter -> I split on the closing marker from the wrong side and parsed the Markdown body as YAML; line-based frontmatter extraction avoids that retry.
+- **2026-08-12T01:30:16Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking new TypeScript MCP code -> the repository has no language server configured, so npm test is the available type-syntax and behavior check.
