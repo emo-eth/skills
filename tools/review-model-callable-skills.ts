@@ -392,7 +392,7 @@ class Review {
 // CUSTOMIZE - author this section. Keep the review library above unchanged.
 // -----------------------------------------------------------------------------
 
-const { readdir, lstat } = require("node:fs/promises");
+const { readdir } = require("node:fs/promises");
 const { homedir } = require("node:os");
 const { join } = require("node:path");
 
@@ -427,9 +427,9 @@ const LOCK_FILE =
     : join(AGENTS_DIR, ".skill-lock.json"));
 const STATE_FILE =
   process.env.SKILL_AUDITOR_STATE ??
-  join(AGENTS_DIR, "model-callable-skills-review.json");
+  join(AGENTS_DIR, "model-callable-skills-invocation-review.json");
 const POSITIVE_LABEL = "keep";
-const NEGATIVE_LABEL = "remove";
+const NEGATIVE_LABEL = "disable";
 const locationsByName = new Map<string, string[]>();
 
 function errorCode(error: unknown): string | undefined {
@@ -544,6 +544,70 @@ async function readGlobalLock(): Promise<GlobalLock> {
   }
 }
 
+function disableModelInvocation(raw: string): string {
+  const bom = raw.startsWith("\uFEFF") ? "\uFEFF" : "";
+  const content = bom ? raw.slice(1) : raw;
+  const match = content.match(
+    /^(---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/,
+  );
+  if (!match) {
+    const newline = content.includes("\r\n") ? "\r\n" : "\n";
+    return `${bom}---${newline}disable-model-invocation: true${newline}---${newline}${content}`;
+  }
+
+  const [, opening, block, closing] = match;
+  const newline = opening.endsWith("\r\n") ? "\r\n" : "\n";
+  let found = false;
+  const lines = block.split(/\r?\n/).map((line) => {
+    if (!/^disable-model-invocation\s*:/.test(line)) return line;
+    found = true;
+    const prefix =
+      line.match(/^(disable-model-invocation\s*:\s*)/)?.[1] ??
+      "disable-model-invocation: ";
+    return `${prefix}true`;
+  });
+  if (!found) lines.push("disable-model-invocation: true");
+
+  return `${bom}${opening}${lines.join(newline)}${closing}${content.slice(match[0].length)}`;
+}
+
+let temporaryFileNumber = 0;
+
+async function writeTextAtomically(
+  filePath: string,
+  content: string,
+): Promise<void> {
+  const temporaryPath = `${filePath}.${process.pid}.${temporaryFileNumber++}.tmp`;
+  try {
+    await writeFile(temporaryPath, content, "utf8");
+    await rename(temporaryPath, filePath);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
+}
+
+async function verifyDisabled(names: string[]): Promise<void> {
+  const failures: string[] = [];
+  for (const name of names) {
+    for (const path of locationsByName.get(name) ?? []) {
+      try {
+        const raw = await readFile(join(path, "SKILL.md"), "utf8");
+        if (readSkillMetadata(raw, name).modelCallable) {
+          failures.push(`${name} at ${path}`);
+        }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(`${name} at ${path}: ${message}`);
+      }
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Model invocation is still enabled for: ${failures.join(", ")}`,
+    );
+  }
+}
+
 async function installedSkillLocations(): Promise<Map<string, string[]>> {
   const locations = new Map<string, string[]>();
   const entries = await readdir(SKILLS_DIR, { withFileTypes: true }).catch(
@@ -606,7 +670,7 @@ async function loadItems(): Promise<ReviewItem[]> {
         ["Source type", lockEntry?.sourceType || "unknown"],
         ["Source path", lockEntry?.skillPath || "not in global lock"],
         ["Installed path", skillPath],
-        ["Model invocation", "allowed directly in OMP"],
+        ["Model invocation", "currently allowed directly in OMP"],
       ],
     });
   }
@@ -614,64 +678,74 @@ async function loadItems(): Promise<ReviewItem[]> {
   return items;
 }
 
-function removalCommand(names: string[]): string[] {
-  return ["skills", "remove", "-g", ...names, "-y"];
-}
-
 function printActionPlan(outcome: ReviewOutcome): void {
   if (outcome.rejected.length === 0) {
-    console.log("\nNo skills were rejected. No cleanup is needed.");
+    console.log("\nNo skills were selected for disabling. No changes are needed.");
     return;
   }
 
   const names = outcome.rejected.map((item) => item.id);
-  console.log(`\nCleanup plan: remove ${names.length} skill(s)`);
-  for (const name of names) console.log(`- ${name}`);
-  console.log(`\nCommand: npx ${removalCommand(names).join(" ")}`);
-}
-
-async function verifyRemoved(names: string[]): Promise<void> {
-  const lock = await readGlobalLock();
-  const lockLeftovers = names.filter((name) =>
-    Object.hasOwn(lock.skills ?? {}, name),
+  console.log(
+    `\nPlan: disable model invocation for ${names.length} skill(s)`,
   );
-  const installedLeftovers: string[] = [];
-  for (const name of names) {
-    for (const path of locationsByName.get(name) ?? []) {
-      try {
-        await lstat(path);
-        installedLeftovers.push(`${name} at ${path}`);
-      } catch (error: unknown) {
-        if (errorCode(error) !== "ENOENT") {
-          installedLeftovers.push(`${name} at ${path}`);
-        }
-      }
-    }
-  }
-
-  const leftovers = [...new Set([...lockLeftovers, ...installedLeftovers])];
-  if (leftovers.length > 0) {
-    throw new Error(`Cleanup left these skills installed: ${leftovers.join(", ")}`);
-  }
+  for (const name of names) console.log(`- ${name}`);
+  console.log(
+    "\nEach selected SKILL.md will retain the skill and gain " +
+      "disable-model-invocation: true.",
+  );
+  console.log("The global skill lock will not be changed.");
 }
 
 async function applyOutcome(outcome: ReviewOutcome): Promise<void> {
   const names = outcome.rejected.map((item) => item.id);
-  if (names.length === 0) return;
+  const changes: Array<{ path: string; before: string; after: string }> = [];
 
-  const npx = process.env.SKILL_AUDITOR_NPX ?? "npx";
-  const result = spawnSync(npx, removalCommand(names), {
-    env: {
-      ...process.env,
-      HOME: AUDIT_HOME,
-    },
-    stdio: "inherit",
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`${npx} skills remove exited with status ${result.status}`);
+  for (const name of names) {
+    assertSafeSkillName(name);
+    const paths = locationsByName.get(name) ?? [];
+    if (paths.length === 0) {
+      throw new Error(`Could not find the installed path for ${name}`);
+    }
+    for (const path of paths) {
+      const filePath = join(path, "SKILL.md");
+      const before = await readFile(filePath, "utf8");
+      changes.push({
+        path: filePath,
+        before,
+        after: disableModelInvocation(before),
+      });
+    }
   }
-  await verifyRemoved(names);
+
+  try {
+    for (const change of changes) {
+      if (change.before !== change.after) {
+        await writeTextAtomically(change.path, change.after);
+      }
+    }
+    await verifyDisabled(names);
+  } catch (error: unknown) {
+    const rollbackFailures: string[] = [];
+    for (const change of [...changes].reverse()) {
+      if (change.before === change.after) continue;
+      try {
+        await writeTextAtomically(change.path, change.before);
+      } catch (rollbackError: unknown) {
+        const message =
+          rollbackError instanceof Error
+            ? rollbackError.message
+            : String(rollbackError);
+        rollbackFailures.push(`${change.path}: ${message}`);
+      }
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    if (rollbackFailures.length > 0) {
+      throw new Error(
+        `${message}. Rollback failed for: ${rollbackFailures.join(", ")}`,
+      );
+    }
+    throw error;
+  }
 }
 
 async function main(): Promise<void> {
@@ -694,7 +768,7 @@ async function main(): Promise<void> {
   if (!outcome) return;
 
   if (args.dryRun) {
-    console.log("\nDry run only. No installed skill or lock entry was changed.");
+    console.log("\nDry run only. No skill file or lock entry was changed.");
     return;
   }
 
@@ -703,14 +777,16 @@ async function main(): Promise<void> {
     await review.clearState();
     return;
   }
-  if (!(await confirmExact("Type CLEANUP to remove rejected skills: ", "CLEANUP"))) {
-    console.log("Cleanup skipped. The saved review can resume later.");
+  if (!(await confirmExact("Type DISABLE to continue: ", "DISABLE"))) {
+    console.log("Disabling skipped. The saved review can resume later.");
     return;
   }
 
   await applyOutcome(outcome);
   await review.clearState();
-  console.log("Cleanup complete. Rejected skills and lock entries were removed.");
+  console.log(
+    "Complete. Selected skills remain installed with model invocation disabled.",
+  );
 }
 
 main().catch((error: unknown) => {
