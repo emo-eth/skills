@@ -171,8 +171,8 @@ The minimum evidence set is:
 The v0 package now proves the Pi and OMP boundary with exact local host versions:
 
 - Pi 0.84.1 loads the native adapter, injects measured context, blocks expired shell work, and aborts its actual bash executor under `abort-running`.
-- OMP 17.2.15 provides a native pre-action gate, shared child event bus, child lifecycle identifiers, and a session-wide abort function. It loads the adapter, blocks expired shell work, aborts its actual bash executor, and shares assignment state between parent and child extension instances.
-- The OMP task path injects one bounded assignment into one child. Batch and nested delegation are blocked. A missing child report creates a structured fallback report.
+- OMP 17.2.15 provides a native pre-action gate, child lifecycle identifiers on the parent event bus, and a session-wide abort function. It creates each task child with a different event-bus object. The adapter binds the real child session path through a process-wide registry, blocks expired shell work, and aborts its actual bash executor.
+- The OMP task path injects one bounded assignment into one real `TaskTool` child. Batch and nested delegation are blocked. The child must report before its required native `yield`; a missing child report creates a structured fallback report.
 - Agent Plugin discovery loads the bundled skill and optional MCP tools without claiming that those portable components enforce a deadline.
 - Unsupported activation, unknown abort-running tools, missing action identifiers, and malformed newest state all fail closed.
 

@@ -219,3 +219,33 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T07:01:35.780Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While checking OMP package discovery, --plugin-dir loaded the Agent Plugin skill and MCP components but did not load the package.json omp.extensions entry. Agent Plugin directory discovery and native npm-plugin discovery are separate paths; native verification must keep using --extension unless installation is isolated.
+- **2026-08-12T07:20:59.208Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While locating herdr after it was absent from PATH, an unscoped search under agent and package directories traversed huge generated files and produced more than a megabyte of output. Query the skill lock and known installed-skill paths directly before any broad recursive search.
+- **2026-08-12T07:21:44.890Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While using the required agent-reach search route for Herdr, its documented Exa mcporter server was not configured and returned Unknown MCP server. Fall back to the documented GitHub CLI route for repository-owned facts when Exa is unavailable.
+- **2026-08-12T07:21:57.872Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While reading Herdr's upstream repository through the required GitHub route, gh repo clone honored the user's SSH git protocol and failed because this environment has no GitHub SSH key. Use gh api or an explicit HTTPS clone URL for public read-only repository inspection.
+- **2026-08-12T07:23:23.925Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While locating OMP's TaskTool source, an rg limited only by source roots still matched multi-megabyte bundled JavaScript and overwhelmed the output. Search specific source filenames with rg --files first, then inspect those files.
+- **2026-08-12T07:27:35.626Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While testing an isolated OMP plugin install, 'omp plugin install <local-path> --scope user' warned that --scope is ignored for local paths even though plugin help presents scope as a general install flag. The package still installed under the selected profile; help should state the marketplace-only limit.
+- **2026-08-12T07:30:38.082Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While isolating OMP plugin installation, combining PI_CODING_AGENT_DIR with temporary XDG directories made OMP treat the agent directory as non-default and write the plugin registry under the real ~/.omp/plugins. For isolated plugin tests, use a named profile with an isolated HOME/XDG roots and do not override PI_CODING_AGENT_DIR.
+- **2026-08-12T07:33:55.964Z** `gpt-5.6-sol`
+  - cwd: `plugins/wall-clock`
+  - note: While probing OMP's exported mock-provider API, Node 26 followed the package export to TypeScript under node_modules and refused native type stripping there. OMP SDK probes that touch source exports must run with Bun, matching the native runner tests.
+- **2026-08-12T07:35:38.706Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While asserting native OMP task output, I expected untyped yield data in SingleResult.structuredOutput, but OMP reserves that field for schema-controlled output and records ordinary yield payloads under extractedToolData.yield. The task result contract is not obvious from the public TaskTool result type.
+- **2026-08-12T07:42:57.021Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While proving OMP TaskTool child enforcement, OMP 17.2.15's executor comments and ExecutorOptions imply the parent EventBus is forwarded, but buildSubagentSessionOptions omits eventBus. Lifecycle events stay on the parent bus while the child extension gets a new bus, so bus-keyed adapter coordination silently fails.
+- **2026-08-12T07:49:49.412Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While cleaning one explicit temporary OMP profile after its isolated install test, the command runner rejected even a validated /tmp rm -rf target. The guard does not distinguish owned temporary directories from broad destructive targets; use the system trash command or leave mkdtemp cleanup to the test.

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -10,10 +10,11 @@ const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const piBin = join(pluginRoot, "node_modules", ".bin", "pi");
 const ompBin = join(pluginRoot, "node_modules", ".bin", "omp");
 
-function run(binary: string, args: string[], input = ""): string {
+function run(binary: string, args: string[], input = "", env?: NodeJS.ProcessEnv): string {
   const result = spawnSync(binary, args, {
     cwd: pluginRoot,
     encoding: "utf8",
+    env: env ? { ...process.env, ...env } : process.env,
     input,
     timeout: 20_000,
     maxBuffer: 4 * 1024 * 1024,
@@ -128,5 +129,41 @@ test("OMP discovers the portable Agent Plugin skill and MCP tools", { timeout: 3
     assert.match(output, /"id":"tools"[^\n]+"agentInvoked":false/);
   } finally {
     rmSync(sessionDir, { recursive: true, force: true });
+  }
+});
+
+test("OMP installs and autoloads the native package in an isolated profile", { timeout: 30_000 }, () => {
+  const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-install-"));
+  const profile = "wall-clock-e2e";
+  const isolatedEnv = {
+    HOME: join(root, "home"),
+    XDG_CACHE_HOME: join(root, "cache"),
+    XDG_CONFIG_HOME: join(root, "config"),
+    XDG_DATA_HOME: join(root, "data"),
+    XDG_STATE_HOME: join(root, "state"),
+    ANTHROPIC_API_KEY: "wall-clock-test-key",
+  };
+  try {
+    for (const path of Object.values(isolatedEnv).filter((value) => value.startsWith(root))) {
+      mkdirSync(join(path, "omp"), { recursive: true });
+    }
+    const installed = run(ompBin, ["--profile", profile, "plugin", "install", pluginRoot, "--json"], "", isolatedEnv);
+    assert.match(installed, /@emo-eth\/wall-clock-plugin/);
+    const listed = run(ompBin, ["--profile", profile, "plugin", "list", "--json"], "", isolatedEnv);
+    assert.match(listed, /@emo-eth\/wall-clock-plugin/);
+    assert.match(listed, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+
+    const output = run(ompBin, [
+      "--profile", profile, "--model", "claude-sonnet", "--mode", "rpc", "--no-skills", "--no-rules",
+      "--session-dir", join(root, "sessions"),
+    ], rpcLines(
+      { id: "start", type: "prompt", message: "/wallclock start 2s block-new" },
+      { id: "status", type: "prompt", message: "/wallclock status" },
+    ), isolatedEnv);
+    assert.match(output, /"name":"wallclock"/);
+    assert.match(output, /Wall-clock active: active/);
+    assert.match(output, /"id":"status"[^\n]+"success":true/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

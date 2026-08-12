@@ -13,6 +13,8 @@
 - **Abort domain**: One native host session controlled by one session-wide abort function.
 - **Owner session**: The parent host session that owns and persists a wall-clock contract.
 - **Child binding**: The stable relation between one native child session and one parent assignment.
+- **Child session registry**: A process-wide map from OMP's real child session paths to the parent coordination state. It bridges OMP task children because OMP 17.2.15 does not pass the parent event-bus object into the child.
+- **Native yield**: OMP's required child-completion tool. A wall-clock child must report before this completion step.
 - **Vertical slice**: The smallest working end-to-end result that remains useful after scope is reduced.
 - **State version 3**: The current durable state shape. Older and malformed entries are rejected without migration.
 
@@ -119,12 +121,13 @@ If support, identity, context, or observation is missing, activation or action a
 1. The owner session activates wall-clock and creates a bounded assignment.
 2. An OMP `task` call is allowed only when exactly one active assignment is unbound. Batch delegation is blocked.
 3. The adapter adds the measured assignment context to the task input.
-4. OMP lifecycle events bind both child identifiers from the shared native event bus.
+4. OMP lifecycle events publish the child lifecycle identifier and session-path prefix to the child session registry.
 5. The child adapter resolves all state operations to the parent session and current assignment.
 6. The child cannot activate or stop the parent contract, create nested assignments, inspect a sibling assignment, revise the parent plan, or report for another assignment.
 7. The child reports a complete, partial, blocked, or expired vertical slice. The parent session persists it.
-8. If the child ends without a report, the adapter records a blocked or expired fallback report with the missing evidence and validation stated.
-9. The parent can link the report to a plan revision with complete, partial, blocked, or deferred items.
+8. The adapter then permits OMP's required native yield as a narrow completion step. Yield is blocked before the child report exists.
+9. If the child ends without a report, the adapter records a blocked or expired fallback report with the missing evidence and validation stated.
+10. The parent can link the report to a plan revision with complete, partial, blocked, or deferred items.
 
 The child binding survives a parent task result arriving before the terminal child lifecycle event. Terminal events remove both stable child identifiers.
 
@@ -139,7 +142,7 @@ State version 3 contains:
 - assignments, native child identifiers, status, deadlines, and completion times;
 - one current structured report for each reported assignment.
 
-Native adapters append state to the owner host session. Parent and child OMP extension modules are loaded separately, so they use a process-global weak registry keyed by OMP's shared native event bus. This gives the instances one coordination object without retaining old event buses. Only the owner adapter writes parent state. Raw native action identifiers are also scoped by direct host session so equal parent and child identifiers cannot overwrite each other.
+Native adapters append state to the owner host session. Parent and child OMP extension modules are loaded separately. Instances on the same native event bus share a weakly held coordination object. Actual OMP 17.2.15 task children receive a new event-bus object, so the parent publishes the real child session path to the child session registry. The child adopts that coordination state before session and action hooks and before every native wall-clock tool. Terminal lifecycle or parent shutdown removes the registry entry. Only the owner adapter writes parent state. Raw native action identifiers are also scoped by direct host session so equal parent and child identifiers cannot overwrite each other.
 
 Restore reads only the newest wall-clock custom entry. It deeply validates identifiers, times, parent limits, terminal status, reports, and report-linked plan revisions. A malformed, cross-session, or older-version newest entry disables wall-clock for that session. It does not fall back to a stale earlier entry. Other sessions remain unchanged.
 
@@ -163,7 +166,9 @@ The package is not a root personal skill and must not be installed through `npx 
 - real Pi and OMP command-line interface loading and expired shell blocking;
 - Pi's actual extension runner and abortable bash executor;
 - OMP's actual extension runner and abortable bash executor under Bun;
+- OMP's actual `TaskTool` creating children under both expiry policies, including context adoption, late-work blocking, report plus native yield, and a running child bash abort;
 - OMP Agent Plugin skill and MCP discovery;
+- isolated-profile OMP package installation and native adapter auto-loading;
 - parent and child scope, persistence, deadline, lifecycle, and abort-domain behavior.
 
 Codex and Claude activation, remote provider cancellation, and a portable visual dashboard remain deferred.
