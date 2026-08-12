@@ -1,10 +1,11 @@
 ---
-name: next-steps
-description: "Give a concise human handoff for a task in progress or blocked. Use when the user asks what is going on, what is needed from them, what to do next, how to unblock work, or how to get it finished; also use before handing control back when a user action, decision, access, approval, or test is required."
+name: tell-me-what-to-do
+disable-model-invocation: true
+description: "Show what is happening with the current work and the exact steps to get it moving or finished."
 argument-hint: "[optional task or context]"
 ---
 
-# Next Steps
+# Tell Me What To Do
 
 Use this skill to turn the current task into a short, executable handoff for the person who must move the work. State what is happening, what the agent needs from the user, the exact user actions in order, and the observable finish line. This is a handoff, not a replacement for work the agent can do.
 
