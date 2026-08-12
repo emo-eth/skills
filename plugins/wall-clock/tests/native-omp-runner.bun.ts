@@ -172,6 +172,49 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
   }
 }, 30_000);
 
+test("OMP native fast lane blocks delegation from an explicit do-it-now skill", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-fast-lane-"));
+  const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
+  const { session } = await createAgentSession({
+    cwd: pluginRoot,
+    agentDir: join(root, "agent"),
+    additionalExtensionPaths: [join(pluginRoot, "src", "omp.ts")],
+    disableExtensionDiscovery: true,
+    sessionManager,
+    skills: [],
+    rules: [],
+    contextFiles: [],
+  });
+  try {
+    const runner = initializeRunner(session, sessionManager);
+    await runner.emit({ type: "session_start" });
+    await runner.emit({
+      type: "before_agent_start",
+      prompt: [
+        '[IMPORTANT: User invoked the "do-it-now" skill; follow its instructions. Full skill below.]',
+        "# Do It Now",
+        "---",
+        "[Skill directory: /skills/do-it-now]",
+        "User: refresh the ticket list",
+      ].join("\n"),
+      systemPrompt: session.systemPrompt,
+    });
+    const messages = await runner.emitContext([]);
+    expect(messageText(messages.at(-1))).toMatch(/refresh the ticket list/);
+    const blocked = await runner.emitToolCall({
+      type: "tool_call",
+      toolCallId: "fast-lane-task",
+      toolName: "task",
+      input: { task: "Refresh the ticket list" },
+    } as any);
+    expect(blocked?.block).toBe(true);
+    expect(blocked?.reason ?? "").toMatch(/blocks delegation/);
+  } finally {
+    await session.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 30_000);
+
 test("OMP native shared event bus scopes a real child runner", async () => {
   const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-child-"));
   const parentManager = SessionManager.create(pluginRoot, join(root, "parent-sessions"));
