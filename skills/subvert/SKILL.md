@@ -33,6 +33,8 @@ bunx subvert-cli --help
 npx -y subvert-cli --help
 ```
 
+Check what is installed with `subvert --version` (or `-V`).
+
 Run subvert once in the repository you are renaming. With no path arguments it
 reads standard input and writes the transformed text to standard output:
 
@@ -43,14 +45,19 @@ printf 'Facility facilities\n' | bunx subvert-cli 'facilit{y,ies}' 'building{,s}
 
 ### Known runner quirk: `npx` mangles brace groups
 
-`npx subvert-cli ...` forwards arguments containing `{...}` incorrectly — the
-brace in a `FROM`/`TO` group is misinterpreted and the following token is
-treated as a file path, causing `ENOENT`. Plain (non-brace) replacements work
-fine through `npx`.
+`npx subvert-cli ...` splits arguments containing `{...}` even when they are
+quoted (verified against 0.1.2). A brace fragment like `building` is then
+treated as a file path and the run fails with
+`subvert: path not found: building` (a raw `ENOENT` on 0.1.2 and earlier).
+Plain (non-brace) replacements work fine through `npx`.
 
 Workaround: use `bunx subvert-cli`, or a global `subvert` install, for any
 rename whose `FROM` or `TO` uses brace groups. Prefer `bunx` by default so the
 command is identical on every machine.
+
+Separately, always quote `FROM` and `TO`. An unquoted `{a,b}` group is
+expanded by the shell itself before subvert sees it, with the same
+`path not found` symptom.
 
 ## Preview first — the rename is the task
 
@@ -102,8 +109,10 @@ on a folder scan you have not reviewed.
    ```
 
 3. **Preview.** Run without `--write`. This prints a unified diff of every
-   planned change and a summary line like `2 replacements in 2 files; preview
-   only, use --write to apply`:
+   planned change and a summary line like
+   `2 replacements in 2 of 12 files; preview only, use --write to apply` —
+   the second number is how many files were scanned. When nothing matches,
+   the summary is `no matches found in N files` and nothing is written:
 
    ```sh
    subvert --case abolish --styles identifier facility showing src
@@ -128,7 +137,7 @@ on a folder scan you have not reviewed.
 
 7. **Verify.** Run the project's build and tests. Exits `0` even when there are
    no matches, so a zero exit is not proof of a replacement — check the summary
-   line and the diff.
+   line (`no matches found in N files` means nothing happened) and the diff.
 
 ## Options
 
@@ -141,6 +150,7 @@ subvert [OPTIONS] FROM TO [PATH...]
       --boundary identifier|anywhere|word  Match boundary (default: identifier)
       --hidden                             Include hidden files during folder scans
       --no-ignore                          Do not apply .gitignore rules
+  -V, --version                            Show the installed version
   -h, --help                               Show help
 ```
 
@@ -248,8 +258,9 @@ file, and it preserves line endings and file permissions.
 
 - Preview before writing on any folder-wide scan. `--write` is a permanent,
   cross-file change.
-- A `0` exit does not mean anything was replaced — check the `N replacements`
-  summary or the diff, and re-grep for stragglers.
+- A `0` exit does not mean anything was replaced — check the summary
+  (`N replacements in X of Y files`, or `no matches found in N files`) or the
+  diff, and re-grep for stragglers.
 - Use `bunx subvert-cli` (or a global install) rather than `npx` when `FROM` or
   `TO` uses brace groups.
 - Confirm file-safety defaults fit the target: for generated/vendor trees you
