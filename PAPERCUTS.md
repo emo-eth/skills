@@ -141,3 +141,12 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T01:12:36Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Running the official global removal command -> skills CLI help advertises -a '*' but the parser rejects '*' as an invalid agent; omitting -a correctly targets every configured agent by default.
+- **2026-08-12T01:13:49Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Inspecting recent history -> I used a forbidden head pipeline to limit output instead of the repository-safe read or a bounded command.
+- **2026-08-12T01:29:56Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Validating the Agent Skill frontmatter -> I split on the closing marker from the wrong side and parsed the Markdown body as YAML; line-based frontmatter extraction avoids that retry.
+- **2026-08-12T01:30:16Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking new TypeScript MCP code -> the repository has no language server configured, so npm test is the available type-syntax and behavior check.
