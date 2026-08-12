@@ -133,28 +133,32 @@ export function findTopKOrNextComparison(
   let comparisonCount = 0;
 
   for (const candidate of tickets) {
-    let lo = 0;
-    let hi = selected.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      const outcome = readCachedComparison(cache, candidate, selected[mid]);
+    // Probe from the worst (bottom) of the frontier upward. Most candidates
+    // lose to the lowest-ranked selection, so a single comparison rejects
+    // them; only a candidate that actually makes the top-k walks further up.
+    let insertAt = selected.length; // candidate belongs after selected[insertAt - 1]
+    let offset = selected.length - 1;
+    while (offset >= 0) {
+      const outcome = readCachedComparison(cache, candidate, selected[offset]);
       if (outcome === undefined) {
-        const key = pairKey(candidate.id, selected[mid].id);
+        const key = pairKey(candidate.id, selected[offset].id);
         return {
           complete: false,
-          comparison: { left: candidate, right: selected[mid], key },
+          comparison: { left: candidate, right: selected[offset], key },
         };
       }
       comparisonCount += 1;
       if (outcome === "left") {
-        // Candidate is more important -> it goes before mid.
-        hi = mid;
+        // Candidate is more important -> it may sit at or above this slot.
+        insertAt = offset;
+        offset -= 1;
       } else {
-        // "right" or "tie": candidate goes after mid (ties insert after existing).
-        lo = mid + 1;
+        // "right" or "tie": candidate goes after this slot (ties insert after).
+        insertAt = offset + 1;
+        break;
       }
     }
-    selected.splice(lo, 0, candidate);
+    selected.splice(insertAt, 0, candidate);
     if (selected.length > k) {
       selected.length = k; // drop the worst tail; selected stays best -> worst
     }
