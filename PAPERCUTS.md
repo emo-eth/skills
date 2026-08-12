@@ -297,3 +297,6 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T15:23:44.947Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While integrating the completed wall-clock branch with current main, the append-only PAPERCUTS.md had overlapping tail additions and produced a merge conflict. Keep papercut entries in separate dated files or provide an append-log merge driver.
+- **2026-08-12T15:24:19.936Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While running the final merged-tree validation, git diff --check found one whitespace-only line with a trailing space in the wall-clock product document. Run diff --check before the handoff commit, not only after merging with main.
