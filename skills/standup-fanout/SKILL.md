@@ -7,8 +7,8 @@ argument-hint: "[standup date or file]"
 # Standup Fanout
 
 The standup names Today's work. Each work item resolves to tickets. A fanout
-takes one ticket (or one tightly-coupled group), assigns it one isolated
-worktree, and asks Herdr to drive the coding agent in that tree toward closing
+assigns each ticket its own isolated worktree — one ticket per worktree by
+default — and asks Herdr to drive the coding agent in that tree toward closing
 the ticket's sub-tickets. It turns the standup from a plan into a list of
 closed or proven tickets in one working session.
 
@@ -39,10 +39,15 @@ do not try to emulate Herdr from outside it.
   report is a claim. You apply it only after a focused check reproduces or
   matches it. Do not copy an agent's sentence into the standup because the
   agent said so.
-- One worktree holds the tickets it can close. A worktree may carry several
-  related source changes only if they share one owner, one done-when, and one
-  result. Two tickets with different done-when or proof belong in different
-  worktrees.
+- One worktree holds exactly one ticket by default. Do not merge two tickets
+  into one tree just to save a checkout; the count is what keeps the fanout
+  independently verifiable and swappable. Only two tickets that are genuinely
+  one result — one owner, one done-when, one proof, and no separable value —
+  share a worktree, and say why when they do. Two tickets with different
+  done-when or proof belong in different worktrees. When one ticket's work or
+  proof depends on another ticket's, keep them in separate worktrees and stack
+  the dependent branch (Section 3) instead of merging the tickets into one
+  tree.
 - A ticket that cannot be implemented atomically in one worktree is not crammed
   into a tree. It is broken into sub-tickets, each of which fits one tree or one
   tree's proof. Do the breakdown visibly and get owner sign-off before you
@@ -85,18 +90,20 @@ write down:
 - the type (build, research, design, ops, or the destination's equivalent),
 - the current evidence state the standup claims for it.
 
-Group tickets that must land together (one owner, one merge, one result) into
-one worktree. Keep the rest separate. Do not exceed the session's concurrency
-cap; if the standup names more independent groups than you can run at once,
-rank by owner priority and run the rest after the first wave.
+Give each ticket its own worktree. Only tickets that are literally one result
+(one owner, one done-when, one proof) share a tree, and say why. When tickets
+depend on each other they stay in separate worktrees and their branches are
+stacked (Section 3) rather than grouped. Do not exceed the session's
+concurrency cap; if the standup names more independent worktrees than you can
+run at once, rank by owner priority and run the rest after the first wave.
 
 A ticket without a done-when is not fanout-ready: mark it `GAP`, leave it in
 the standup, and put it in the follow-up's open questions. Do not invent a
 done-when.
 
-Repeat this phrase for the owner before dispatching: every worktree closes a
-named set of tickets, and every ticket that is too big for one tree becomes
-sub-tickets.
+Repeat this phrase for the owner before dispatching: every worktree closes one
+named ticket, a ticket too big for one tree becomes sub-tickets, and a ticket
+that needs another's work branches its tree on top of it.
 
 Completion: every Today ticket is assigned to a worktree with a done-when, or
 marked `GAP`; the worktree count fits the concurrency cap.
@@ -143,36 +150,49 @@ Completion: every worktree has a decided exit (merge, observe, or research)
 with the exact proof; oversized tickets have an approved sub-ticket breakdown
 or a `proposed, not created` one in the follow-up.
 
-## 3. Open one isolated worktree per ticket group
+## 3. Open one isolated worktree per ticket
 
-Create one Herdr worktree workspace per group. A worktree for a fanout uses a
-branch whose name says what this group changes, so the branch documents the
-intent:
+Create one Herdr worktree workspace per ticket. Each worktree's handle carries
+the Linear ticket name so the workspace list shows which ticket a tree is for
+at a glance: set `--label` from the ticket (an identifier-slug like
+`ABC-101-auth-refresh`), and keep the branch as `<owner>/<ticket-slug>`:
 
 ```bash
 herdr worktree create \
-  --base <current-shared-ref> \
+  --base <base-ref> \
   --branch <owner>/<ticket-slug> \
+  --label <ticket-name> \
   --cwd <the-repo> \
   --no-focus
 ```
+
+The base ref is the shared base (`dev`) by default, so each worktree branches
+independently and lands as its own PR. Use **stacked PRs** when one ticket's
+work or proof depends on another: create the dependent worktree with
+`--base <dependency-branch>` instead of `dev`, so it builds on the ticket it
+needs rather than duplicating or guessing. The stack lands in dependency order
+— merge the dependency's PR first, then the dependent PR shows only its own
+diff and can be reviewed and merged on top. Keep a stack serial and shallow:
+one dependency per PR, and only stack where a real dependency exists, never to
+save worktree count. A worktree with no dependency branches from `dev`.
 
 Read the new workspace ID and worktree path from the command's JSON response;
 do not guess them. The slug is short and names the ticket (for example
 `synthetic-apex-age`, `opus5-baseline`, `reset-check`), not the date.
 
-Record which workspace, branch, and path belong to which ticket group before
-you move on. If a worktree already exists for a group from an earlier run, open
-it instead of creating another; do not stack two checkouts of the same branch.
+Record which workspace, branch, path, and Linear name belong to which ticket
+before you move on. If a worktree already exists for a ticket from an earlier
+run, open it instead of creating another; do not stack two checkouts of the
+same branch.
 
-Completion: every group has its own open worktree on its own branch, and each
+Completion: every ticket has its own open worktree on its own branch, and each
 worktree maps to one workspace ID and one path.
 
 ## 4. Seed each tree, verify the seed, and launch its agent
 
 Give each agent the prerequisites it needs before it can work. In each tree,
 run the seed in the tree's directory: install dependencies, generate code the
-build needs (for example Prisma), and compile if the group edits code. Confirm
+build needs (for example Prisma), and compile if the ticket edits code. Confirm
 the seed actually passes where the fanout runs; do not assume the parent tree's
 state carries over.
 
