@@ -11,7 +11,23 @@ Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects me
 - **Native adapter**: Host-specific code that observes model and tool events and enforces wall-clock decisions.
 - **Expiry policy**: The selected rule at the deadline: block new work or also abort supported running work.
 - **Abort domain**: One native host session whose abort function can stop its current action.
-- **Assignment**: One bounded child objective with scope, acceptance targets, and its own time ceiling.
+- **Fast lane**: A short host-enforced execution window for one bounded request.
+- **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
+
+## Do-it-now lane
+
+An explicit `/do-it-now <request>` invocation on a native Pi or OMP session
+with this plugin loaded activates a fixed fast lane:
+
+- 90-second hard deadline;
+- `abort-running` for supported native actions;
+- delegation blocked;
+- at most 12 ordinary tool calls.
+
+The lane ends when the agent run ends. This is a host guard, not a semantic
+scope parser. It cannot decide whether an arbitrary read or write is related
+to the request, so the bundled skill remains responsible for narrowing model
+behavior. Without a native adapter, the skill is guidance only.
 
 ## Supported behavior
 
@@ -114,5 +130,6 @@ The launcher needs Node.js 22.6 or newer because it uses native TypeScript type 
 - OMP supports one bounded assignment per task invocation; batch and nested delegation are blocked. Under `abort-running`, only one parent-session task can be active because the abort function is session-wide.
 - OMP 17.2.15 does not forward the parent event-bus object into a task-created child. The adapter binds the real child session file through a process-wide registry and removes the binding when the child reaches a terminal lifecycle state.
 - Remote provider cancellation needs provider-specific confirmation and is not implemented.
+- Do-it-now cannot infer semantic scope from arbitrary tool input. The host guard limits time, delegation, and tool-call count; the model instructions still prevent unrelated reads, writes, and research.
 - Codex and Claude can discover the portable package but cannot activate wall-clock until an open, tested native enforcement seam exists.
 - The full development dependency audit reports five high-severity findings in optional OMP model and image dependencies. `npm audit --omit=optional` reports zero findings. No production runtime dependency was added to the wall-clock controller.
