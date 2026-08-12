@@ -339,9 +339,15 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T21:06:40.601Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: Installing the native OMP wall-clock plugin required a full OMP process restart; /reload-plugins did not activate the newly installed npm plugin. The install and initialization docs need to state this restart requirement explicitly.
+- **2026-08-12T21:24:44Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Running the wall-clock package checks -> npm run check failed immediately because node_modules is absent and tsc is not installed, despite the README presenting the check commands as ready to run after checkout.
 - **2026-08-12T21:31:21.711Z** `gpt-5.6-sol`
   - cwd: `plugins/wall-clock`
   - note: Running the Wall Clock native runner checks from the main checkout failed because plugins/wall-clock/node_modules was absent, while another worktree had the dependencies. The test command reports host-loading failures instead of first identifying the missing npm install setup.
 - **2026-08-12T21:36:39.947Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: Searching documentation for backticked policy names -> a double-quoted rg pattern let zsh execute the backticks as commands. Use single-quoted search patterns whenever Markdown code spans appear in shell input.
+- **2026-08-12T22:02:44Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Launching the detached Plannotator review -> the shell command returned exit 99 even though its stdout said Resolved and a live session record with the review URL was created; verify the session file instead of treating the exit code as failure.
