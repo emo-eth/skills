@@ -9,6 +9,13 @@ argument-hint: "[optional task or context]"
 
 Use this skill to turn the current task into a short, executable handoff for the person who must move the work. State what is happening, what the agent needs from the user, the exact user actions in order, and the observable finish line. This is a handoff, not a replacement for work the agent can do.
 
+- When the smallest missing dependency is a human action that can happen in
+  the current session, use an interactive blocking prompt instead of yielding
+  a generic checklist. Ask for the exact action or value, name the expected
+  result, and resume the work when the user answers. Use this especially for
+  device actions, approvals, access grants, or messages that the agent cannot
+  send itself. Do not expose credentials in the prompt.
+
 ## Operating rules
 
 - Inspect the available conversation, files, tool output, and external records before asking the user for information. Use a source the agent can reach instead of turning that lookup into a user task.
