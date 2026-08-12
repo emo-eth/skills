@@ -141,6 +141,12 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T01:12:36Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Running the official global removal command -> skills CLI help advertises -a '*' but the parser rejects '*' as an invalid agent; omitting -a correctly targets every configured agent by default.
+- **2026-08-12T03:41:20Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Pushing the targeted skill removal commit to main -> origin/main advanced between the branch check and push, so the fast-forward push was rejected; fetch the current remote tip and merge it before retrying.
+- **2026-08-12T03:41:48Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Merging the current remote main -> Git refused because the papercut log itself was unstaged; commit or stash the agent-owned log before integrating remote changes, while leaving unrelated user edits untouched.
 - **2026-08-12T01:13:49Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Inspecting recent history -> I used a forbidden head pipeline to limit output instead of the repository-safe read or a bounded command.
@@ -258,3 +264,36 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T15:23:01.352Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While checking whether wall-clock was installed in Pi or OMP, a broad rg across ~/.omp included the full logs directory and flooded the output. The check should target plugin/profile manifests or exclude logs explicitly.
+- **2026-08-12T03:49:28Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Invoking the newly installed decision-wizard skill -> the current skill router did not discover it immediately, so I read the repository copy directly; refresh is needed after installing a new skill.
+- **2026-08-12T04:50:51Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking whether OMP skills share files -> readlink exited nonzero for the real .agents directory, so the combined link check produced an incomplete result
+- **2026-08-12T05:01:37Z** `codex`
+  - cwd: `.`
+  - note: Searching memory and repo in parallel -> the persistent-kernel call used Python false instead of False, so the tool invocation failed before running.
+- **2026-08-12T05:01:46Z** `codex`
+  - cwd: `.`
+  - note: Searching memory and repo in parallel -> the persistent-kernel parallel helper is synchronous in Python, so awaiting its returned list raised a TypeError after the underlying calls were not started.
+- **2026-08-12T05:04:36Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking the updated executable TypeScript wizard -> node --check rejected the first type alias before the documented strip-types command ran; use the direct Node TypeScript runner instead
+- **2026-08-12T05:05:42Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Verifying the updated skillFolderHash with git mktree -> the first command used a blob hash without storing the object, so mktree rejected it; store the blob in a temporary repository before comparing
+- **2026-08-12T05:33:15Z** `deepseek-v4`
+  - cwd: `.`
+  - note: Testing subvert-cli invocation for a new skill -> npx subvert-cli mangles brace args in FROM/TO ('facilit{y,ies}'), treating the next token as a path and failing with ENOENT; bunx works fine. Prefer bunx/global install for brace renames.
+- **2026-08-12T05:28:25Z** `codex`
+  - cwd: `.`
+  - note: Waiting for dispatched agents -> the hub call omitted the required op field was rejected before waiting.
+- **2026-08-12T05:42:18Z** `codex`
+  - cwd: `.`
+  - note: Building the prioritize CLI -> Node 24 fs/promises.readFile(0) rejected a numeric fd; switched to a lazy stdin stream reader. Also dispatched task agents stalled waiting on sibling file output and had to be cancelled; the core file landed but CLI/tests were re-implemented by parent.
+- **2026-08-12T05:49:47Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Validating the new skill with a node metadata check -> the shell tool rejected the command because an escaped null-byte test became a literal NUL; retrying with a code-point check.
+- **2026-08-12T15:23:44.947Z** `gpt-5.6-sol`
+  - cwd: `.`
+  - note: While integrating the completed wall-clock branch with current main, the append-only PAPERCUTS.md had overlapping tail additions and produced a merge conflict. Keep papercut entries in separate dated files or provide an append-log merge driver.
