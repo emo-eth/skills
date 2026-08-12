@@ -11,11 +11,8 @@ files, or it is a read mode over them.**
 
 That is the whole discriminator, and it is narrower than "owns a file that
 outlives the session." `code-review` finds bugs and owns nothing — its output
-dies with the conversation, so it is out. But `session-handoff` owns a durable
-dated file and is *still* out: a handoff tracks **your task** across a gap, not
-**the project's record** of what is true, decided, and shipped. The record is
-the thing a fresh agent must orient from cold; a handoff is a note to your
-future self. (Session continuity gets its own short section at the end.)
+dies with the conversation, so it is out. The record is the thing a fresh
+agent must orient from cold: it captures what is true, decided, and shipped.
 
 Applied to ~107 installed skills, the record test leaves **five**. Everything
 else is build / verify / review tooling — useful, invoked ad hoc, irrelevant to
@@ -190,45 +187,19 @@ whether other tools see the convention at all: `CLAUDE.md` importing `AGENTS.md`
 works everywhere, the reverse hides the map from every non-Claude tool. When
 `lc-project-state` bootstraps a repo, the three directives go in `AGENTS.md`.
 
-## Adjacent: session continuity
-
-Two skills look like they belong here and do not. They track **your task** across
-a gap in your attention, not **the project's record** — they own or read
-session-scoped state, and a fresh agent orienting to the project should never
-need them.
-
-- `session-handoff` owns `docs/log/YYYY-MM-DD-handoff.md` — a durable, committed,
-  dated note written when you stop mid-task. It outlives the session, which is
-  exactly why the naive "outlives the session" test misclassifies it as
-  lifecycle. But a handoff carries *session* continuity; `STATE.md` carries
-  *project* currency. Fires when you end a session with unfinished work.
-- `comeback-recovery` owns nothing — it reads `.context/progress.md`, the newest
-  handoff, and git state to resume **the task you were on**. Fires when you
-  return after a gap. For a project-wide briefing (what shipped, what's left,
-  what's blocked on you) use `/lc-project-state status` instead — that is the
-  lifecycle read, this is the task read.
-
 ## Resolved conflicts
 
 Kept as a record of why the layout is what it is.
 
-1. **Root-vs-`docs/log/`** — `lc-phase-tracker` and `session-handoff` both wrote
-   to repo root, violating `lc-project-state`'s invariant. Resolved by the split
-   above: the progress checklist is runtime state (`.context/`, gitignored,
-   because a checklist shipping in commits causes cross-machine churn); the
-   handoff is durable dated history (`docs/log/`, committed). `session-handoff`'s
-   old prune-after-two-sessions rule was also removed — it deleted history.
-2. **Two decision logs** — resolved in favour of `docs/DECISIONS.md`. One
+1. **Two decision logs** — resolved in favour of `docs/DECISIONS.md`. One
    append-only file stays greppable in a single read, keeps the monotonic IDs
    `taste.md` cites, and holds every status transition in one place; a directory
    of ADR files does none of that. ADR's real advantage was *depth*, so
    `Alternatives:` and `Consequences:` were added to the entry template, required
    when `Load-bearing: yes`. `CONTEXT.md` keeps vocabulary only; `docs/adr/` is
    not used.
-3. **Unpublished members** — `lc-phase-tracker`, `session-handoff`, and
-   `comeback-recovery` lived on one machine only. Now in this repo.
-4. **Nine collapsed to five: merges, a demotion, and a prefix** — the set was
-   nine skills and read as sprawl. Three moves fixed it:
+2. **Nine collapsed to five: merges and a prefix** — the set was nine skills
+   and read as sprawl. Three moves fixed it:
    - `project-status` **merged into** `lc-project-state` as its read-only
      `status` mode. Making read-only a *mode guarantee* of one skill beats a
      separate skill you have to remember exists, and it puts the briefing next to
@@ -240,11 +211,8 @@ Kept as a record of why the layout is what it is.
      verification. Folding it in makes the one lifecycle habit cover the domain
      record instead of relying on a second habit nobody kept.
    - The five survivors took an **`lc-` prefix** so the lifecycle set groups
-     unambiguously and sorts together. `session-handoff` and `comeback-recovery`
-     were **demoted** out of the set (see *Adjacent: session continuity*) — they
-     are session continuity, not the project record — so they keep their plain
-     names.
-5. **`capabilities` → `readiness`, and scope widened to planned work** — the
+     unambiguously and sorts together.
+3. **`capabilities` → `readiness`, and scope widened to planned work** — the
    domain record (formerly `docs/capabilities.md`, produced by the
    `capability-registry` skill folded in at item 4) was renamed to
    **`docs/readiness.md`** and its scope widened from current-state-only to the
