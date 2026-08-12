@@ -40,10 +40,20 @@ type Arguments = {
   output: string | undefined;
   priorityTarget: number;
   team: string | undefined;
+  bin: boolean;
   dryRun: boolean;
   reset: boolean;
   help: boolean;
 };
+
+// Ordered most -> least important. Index doubles as the binary-search range.
+const BINS = [
+  { p: 1, label: "Urgent" },
+  { p: 2, label: "High" },
+  { p: 3, label: "Medium" },
+  { p: 4, label: "Low" },
+  { p: 0, label: "No priority" },
+] as const;
 
 type InputTicket = {
   id?: string;
@@ -82,6 +92,7 @@ function parseArguments(args: string[]): Arguments {
     output: undefined,
     priorityTarget: 2,
     team: undefined,
+    bin: false,
     dryRun: false,
     reset: false,
     help: false,
@@ -135,6 +146,10 @@ function parseArguments(args: string[]): Arguments {
       if (!options.team) throw new Error("--team needs a team key");
       continue;
     }
+    if (arg === "--bin") {
+      options.bin = true;
+      continue;
+    }
     if (arg === "--dry-run") {
       options.dryRun = true;
       continue;
@@ -163,6 +178,8 @@ Options:
       --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
                            star-linear-tickets.ts for Urgent)
       --team <key>          only rank issues in this team (e.g. NAT); default all
+      --bin                 bin EVERY ticket into Urgent/High/Medium/Low/None by
+                            binary-searching the tiers (~2-3 comparisons each)
       --dry-run             rank and show the plan but do NOT write to Linear
   -i, --input <path|->      instead of Linear, rank a local JSON file ('-' = stdin)
   -o, --output <path>       also write the resulting top-k JSON here
@@ -378,10 +395,203 @@ async function loadTickets(inputPath: string): Promise<Ticket[]> {
   return tickets;
 }
 
+type BinState = {
+  version: number;
+  snapshot: string;
+  tiers: Record<string, number | undefined>; // ticket id -> bin index (0..4)
+  updatedAt: string;
+};
+
+const BIN_STATE_VERSION = 1;
+
+async function readsBinState(stateFile: string): Promise<BinState | undefined> {
+  try {
+    const content = await readFile(stateFile, "utf8");
+    const state = JSON.parse(content) as BinState;
+    if (
+      state.version !== BIN_STATE_VERSION ||
+      typeof state.snapshot !== "string" ||
+      !state.tiers ||
+      typeof state.tiers !== "object"
+    ) {
+      throw new Error("the bin state file has an unsupported format");
+    }
+    return state;
+  } catch (error: unknown) {
+    if (errorCode(error) === "ENOENT") return undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read ${stateFile}: ${message}`);
+  }
+}
+
+async function writeBinState(
+  stateFile: string,
+  snapshot: string,
+  tiers: Record<string, number | undefined>,
+): Promise<void> {
+  await mkdir(dirname(stateFile), { recursive: true });
+  const temporaryFile = `${stateFile}.${process.pid}.tmp`;
+  const state: BinState = {
+    version: BIN_STATE_VERSION,
+    snapshot,
+    tiers,
+    updatedAt: new Date().toISOString(),
+  };
+  await writeFile(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await rename(temporaryFile, stateFile);
+}
+
+function normalizeYesNo(value: string): "yes" | "no" | "pause" | undefined {
+  const answer = value.trim().toLowerCase();
+  if (["y", "yes", "right", "j"].includes(answer)) return "yes";
+  if (["n", "no", "left", "k"].includes(answer)) return "no";
+  if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
+  return undefined;
+}
+
+async function chooseYesNo(prompt: string): Promise<"yes" | "no" | "pause"> {
+  const result = await rawChoice(prompt, normalizeYesNo);
+  if (result === undefined) return "pause";
+  return result as "yes" | "no" | "pause";
+}
+
+function renderBinCard(ticket: Ticket, index: number, total: number, decided: number): void {
+  clearScreen();
+  const line = "-".repeat(72);
+  const remaining = total - decided;
+  console.log(`BIN  |  TICKET ${index + 1} OF ${total}  |  ${remaining} TO BIN`);
+  console.log(line);
+  console.log(`${paint("TITLE", BOLD)}: ${ticket.title}`);
+  console.log(`${paint("ID", BOLD)}: ${ticket.id}`);
+  const state = compact(ticketField(ticket, "state"));
+  if (state) console.log(`${paint("STATE", BOLD)}: ${state}`);
+  console.log(line);
+  console.log("Y = yes   N = no   Q = pause");
+}
+
+/**
+ * Binary-search a ticket into one of the 5 priority bins by asking whether it
+ * is at least as important as the midpoint bin. Cost ~ceil(log2(5)) = 3
+ * comparisons per ticket.
+ */
+async function binForTicket(
+  ticket: Ticket,
+): Promise<{ index: number; p: number | undefined; label: string }> {
+  let lo = 0;
+  let hi = BINS.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    clearScreen();
+    console.log(`BIN  |  Is this ticket at least ${paint(BINS[mid].label, BOLD)} priority?`);
+    console.log("-".repeat(72));
+    console.log(`${paint("TITLE", BOLD)}: ${ticket.title}`);
+    console.log(`${paint("ID", BOLD)}: ${ticket.id}`);
+    console.log("-".repeat(72));
+    const answer = await chooseYesNo("Y = at least this priority   N = lower   Q = pause: ");
+    if (answer === "pause") return { index: -1, p: undefined, label: "paused" };
+    if (answer === "yes") {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  const bin = BINS[lo];
+  return { index: lo, p: bin.p, label: bin.label };
+}
+
+async function runBin(args: Arguments): Promise<void> {
+  const stateFile = args.state;
+  const tickets = await fetchAssignedNotCompleted({ team: args.team });
+  if (args.reset) await removeState(stateFile);
+
+  const snapshot = snapshotFor(tickets, args.top);
+  const saved = await readsBinState(stateFile);
+  if (saved && saved.snapshot !== snapshot) {
+    throw new Error(
+      "The ticket list changed since the saved session. Inspect it, then run --reset.",
+    );
+  }
+
+  const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
+  console.log(`Binning ${tickets.length} ticket(s). Source: Linear (${args.team ?? "all teams"}).`);
+  if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
+  await writeBinState(stateFile, snapshot, tiers);
+
+  let comparisons = 0;
+  for (const ticket of tickets) {
+    if (tiers[ticket.id] !== undefined) continue;
+    const decided = Object.keys(tiers).length;
+    renderBinCard(ticket, tickets.indexOf(ticket), tickets.length, decided);
+    const result = await binForTicket(ticket);
+    comparisons += 1;
+    if (result.index === -1) {
+      await writeBinState(stateFile, snapshot, tiers);
+      console.log("Paused. Progress is saved; rerun to resume.");
+      return;
+    }
+    tiers[ticket.id] = result.index;
+    await writeBinState(stateFile, snapshot, tiers);
+  }
+
+  // Group by bin for the plan.
+  const byTier = new Map<number | undefined, Ticket[]>();
+  for (const ticket of tickets) {
+    const index = tiers[ticket.id];
+    const key = index === undefined ? undefined : BINS[index]?.p;
+    const list = byTier.get(key) ?? [];
+    list.push(ticket);
+    byTier.set(key, list);
+  }
+
+  console.log("\n--- Completed ---");
+  for (const [p, group] of byTier.entries()) {
+    const label = p === undefined ? "unchanged" : (PRIORITY_LABELS[p] ?? `priority ${p}`);
+    console.log(`\n${label} (${group.length}):`);
+    for (const t of group) console.log(`- ${t.id}  ${t.title}`);
+  }
+  console.log(`\n${comparisons} comparison-group(s) used.`);
+
+  if (args.dryRun) {
+    console.log("\nDry run only. No Linear changes made.");
+    return;
+  }
+
+  // Write the meaningful tiers (1..4). No-priority (0) is left as-is.
+  const toWrite = tickets.filter((t) => {
+    const p = tiers[t.id] === undefined ? undefined : BINS[tiers[t.id]!]?.p;
+    return p !== undefined && p >= 1 && p <= 4;
+  });
+  if (toWrite.length === 0) {
+    console.log("Nothing to update (no tickets in an explicit tier).");
+    await removeState(stateFile);
+    return;
+  }
+  console.log(`\nPlan: set ${toWrite.length} ticket(s) to their binned priority.`);
+  for (const t of toWrite) {
+    const p = BINS[tiers[t.id]!]!.p;
+    console.log(`- ${t.id} -> ${PRIORITY_LABELS[p] ?? p} (${t.title})`);
+  }
+  if (!(await confirmExact("Type APPLY to write binned priorities to Linear: ", "APPLY"))) {
+    console.log("Skipped. Saved state remains; rerun to resume.");
+    return;
+  }
+  for (const t of toWrite) {
+    const p = BINS[tiers[t.id]!]!.p;
+    await setPriority(t.id, p);
+    console.log(`Updated ${t.id} -> ${PRIORITY_LABELS[p] ?? p}`);
+  }
+  await removeState(stateFile);
+  console.log(`Done. ${toWrite.length} ticket(s) set to their binned priority.`);
+}
+
 async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
   if (args.help) {
     printHelp();
+    return;
+  }
+  if (args.bin) {
+    await runBin(args);
     return;
   }
 
