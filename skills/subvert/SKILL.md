@@ -52,19 +52,56 @@ Workaround: use `bunx subvert-cli`, or a global `subvert` install, for any
 rename whose `FROM` or `TO` uses brace groups. Prefer `bunx` by default so the
 command is identical on every machine.
 
+## Preview first — the rename is the task
+
+Do not spend turns reading project state, historical exceptions, or diffing by
+hand before running subvert. A subvert call **without** `--write` is read-only:
+it reads every file, transforms in memory, and prints a unified diff. It writes
+nothing. The preview is both the plan and the verification, so run it first
+thing.
+
+If you catch yourself planning "the subvert invocation" or "the rename scope",
+skip the planning and run the preview. It is the fastest way to learn exactly
+what the tool would change, and it cannot modify anything. Then read the diff,
+adjust `--case`/`--styles`/`--boundary` if needed, and only then `--write`.
+
+## Fast answers to the usual cautions
+
+The concerns that make agents hesitate are usually settled by the tool, not by
+hand-auditing the repo. Resolve them in seconds, then preview.
+
+- **Documented exceptions** — if the repo notes files to leave alone, trust
+  that note without re-reading the whole project state. Exclude those files by
+  passing an explicit path list, or by letting `.gitignore` / the default
+  hidden-file skip handle them.
+- **Credential files (`.env`, `.env.local`)** — these are hidden dotfiles, so
+  the default folder scan skips them. Confirm the diff has no `.env*` hunks;
+  do not pre-read the secrets.
+- **Generated / fixture / evaluation files** — the default scan honors
+  `.gitignore` and skips hidden files. If a fixture is deliberately unignored,
+  scope `PATH` to the trees you mean to change rather than reasoning about it
+  in the abstract.
+- **Historical rename notes / docs that mention the old name** — if a doc is
+  meant to track the current name, let subvert rename it too. Exclude it only
+  when the note is explicitly historical and must keep the old spelling.
+
 ## Core workflow for a big rename
 
-Drive renames as a preview-then-write loop. Never go straight to `--write` on a
-folder scan you have not reviewed.
+Drive renames as a preview-then-write loop: exclude the exceptions, preview,
+review the summary, apply, then run the checks. Never go straight to `--write`
+on a folder scan you have not reviewed.
 
-1. **Scope the variants.** Find where the name appears and in which forms, so
+1. **Exclude the exceptions.** Apply the documented exceptions and file-safety
+   scoping (see "Fast answers to the usual cautions") so the right trees are in
+   scope before you look at a diff.
+2. **Scope the variants.** Find where the name appears and in which forms, so
    you know what `--case` and `--styles` settings will cover:
 
    ```sh
    git grep -n -E 'facility|facilities|Facility|FACILITY' src
    ```
 
-2. **Preview.** Run without `--write`. This prints a unified diff of every
+3. **Preview.** Run without `--write`. This prints a unified diff of every
    planned change and a summary line like `2 replacements in 2 files; preview
    only, use --write to apply`:
 
@@ -72,16 +109,16 @@ folder scan you have not reviewed.
    subvert --case abolish --styles identifier facility showing src
    ```
 
-3. **Read the diff.** Confirm only intended changes appear. Unexpected hunks
+4. **Read the diff.** Confirm only intended changes appear. Unexpected hunks
    mean your `FROM`, case mode, or styles are too broad.
 
-4. **Apply.** Add `--write`:
+5. **Apply.** Add `--write`:
 
    ```sh
    subvert --write facility showing src
    ```
 
-5. **Catch stragglers.** Re-run the preview (no `--write`) and a scope check to
+6. **Catch stragglers.** Re-run the preview (no `--write`) and a scope check to
    confirm nothing was missed and nothing over-matched:
 
    ```sh
@@ -89,7 +126,7 @@ folder scan you have not reviewed.
    git grep -n -i -E 'facility|facilities' src
    ```
 
-6. **Verify.** Run the project's build and tests. Exits `0` even when there are
+7. **Verify.** Run the project's build and tests. Exits `0` even when there are
    no matches, so a zero exit is not proof of a replacement — check the summary
    line and the diff.
 
