@@ -162,3 +162,15 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T04:50:51Z** `gpt-5.6-luna`
   - cwd: `.`
   - note: Checking whether OMP skills share files -> readlink exited nonzero for the real .agents directory, so the combined link check produced an incomplete result
+- **2026-08-12T05:01:37Z** `codex`
+  - cwd: `.`
+  - note: Searching memory and repo in parallel -> the persistent-kernel call used Python false instead of False, so the tool invocation failed before running.
+- **2026-08-12T05:01:46Z** `codex`
+  - cwd: `.`
+  - note: Searching memory and repo in parallel -> the persistent-kernel parallel helper is synchronous in Python, so awaiting its returned list raised a TypeError after the underlying calls were not started.
+- **2026-08-12T05:04:36Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Checking the updated executable TypeScript wizard -> node --check rejected the first type alias before the documented strip-types command ran; use the direct Node TypeScript runner instead
+- **2026-08-12T05:05:42Z** `gpt-5.6-luna`
+  - cwd: `.`
+  - note: Verifying the updated skillFolderHash with git mktree -> the first command used a blob hash without storing the object, so mktree rejected it; store the blob in a temporary repository before comparing
