@@ -254,8 +254,8 @@ depends on what it is:
 - a claimed change to a doc or ticket: this is still unverified unless a check
   reproduced it. Update the standup only with what a check supports.
 
-Leave the worktree open until the branch is merged or the diff is applied. Do
-not delete a worktree or branch that still holds unverified or unmerged work.
+Leave the worktree open until a human merges the PR into `dev`. Do not delete
+a worktree or branch that still holds unverified or unmerged work.
 
 Read the outside tool's actual result for any change that touches a ticket,
 branch, or deployment: a fanout may propose it, but the verification is the
