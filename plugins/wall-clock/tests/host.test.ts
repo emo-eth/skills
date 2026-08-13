@@ -178,6 +178,56 @@ test("wallclock honors explicit start and block-new before forwarding a prompt",
   assert.equal(controller.status("main").expiryPolicy, "block-new");
   assert.deepEqual(host.userMessages, ["inspect the failing tests"]);
 });
+test("turn-limit keeps the contract active and resets after terminal settlement", async () => {
+  let now = 1_000;
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    clock: { now: () => now },
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("turn-limit 2m block-new", ctx);
+  assert.equal(controller.status("main").mode, "turn-limit");
+  assert.equal(controller.status("main").durationMs, 120_000);
+  now += 120_001;
+  assert.equal(controller.status("main").phase, "expired");
+
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  const reset = controller.status("main");
+  assert.equal(reset.active, true);
+  assert.equal(reset.phase, "active");
+  assert.equal(reset.remainingMs, 120_000);
+
+  await host.commands.get("wallclock").handler("set 3m", ctx);
+  assert.equal(controller.status("main").durationMs, 180_000);
+  assert.equal(controller.status("main").remainingMs, 180_000);
+
+  await host.commands.get("wallclock").handler("stop", ctx);
+  assert.equal(controller.status("main").active, false);
+});
+
+test("set changes the duration of a normal deadline contract", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("start 5m block-new", ctx);
+  await host.commands.get("wallclock").handler("set 30s", ctx);
+  assert.equal(controller.status("main").mode, "deadline");
+  assert.equal(controller.status("main").durationMs, 30_000);
+  assert.equal(controller.status("main").remainingMs, 30_000);
+});
 
 test("wallclock forwards its prompt as normal steering during an active turn", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());

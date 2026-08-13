@@ -170,8 +170,17 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
     await command!.handler("stop", runner.createCommandContext());
     await command!.handler("5m fix merge conflicts in all open PRs", runner.createCommandContext());
     expect(submittedUserMessages).toEqual([{ content: "fix merge conflicts in all open PRs", options: undefined }]);
-
     await command!.handler("stop", runner.createCommandContext());
+    await command!.handler("turn-limit 1s block-new", runner.createCommandContext());
+    const turnContext = await runner.emitContext([]);
+    expect(messageText(turnContext.at(-1))).toMatch(/Mode: turn-limit/);
+    await runner.emit({ type: "agent_end", willContinue: false });
+    const resetContext = await runner.emitContext([]);
+    expect(messageText(resetContext.at(-1))).toMatch(/Mode: turn-limit/);
+    await command!.handler("set 2s", runner.createCommandContext());
+    await command!.handler("stop", runner.createCommandContext());
+
+
     await command!.handler("start 30ms abort-running", runner.createCommandContext());
     const bash = session.getToolByName("bash");
     expect(bash).toBeDefined();

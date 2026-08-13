@@ -19,6 +19,7 @@ import type {
   Status,
   ToolDecision,
   ToolProposal,
+  WallClockMode,
 } from "./types.ts";
 
 const DEFAULT_WRAP_UP_MS = 5 * 60_000;
@@ -45,6 +46,15 @@ export class WallClockController {
   activate(sessionId: string, input: ActivationInput, plan: PlanItem[] = []): Status {
     requireSessionId(sessionId);
     requireExpiryPolicy(input.expiryPolicy);
+    const mode = input.mode ?? "deadline";
+    requireMode(mode);
+    if (mode === "turn-limit" && input.durationMs === undefined) {
+      throw new Error("The turn-limit mode requires a positive duration");
+    }
+    if (input.durationMs !== undefined) requireDuration(input.durationMs);
+    if (mode === "turn-limit" && input.deadlineMs !== undefined) {
+      throw new Error("The turn-limit mode requires a duration, not a local-time deadline");
+    }
     requireValidPlan(plan);
     const existing = this.loadState(sessionId);
     if (existing && !existing.stopped) {
@@ -63,11 +73,13 @@ export class WallClockController {
     }
     const wrapUpMs = Math.min(requestedWrapUpMs, availableMs);
     const state: SessionState = {
-      version: 3,
+      version: 4,
       sessionId,
       issuedAt: now,
       hardDeadline,
       wrapUpAt: hardDeadline - wrapUpMs,
+      mode,
+      durationMs: input.durationMs,
       expiryPolicy: input.expiryPolicy,
       plan: structuredClone(plan),
       planRevisions: [],
@@ -78,6 +90,40 @@ export class WallClockController {
     };
     this.states.set(sessionId, state);
     this.timings.set(sessionId, freshRuntimeTiming());
+    this.save(state);
+    return this.status(sessionId);
+  }
+
+  setDuration(sessionId: string, durationMs: number, at = this.clock.now()): Status {
+    const state = this.requireState(sessionId);
+    if (state.stopped) throw new Error("Wall-clock is not active for this session");
+    requireDuration(durationMs);
+    if (!Number.isFinite(at)) throw new Error("A finite update time is required");
+    const hardDeadline = at + durationMs;
+    const assignment = state.assignments.find((item) => item.hardDeadline > hardDeadline);
+    if (assignment) {
+      throw new Error(`Duration cannot end before assignment ${assignment.id}`);
+    }
+    const wrapUpMs = Math.min(Math.max(1, state.hardDeadline - state.wrapUpAt), durationMs);
+    state.durationMs = durationMs;
+    state.hardDeadline = hardDeadline;
+    state.wrapUpAt = hardDeadline - wrapUpMs;
+    state.revision += 1;
+    this.save(state);
+    return this.status(sessionId);
+  }
+
+  resetTurn(sessionId: string, at = this.clock.now()): Status {
+    const state = this.requireState(sessionId);
+    if (state.stopped) throw new Error("Wall-clock is not active for this session");
+    if (state.mode !== "turn-limit") return this.status(sessionId);
+    if (state.durationMs === undefined) throw new Error("The turn-limit mode has no configured duration");
+    if (!Number.isFinite(at)) throw new Error("A finite turn reset time is required");
+    const hardDeadline = at + state.durationMs;
+    const wrapUpMs = Math.min(Math.max(1, state.hardDeadline - state.wrapUpAt), state.durationMs);
+    state.hardDeadline = hardDeadline;
+    state.wrapUpAt = hardDeadline - wrapUpMs;
+    state.revision += 1;
     this.save(state);
     return this.status(sessionId);
   }
@@ -269,6 +315,8 @@ export class WallClockController {
       remainingMs: Math.max(0, hardDeadline - now),
       deadlineMs: hardDeadline,
       wrapUpAt,
+      mode: state.mode,
+      durationMs: state.durationMs,
       expiryPolicy: state.expiryPolicy,
       revision: state.revision,
       assignmentElapsedMs: assignment ? this.assignmentElapsedMs(assignment, now) : undefined,
@@ -376,11 +424,14 @@ export class WallClockController {
       `Latest inference elapsed: ${formatDurationMs(context.latestInferenceElapsedMs)} (${context.latestInferenceElapsedMs}ms).`,
       `Latest tool-call elapsed: ${formatDurationMs(context.latestToolCallElapsedMs)} (${context.latestToolCallElapsedMs}ms).`,
       `Remaining time: ${formatDurationMs(context.remainingMs)} (${context.remainingMs}ms).`,
-      `Phase: ${context.phase}. Expiry policy: ${context.expiryPolicy}.`,
+      `Phase: ${context.phase}. Mode: ${context.mode}. Expiry policy: ${context.expiryPolicy}.`,
       `Assignment elapsed: ${formatDurationMs(context.assignmentElapsedMs)} (${context.assignmentElapsedMs}ms).`,
+      context.mode === "turn-limit"
+        ? `The timer resets after each terminal agent turn. Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
+        : undefined,
       "The budget is a ceiling, not a target. Finish as soon as the acceptance target is met.",
       "If you reduce scope or validation, keep the result working and report the shortcut, tradeoff, and skipped work.",
-    ];
+    ].filter((line): line is string => line !== undefined);
     if (status.assignment) {
       lines.push(`Assignment ${status.assignment.id}: ${status.assignment.objective}`);
       lines.push(`Acceptance: ${status.assignment.acceptance.join("; ")}`);
@@ -410,6 +461,7 @@ export class WallClockController {
       latestToolCallElapsedMs: timing.latestToolCallElapsedMs,
       remainingMs: Math.max(0, (assignment?.hardDeadline ?? state.hardDeadline) - now),
       phase,
+      mode: state.mode,
       assignmentElapsedMs: assignment ? this.assignmentElapsedMs(assignment, now) : 0,
       expiryPolicy: state.expiryPolicy,
     };
@@ -474,9 +526,14 @@ export function classifyAction(toolName: string, input?: unknown): ActionClass {
   return "other";
 }
 
+
+function freshRuntimeTiming(): RuntimeTiming {
+  return { latestInferenceElapsedMs: 0, latestToolCallElapsedMs: 0, toolStartedAt: new Map(), activeActions: new Map() };
+}
 export function isWallClockControlTool(toolName: string): boolean {
   const name = toolName.toLowerCase();
   return name === "wallclock_start"
+    || name === "wallclock_set"
     || name === "wallclock_status"
     || name === "wallclock_stop"
     || name === "wallclock_context"
@@ -485,11 +542,6 @@ export function isWallClockControlTool(toolName: string): boolean {
     || name === "wallclock_report"
     || name === "wallclock_revise_plan";
 }
-
-function freshRuntimeTiming(): RuntimeTiming {
-  return { latestInferenceElapsedMs: 0, latestToolCallElapsedMs: 0, toolStartedAt: new Map(), activeActions: new Map() };
-}
-
 function changedPlanItems(previous: PlanItem[], next: PlanItem[]): string[] {
   const previousById = new Map(previous.map((item) => [item.id, item]));
   const nextById = new Map(next.map((item) => [item.id, item]));
@@ -517,6 +569,17 @@ function requireValidPlan(plan: PlanItem[]): void {
     }
     if (ids.has(item.id)) throw new Error("Plan item identifiers must be unique");
     ids.add(item.id);
+  }
+}
+function requireMode(mode: string): asserts mode is WallClockMode {
+  if (mode !== "deadline" && mode !== "turn-limit") {
+    throw new Error("Wall-clock mode must be deadline or turn-limit");
+  }
+}
+
+function requireDuration(durationMs: number): void {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new Error("Duration must be positive");
   }
 }
 

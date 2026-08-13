@@ -14,6 +14,8 @@ Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects me
 - **Fast lane**: A short host-enforced execution window for one bounded request.
 - **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
 - **Wrap-it-up lane**: A two-minute host-enforced execution window for finishing the active request.
+- **Turn-limit mode**: A persistent duration that starts a fresh window after each terminal agent turn.
+- **Terminal agent turn**: A Pi `agent_settled` event or an OMP `agent_end` event with `willContinue` false.
 - **Inline batch delegation**: One parent `task` call carrying several child tasks, with one `wallClock` assignment contract for each item.
 
 ## Do-it-now lane
@@ -59,14 +61,16 @@ Activation accepts a positive duration such as `30m` or a future local time such
 
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
-Every native contract started by an explicit `/wallclock` command or the
-`wallclock_start` tool clears after terminal agent settlement. Pi uses
-`agent_settled`; OMP uses terminal `agent_end`. If a child action is still
-running, cleanup waits for that child to finish so its deadline remains
-enforced. A normal follow-up does not require `/wallclock stop`; start a new
-contract when the follow-up itself needs a time limit.
+The normal deadline mode clears after terminal agent settlement. The `turn-limit`
+mode is started with `/wallclock turn-limit 2m [policy] [prompt]`; it stays
+active and resets its hard deadline to two minutes after every terminal agent
+turn. An expired turn remains enforced until it settles, then the next turn
+gets a fresh window. Use `/wallclock set 3m` or `wallclock_set` to change the
+active duration in either mode without discarding the plan, assignments, or
+reports. Use `/wallclock stop` or `wallclock_stop` to clear the contract.
+If a child action is still running, cleanup waits for that child to finish.
 
-Before each model turn, the native adapter injects current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, phase, policy, and current assignment elapsed time. These values come from the host clock. The model is not asked to estimate task duration.
+Before each model turn, the native adapter injects current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, phase, mode, policy, and current assignment elapsed time. These values come from the host clock. The model is not asked to estimate task duration.
 
 The default wrap-up period is 20 percent of the available time, capped at five minutes. An explicit positive wrap-up value is capped at the hard deadline.
 
@@ -112,11 +116,18 @@ Start a session, optionally submit the first prompt, and inspect it:
 /wallclock 5m fix merge conflicts in all open PRs
 /wallclock 30m block-new inspect the failing tests
 /wallclock start 30m abort-running finish the refactor
+/wallclock turn-limit 2m block-new keep each turn short
+/wallclock set 3m
 /wallclock status
 /wallclock stop
 ```
 
-`start` is optional. The policy is optional and defaults to `block-new`. When the command includes a prompt, an idle host starts a new turn and a running host delivers it as normal steering input. Wall-clock activates and persists before it submits the prompt, then stops automatically after terminal settlement.
+`start` is optional for the normal deadline mode. The policy is optional and
+defaults to `block-new`. When the command includes a prompt, an idle host
+starts a new turn and a running host delivers it as normal steering input.
+Normal wall-clock contracts stop after terminal settlement. A `turn-limit`
+contract remains active and resets its deadline after each terminal agent turn.
+`set` changes the active duration in either mode without discarding state.
 
 The native status display refreshes once per second from the current host clock. A delayed refresh recalculates the remaining time instead of decrementing a cached value, so display delays do not accumulate drift.
 
@@ -135,10 +146,10 @@ Do not add `--scope` for a local path. OMP 17.2.15 ignores it for local package 
 After the first native plugin install, fully quit and restart OMP. In OMP 17.2.15, `/reload-plugins` does not activate a newly installed npm plugin in the current process.
 
 ## Tools
-
 The native adapters register:
 
 - `wallclock_start`
+- `wallclock_set`
 - `wallclock_status`
 - `wallclock_stop`
 - `wallclock_context`
@@ -177,11 +188,15 @@ item becomes one assignment and one child session. The host injects measured
 assignment context into the child task and removes the `wallClock` metadata
 before the underlying OMP task tool runs. Invalid input starts no children.
 
-
-
 ## Persistence and isolation
 
-Native state is written as version 3 custom entries in the owning host session. Reload and resume compute phase and remaining time from the current clock. The latest wall-clock entry is authoritative. A malformed, old-version, or cross-session latest entry disables wall-clock for that session instead of restoring older state.
+Native state is written as version 4 custom entries in the owning host session.
+It stores the mode and configured duration in addition to the deadline,
+wrap-up point, policy, plan, assignments, reports, revision, and stopped flag.
+Reload and resume compute phase and remaining time from the current clock. The
+latest wall-clock entry is authoritative. A malformed, old-version, or
+cross-session latest entry disables wall-clock for that session instead of
+restoring older state.
 
 An OMP child sees only its assigned scope and cannot stop the parent limit, create a nested assignment, inspect a sibling assignment, revise the parent plan, or report for another assignment. The child must call `wallclock_report` before OMP's required `yield`. After a valid report, the adapter permits only that native completion step even when the assignment is complete or expired. Parent state and child reports are persisted by the parent host session.
 

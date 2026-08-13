@@ -235,3 +235,32 @@ Consequences: Unsupported or malformed host events are blocked and reported thro
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## D37 - 2026-08-13 - Add persistent turn-limit mode
+
+Decision: Add a native `/wallclock turn-limit <duration>` mode and matching
+`mode: "turn-limit"` activation field. The mode keeps the owner contract
+active after terminal settlement and resets its hard deadline to the configured
+duration for the next terminal agent turn. `/wallclock set <duration>` and
+`wallclock_set` update the active duration in either mode without discarding
+the plan, assignments, or reports. The existing deadline mode and default
+`block-new` policy remain unchanged.
+
+Why: The user wants a repeatable per-turn ceiling, such as two minutes, that
+does not require reactivation after every turn and can be changed or cleared
+explicitly.
+
+Alternatives: Make every activation persistent (rejected because it changes
+the existing one-shot contract); require stop and restart for every duration
+change (rejected because it adds avoidable state loss and ceremony); reset at
+every internal `turn_end` event (rejected because retries and continuations
+make it narrower than a terminal agent turn).
+
+Consequences: Turn-limit requires a duration, not a local-time deadline.
+Existing child assignment deadlines remain fixed and are never extended by a
+parent turn reset. State version 4 stores the mode and configured duration;
+version 3 state fails closed and is not migrated.
+
+Status: active
+Scope: v1
+Load-bearing: yes

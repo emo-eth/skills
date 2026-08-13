@@ -56,9 +56,23 @@ const TOOLS: McpTool[] = [
       properties: {
         sessionId: { type: "string", minLength: 1 },
         deadline: { type: "string", description: "A positive duration or future local time, for example 30m or 5pm." },
+        mode: { type: "string", enum: ["deadline", "turn-limit"] },
         expiryPolicy: { type: "string", enum: ["block-new", "abort-running"] },
         wrapUpMs: { type: "number", exclusiveMinimum: 0 },
         plan: { type: "array", items: PLAN_ITEM_SCHEMA },
+      },
+    },
+  },
+  {
+    name: "wallclock_set",
+    description: "Change the active wall-clock duration for a session.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["sessionId", "duration"],
+      properties: {
+        sessionId: { type: "string", minLength: 1 },
+        duration: { type: "string", description: "A positive duration, for example 2m." },
       },
     },
   },
@@ -321,6 +335,11 @@ export class WallClockMcpServer {
     switch (name) {
       case "wallclock_start":
         throw new Error("MCP cannot activate wall-clock: use a native Pi or OMP adapter with host enforcement");
+      case "wallclock_set": {
+        const parsed = parseDeadlineSpec(requiredString(input, "duration"));
+        if (parsed.durationMs === undefined) throw new Error("wallclock_set requires a positive duration, not a local-time deadline");
+        return this.controller.setDuration(sessionId, parsed.durationMs);
+      }
       case "wallclock_status": {
         const assignmentId = optionalString(input, "assignmentId");
         return this.controller.status(sessionId, assignmentId);

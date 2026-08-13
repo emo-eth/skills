@@ -11,6 +11,7 @@ import type {
   ExpiryPolicy,
   PlanItem,
   ToolProposal,
+  WallClockMode,
 } from "./types.ts";
 
 const FAST_LANE_DURATION_MS = 120_000;
@@ -353,6 +354,29 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return status;
   };
 
+  const setDurationSession = (ctx: RuntimeContext | undefined, durationMs: number) => {
+    const sessionId = requireOwnerSession(ctx);
+    const status = controller.status(sessionId);
+    if (!status.active) throw new Error("Wall-clock is not active for this session");
+    const updated = controller.setDuration(sessionId, durationMs);
+    scheduleDeadline(sessionId, undefined, ctx);
+    persist(sessionId);
+    updateStatus(host, controller, sessionId, ctx);
+    scheduleStatusRefresh(sessionId, ctx);
+    return updated;
+  };
+
+  const resetSessionTurnById = (sessionId: string, ctx?: RuntimeContext) => {
+    const status = controller.status(sessionId);
+    if (!status.active || status.mode !== "turn-limit") return status;
+    const reset = controller.resetTurn(sessionId);
+    scheduleDeadline(sessionId, undefined, ctx);
+    persist(sessionId);
+    updateStatus(host, controller, sessionId, ctx);
+    scheduleStatusRefresh(sessionId, ctx);
+    return reset;
+  };
+
   const stopSessionById = (sessionId: string, ctx?: RuntimeContext) => {
     const status = controller.status(sessionId);
     if (!status.active) {
@@ -386,6 +410,11 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (controller.runningActions(sessionId).length > 0) return;
     for (const binding of coordination.childBindings.values()) {
       if (binding.parentSessionId === sessionId) return;
+    }
+    coordination.settledSessions.delete(sessionId);
+    if (status.mode === "turn-limit") {
+      resetSessionTurnById(sessionId, ctx);
+      return;
     }
     stopSessionById(sessionId, ctx);
   };
@@ -474,6 +503,28 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       rememberContext(ctx);
       const parts = args.trim().split(/\s+/).filter(Boolean);
       const command = parts.shift() ?? "status";
+      if (command === "set") {
+        const duration = parts.shift();
+        if (!duration || parts.length > 0) throw new Error("Usage: /wallclock set 2m");
+        const parsed = parseDeadlineSpec(duration, options.clock?.now() ?? Date.now());
+        if (parsed.durationMs === undefined) throw new Error("The set command requires a positive duration, not a local-time deadline");
+        const status = setDurationSession(ctx, parsed.durationMs);
+        notify(ctx, `Wall-clock duration updated: ${formatStatus(status)}`, "info");
+        return;
+      }
+      if (command === "turn-limit") {
+        const duration = parts.shift();
+        if (!duration) throw new Error("Usage: /wallclock turn-limit 2m [block-new|abort-running|abort] [prompt...]");
+        const parsed = parseDeadlineSpec(duration, options.clock?.now() ?? Date.now());
+        if (parsed.durationMs === undefined) throw new Error("The turn-limit command requires a positive duration, not a local-time deadline");
+        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "block-new";
+        const prompt = parts.join(" ");
+        if (prompt && !host.sendUserMessage) throw new Error("This host cannot submit the wall-clock prompt");
+        const status = activateSession(ctx, { durationMs: parsed.durationMs, mode: "turn-limit", expiryPolicy }, []);
+        notify(ctx, `Wall-clock turn-limit active: ${formatStatus(status)}`, "info");
+        if (prompt) host.sendUserMessage!(prompt, ctx?.isIdle?.() === false ? { deliverAs: "steer" } : undefined);
+        return;
+      }
       if (command === "start" || (command !== "status" && command !== "stop")) {
         const deadline = command === "start" ? parts.shift() : command;
         if (!deadline) throw new Error("Usage: /wallclock [start] 30m|5pm [block-new|abort-running|abort] [prompt...]");
@@ -787,14 +838,34 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     host.registerTool?.({
       name: "wallclock_start",
       label: "Start wall-clock",
-      description: "Start enforced wall-clock control with a deadline and expiry policy.",
+      description: "Start enforced wall-clock control with a deadline, mode, and expiry policy.",
       parameters: START_SCHEMA,
       execute: async (...args: any[]) => {
-        const input = toolInput<{ deadline: string; expiryPolicy: ExpiryPolicy; wrapUpMs?: number; plan?: PlanItem[] }>(args);
+        const input = toolInput<{ deadline: string; mode?: WallClockMode; expiryPolicy: ExpiryPolicy; wrapUpMs?: number; plan?: PlanItem[] }>(args);
         const ctx = toolContext(args);
         await ensureChildCoordination(ctx);
         const deadlineInput = parseDeadlineSpec(input.deadline, options.clock?.now() ?? Date.now());
-        return textResult(activateSession(ctx, { ...deadlineInput, expiryPolicy: parseExpiryPolicy(input.expiryPolicy), wrapUpMs: input.wrapUpMs }, input.plan ?? []));
+        return textResult(activateSession(ctx, {
+          ...deadlineInput,
+          mode: parseWallClockMode(input.mode),
+          expiryPolicy: parseExpiryPolicy(input.expiryPolicy),
+          wrapUpMs: input.wrapUpMs,
+        }, input.plan ?? []));
+      },
+    });
+
+    host.registerTool?.({
+      name: "wallclock_set",
+      label: "Set wall-clock duration",
+      description: "Change the active wall-clock duration for the current session.",
+      parameters: SET_SCHEMA,
+      execute: async (...args: any[]) => {
+        const input = toolInput<{ duration: string }>(args);
+        const ctx = toolContext(args);
+        await ensureChildCoordination(ctx);
+        const parsed = parseDeadlineSpec(input.duration, options.clock?.now() ?? Date.now());
+        if (parsed.durationMs === undefined) throw new Error("wallclock_set requires a positive duration, not a local-time deadline");
+        return textResult(setDurationSession(ctx, parsed.durationMs));
       },
     });
 
@@ -1317,6 +1388,12 @@ function parseExpiryPolicy(value: string): ExpiryPolicy {
   throw new Error("Expiry policy must be block-new or abort-running");
 }
 
+function parseWallClockMode(value: string | undefined): WallClockMode {
+  if (value === undefined || value === "deadline") return "deadline";
+  if (value === "turn-limit") return "turn-limit";
+  throw new Error("Wall-clock mode must be deadline or turn-limit");
+}
+
 function isExpiryPolicy(value: string | undefined): boolean {
   return value === "block-new" || value === "abort-running" || value === "abort";
 }
@@ -1327,15 +1404,17 @@ function notify(ctx: RuntimeContext | undefined, message: string, level = "info"
 
 function updateStatus(host: RuntimeHost, controller: WallClockController, sessionId: string, ctx?: RuntimeContext, assignmentId?: string): void {
   const status = controller.status(sessionId, assignmentId);
+  const mode = status.mode === "turn-limit" ? `, ${status.mode}` : "";
   const value = status.active && status.expiryPolicy
-    ? `${status.phase} ${Math.ceil(status.remainingMs / 1_000)}s (${status.expiryPolicy})`
+    ? `${status.phase} ${Math.ceil(status.remainingMs / 1_000)}s (${status.expiryPolicy}${mode})`
     : undefined;
   if (ctx?.ui?.setStatus) ctx.ui.setStatus("wall-clock", value);
   else host.setStatus?.("wall-clock", value);
 }
 
-function formatStatus(status: { phase: string; remainingMs: number; expiryPolicy?: string }): string {
-  return `${status.phase}, ${Math.ceil(status.remainingMs / 1_000)}s remaining (${status.expiryPolicy ?? "none"})`;
+function formatStatus(status: { phase: string; remainingMs: number; expiryPolicy?: string; mode?: WallClockMode }): string {
+  const mode = status.mode === "turn-limit" ? `, ${status.mode}` : "";
+  return `${status.phase}, ${Math.ceil(status.remainingMs / 1_000)}s remaining (${status.expiryPolicy ?? "none"}${mode})`;
 }
 
 function textResult(value: unknown): { content: Array<{ type: "text"; text: string }> } {
@@ -1371,9 +1450,19 @@ const START_SCHEMA = {
   required: ["deadline", "expiryPolicy"],
   properties: {
     deadline: { type: "string", description: "A positive duration or future local time, for example 30m or 5pm." },
+    mode: { type: "string", enum: ["deadline", "turn-limit"] },
     expiryPolicy: { type: "string", enum: ["block-new", "abort-running"] },
     wrapUpMs: { type: "number", exclusiveMinimum: 0 },
     plan: { type: "array", items: PLAN_ITEM_SCHEMA },
+  },
+};
+
+const SET_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["duration"],
+  properties: {
+    duration: { type: "string", description: "A positive duration, for example 2m." },
   },
 };
 

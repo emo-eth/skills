@@ -26,6 +26,12 @@ test("persisted-state validation checks nested report and assignment contracts",
   assert.equal(isPersistedState({ ...valid, plan: [{ id: "one", title: "One", status: "invented" }] }), false);
 });
 
+test("persisted-state validation requires a duration for turn-limit mode", () => {
+  const valid = validState();
+  assert.equal(isPersistedState({ ...valid, mode: "turn-limit", durationMs: undefined }), false);
+  assert.equal(isPersistedState({ ...valid, mode: "unknown" }), false);
+});
+
 test("persisted-state validation checks parent-child timing and report links", () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   controller.activate("main", { durationMs: 60_000, expiryPolicy: "block-new" });
@@ -84,7 +90,7 @@ test("discard removes in-memory and stored state", () => {
 test("controller access rejects malformed state returned by a store", () => {
   let deleted = false;
   const malformedStore = {
-    load: () => ({ ...validState(), version: 2 }),
+    load: () => ({ ...validState(), version: 3 }),
     save: () => undefined,
     delete: () => { deleted = true; },
   };

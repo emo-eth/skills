@@ -1,5 +1,7 @@
 export type Phase = "inactive" | "active" | "wrap-up" | "expired" | "complete";
 
+export type WallClockMode = "deadline" | "turn-limit";
+
 export type ExpiryPolicy = "block-new" | "abort-running";
 
 export type ActionClass = "read" | "write" | "destructive" | "delegate" | "finalize" | "other";
@@ -17,6 +19,7 @@ export type DeadlineInput = {
 };
 
 export type ActivationInput = DeadlineInput & {
+  mode?: WallClockMode;
   expiryPolicy: ExpiryPolicy;
 };
 
@@ -84,11 +87,13 @@ export type ChildReport = ChildReportInput & {
 };
 
 export type SessionState = {
-  version: 3;
+  version: 4;
   sessionId: string;
   issuedAt: number;
   hardDeadline: number;
   wrapUpAt: number;
+  mode: WallClockMode;
+  durationMs?: number;
   expiryPolicy: ExpiryPolicy;
   plan: PlanItem[];
   planRevisions: PlanRevision[];
@@ -125,6 +130,7 @@ export type ElapsedTimeContext = {
   latestToolCallElapsedMs: number;
   remainingMs: number;
   phase: Phase;
+  mode: WallClockMode;
   assignmentElapsedMs: number;
   expiryPolicy: ExpiryPolicy;
 };
@@ -136,6 +142,8 @@ export type Status = {
   remainingMs: number;
   deadlineMs?: number;
   wrapUpAt?: number;
+  mode?: WallClockMode;
+  durationMs?: number;
   expiryPolicy?: ExpiryPolicy;
   revision?: number;
   assignmentElapsedMs?: number;

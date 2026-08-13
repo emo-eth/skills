@@ -62,7 +62,7 @@ Every lower assignment has its own measured elapsed time and report. No lower as
 - Automatic selection or division of assignment budgets.
 - File-system enforcement of the free-text `scope` field.
 - Cancellation of remote provider inference.
-- Migration of version 3 session state.
+- Migration of version 4 session state.
 - Increasing OMP's own recursion limit.
 
 ## Current behavior
@@ -184,7 +184,7 @@ The root time-contract expiry continues to select every owned action.
 
 ### N9. Persistence and restore
 
-State version 4 is required. Version 3 state fails closed and is not migrated.
+State version 5 is required. Version 4 state fails closed and is not migrated.
 
 Restore validates the full tree before activation. It schedules timers for every active assignment from stored absolute boundaries. Runtime session bindings and running actions remain non-durable and must be rebuilt from OMP lifecycle events.
 
@@ -231,7 +231,7 @@ type Assignment = AssignmentDraft & {
 };
 ```
 
-Changes from version 3:
+Changes from version 4:
 
 - `parentSessionId` becomes `ownerSessionId` because it always names the tree root, not the immediate parent.
 - `parentPlanItemId` becomes `rootPlanItemId` because nested assignments inherit the root plan relation.
@@ -329,7 +329,7 @@ This section identifies expected changes; it does not authorize implementation.
 
 ### `types.ts`
 
-- Replace the version 3 assignment fields with the approved version 4 shape.
+- Replace the version 4 assignment fields with the approved version 5 shape.
 - Add parent information to elapsed context and status where useful.
 
 ### `controller.ts`
@@ -344,7 +344,7 @@ This section identifies expected changes; it does not authorize implementation.
 
 ### `store.ts`
 
-- Require version 4.
+- Require version 5.
 - Validate ancestry, acyclicity, inherited plan relations, and inherited time boundaries.
 - Continue to reject the newest malformed state without falling back.
 
@@ -388,7 +388,7 @@ If this gate fails, fix or explicitly exclude background tasks before adding rec
 - An ancestor wrap-up or expiry controls descendant admission.
 - Assignment selection is isolated to one direct parent.
 - Cycles, missing parents, mismatched plan roots, and expanded deadlines fail validation.
-- Version 3 restore fails closed.
+- Version 4 restore fails closed.
 - Complete and partial reports fail while descendants remain active.
 - Expired and lifecycle fallback reports preserve late descendant reporting.
 

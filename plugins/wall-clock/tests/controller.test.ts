@@ -50,6 +50,40 @@ test("an active contract must be stopped before it is replaced", () => {
   controller.stop("main");
   assert.equal(activate(controller).active, true);
 });
+test("turn-limit requires a duration and resets its deadline after a turn", () => {
+  const { controller, advance } = setup();
+  controller.activate("main", { durationMs: 120_000, wrapUpMs: 20_000, mode: "turn-limit", expiryPolicy: "block-new" });
+  advance(119_000);
+  assert.equal(controller.status("main").phase, "wrap-up");
+  const reset = controller.resetTurn("main");
+  assert.equal(reset.mode, "turn-limit");
+  assert.equal(reset.durationMs, 120_000);
+  assert.equal(reset.remainingMs, 120_000);
+  assert.equal(reset.wrapUpAt, 220_000);
+  assert.equal(reset.context?.totalElapsedMs, 119_000);
+  assert.throws(
+    () => controller.activate("other", { deadlineMs: 10_000, mode: "turn-limit", expiryPolicy: "block-new" }),
+    /positive duration/,
+  );
+});
+
+test("set duration re-arms either wall-clock mode without discarding state", () => {
+  const { controller, advance } = setup();
+  controller.activate("main", { durationMs: 60_000, expiryPolicy: "block-new" });
+  advance(5_000);
+  const updated = controller.setDuration("main", 3_000);
+  assert.equal(updated.mode, "deadline");
+  assert.equal(updated.durationMs, 3_000);
+  assert.equal(updated.remainingMs, 3_000);
+
+  controller.stop("main");
+  controller.activate("main", { durationMs: 60_000, mode: "turn-limit", expiryPolicy: "block-new" });
+  advance(5_000);
+  const turnUpdated = controller.setDuration("main", 3_000);
+  assert.equal(turnUpdated.mode, "turn-limit");
+  assert.equal(turnUpdated.durationMs, 3_000);
+  assert.equal(turnUpdated.remainingMs, 3_000);
+});
 
 test("hard expiry blocks new work but permits final reporting", () => {
   const { controller, advance } = setup();
@@ -247,6 +281,8 @@ test("state restores policy and recomputes remaining time", () => {
   const status = restored.status("main");
   assert.equal(status.active, true);
   assert.equal(status.remainingMs, 59_000);
+  assert.equal(status.mode, "deadline");
+  assert.equal(status.durationMs, 60_000);
   assert.equal(status.expiryPolicy, "abort-running");
 });
 

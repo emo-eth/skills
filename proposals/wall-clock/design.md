@@ -16,7 +16,9 @@
 - **Child session registry**: A process-wide map from OMP's real child session paths to the parent coordination state. It bridges OMP task children because OMP 17.2.15 does not pass the parent event-bus object into the child.
 - **Native yield**: OMP's required child-completion tool. A wall-clock child must report before this completion step.
 - **Vertical slice**: The smallest working end-to-end result that remains useful after scope is reduced.
-- **State version 3**: The current durable state shape. Older and malformed entries are rejected without migration.
+- **Turn-limit mode**: A persistent duration that starts a fresh window after each terminal agent turn.
+- **Terminal agent turn**: A Pi `agent_settled` event or an OMP `agent_end` event with `willContinue` false.
+- **State version 4**: The current durable state shape. Older and malformed entries are rejected without migration.
 
 ## Design rule
 
@@ -28,7 +30,7 @@ Agent Skills and MCP can describe or expose the contract, but they cannot interc
 
 `src/controller.ts` owns:
 
-- activation, stop, phase, and remaining-time calculations;
+- activation, stop, phase, remaining-time, duration-update, and turn-reset calculations;
 - plan validation and revision history;
 - assignment validation, deadlines, status, and measured elapsed time;
 - action classification and phase decisions;
@@ -40,7 +42,8 @@ Agent Skills and MCP can describe or expose the contract, but they cannot interc
 - stable native session scope;
 - context injection before model turns;
 - native pre-action admission;
-- deadline timers;
+- deadline timers and duration-update timers;
+- terminal settlement cleanup or `turn-limit` reset;
 - executor abort requests and observed results;
 - OMP parent and child coordination;
 - host-session persistence and restore.
@@ -63,14 +66,24 @@ inactive -> active -> wrap-up -> expired
 
 A duration must round to at least one millisecond. A local time uses the host timezone and selects the next occurrence when today's time has passed. The default wrap-up duration is 20 percent of available time, capped at five minutes.
 
-The clock is authoritative. Durable state stores absolute times, not a saved phase or remaining-time value. Restore recomputes both from the current clock.
+The normal deadline mode ends after terminal settlement. A `turn-limit`
+contract requires a duration, keeps the owner state active after settlement, and
+sets the next hard deadline to settlement time plus that duration. Expiry still
+blocks or aborts the current turn according to the selected policy. The next
+terminal turn starts a new window even when the prior window expired. A
+duration update re-arms the current window in either mode and preserves the
+plan, assignments, and reports.
+
+The clock is authoritative. Durable state stores absolute times, not a saved phase or remaining-time value. Turn-limit state also stores its configured duration and mode.
 
 ## Controller interface
 
 The important calls are:
 
 ```ts
-activate(sessionId, { durationMs | deadlineMs, wrapUpMs?, expiryPolicy }, plan?)
+activate(sessionId, { durationMs | deadlineMs, mode?, wrapUpMs?, expiryPolicy }, plan?)
+setDuration(sessionId, durationMs)
+resetTurn(sessionId)
 status(sessionId, assignmentId?)
 decideTool(sessionId, { toolName, input?, action?, assignmentId?, actionId?, enforceable? })
 assign(sessionId, { id?, parentPlanItemId, objective, scope, acceptance, budgetMs, wrapUpMs? })
@@ -135,18 +148,19 @@ Pi has no native task child in this adapter. Pi assignments are still bounded re
 
 ## Persistence and isolation
 
-State version 3 contains:
+State version 4 contains:
 
-- the owner session identifier, issue time, deadline, wrap-up point, policy, revision, and stopped flag;
+- the owner session identifier, issue time, current deadline, wrap-up point,
+  mode, configured duration when present, policy, revision, and stopped flag;
 - current plan items and revision history;
 - assignments, native child identifiers, status, deadlines, and completion times;
 - one current structured report for each reported assignment.
 
 Native adapters append state to the owner host session. Parent and child OMP extension modules are loaded separately. Instances on the same native event bus share a weakly held coordination object. Actual OMP 17.2.15 task children receive a new event-bus object, so the parent publishes the real child session path to the child session registry. The child adopts that coordination state before session and action hooks and before every native wall-clock tool. Terminal lifecycle or parent shutdown removes the registry entry. Only the owner adapter writes parent state. Raw native action identifiers are also scoped by direct host session so equal parent and child identifiers cannot overwrite each other.
 
-Restore reads only the newest wall-clock custom entry. It deeply validates identifiers, times, parent limits, terminal status, reports, and report-linked plan revisions. A malformed, cross-session, or older-version newest entry disables wall-clock for that session. It does not fall back to a stale earlier entry. Other sessions remain unchanged.
+Restore reads only the newest wall-clock custom entry. It deeply validates identifiers, times, parent limits, terminal status, reports, mode, and configured duration. A malformed, cross-session, or older-version newest entry disables wall-clock for that session. It does not fall back to a stale earlier entry. Other sessions remain unchanged.
 
-Timers and running actions are not durable. Reload schedules fresh timers from the stored absolute deadlines and starts runtime timing fields at zero.
+Timers and running actions are not durable. Reload schedules fresh timers from the stored absolute deadlines and starts runtime timing fields at zero. A restored `turn-limit` contract remains active until an explicit stop.
 
 ## Distribution
 

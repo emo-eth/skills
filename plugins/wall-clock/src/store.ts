@@ -31,7 +31,7 @@ export function stateFromEntries(entries: unknown[], sessionId?: string): Persis
 export function isPersistedState(value: unknown): value is PersistedState {
   if (!isObject(value)) return false;
   const state = value;
-  if (state.version !== 3
+  if (state.version !== 4
     || !nonEmptyString(state.sessionId)
     || !finiteNumber(state.issuedAt)
     || !finiteNumber(state.hardDeadline)
@@ -39,6 +39,9 @@ export function isPersistedState(value: unknown): value is PersistedState {
     || !finiteNumber(state.wrapUpAt)
     || state.wrapUpAt < state.issuedAt
     || state.wrapUpAt > state.hardDeadline
+    || !wallClockMode(state.mode)
+    || !optionalPositiveNumber(state.durationMs)
+    || (state.mode === "turn-limit" && state.durationMs === undefined)
     || !expiryPolicy(state.expiryPolicy)
     || !finiteNumber(state.revision)
     || !Number.isInteger(state.revision)
@@ -191,4 +194,8 @@ function optionalNonNegativeNumber(value: unknown): boolean {
 
 function expiryPolicy(value: unknown): boolean {
   return value === "block-new" || value === "abort-running";
+}
+
+function wallClockMode(value: unknown): boolean {
+  return value === "deadline" || value === "turn-limit";
 }

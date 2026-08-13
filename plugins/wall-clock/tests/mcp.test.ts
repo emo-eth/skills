@@ -41,6 +41,7 @@ test("MCP lifecycle exposes portable tools and rejects guidance-only activation"
   const names = listResult.tools.map((tool) => readObject(tool).name);
   assert.deepEqual(names, [
     "wallclock_start",
+    "wallclock_set",
     "wallclock_status",
     "wallclock_stop",
     "wallclock_context",
@@ -80,6 +81,17 @@ test("MCP reads native state, reports expiry decisions, and isolates session key
 
   const otherSession = readObject(callTool(server, 6, "wallclock_status", { sessionId: "run-2" }));
   assert.equal(otherSession.phase, "inactive");
+});
+test("MCP set updates an active turn-limit duration", () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const server = new WallClockMcpServer(controller);
+  initialize(server);
+  controller.activate("run-1", { durationMs: 60_000, mode: "turn-limit", expiryPolicy: "block-new" });
+
+  const updated = readObject(callTool(server, 7, "wallclock_set", { sessionId: "run-1", duration: "3s" }));
+  assert.equal(updated.mode, "turn-limit");
+  assert.equal(updated.durationMs, 3_000);
+  assert.equal(updated.remainingMs, 3_000);
 });
 
 test("JSON MCP state survives a new server instance", () => {

@@ -84,9 +84,18 @@ test("Pi native ExtensionRunner injects context and blocks a late tool call", { 
     await command.handler("stop", runner.createCommandContext());
     await command.handler("5m fix merge conflicts in all open PRs", runner.createCommandContext());
     assert.deepEqual(submittedUserMessages, [{ content: "fix merge conflicts in all open PRs", options: undefined }]);
+    await command.handler("stop", runner.createCommandContext());
+    await command.handler("turn-limit 1s block-new", runner.createCommandContext());
+    const turnContext = await runner.emitContext([]);
+    assert.match(messageText(turnContext.at(-1)), /Mode: turn-limit/);
+    await runner.emit({ type: "agent_settled" } as any);
+    const resetContext = await runner.emitContext([]);
+    assert.match(messageText(resetContext.at(-1)), /Mode: turn-limit/);
+    await command.handler("set 2s", runner.createCommandContext());
+    await command.handler("stop", runner.createCommandContext());
+
 
     runningSignal = new AbortController();
-    await command.handler("stop", runner.createCommandContext());
     await command.handler("start 30ms abort-running", runner.createCommandContext());
     const bash = session.getToolDefinition("bash");
     assert.ok(bash);
