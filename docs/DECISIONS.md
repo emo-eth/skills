@@ -392,3 +392,25 @@ Status: active (provisional)
 Revisit: when lc-ticketize is revised under D31, or if the user reopens it
 Scope: v0
 Load-bearing: no
+
+## D36 - 2026-08-13 - The skill-scoped notes tool is named skiterate and is a plugin
+
+Decision: The papercut-style capture scoped to skill invocations (proposal P4) is named `skiterate` and will be built as an Agent Plugins package with native Pi and OMP adapters, following the wall-clock pattern, rather than as a skill-plus-script.
+Why: "yes, it would be a plugin like yearn or wallclock here. call it idk 'skiterate'" - user in chat, 2026-08-13.
+Consequences: Resolves the open naming from D24. Name sits adjacent to the existing skill-iteration skill (skiterate is the logger; skill-iteration is the loop it feeds); flagged to the user and accepted provisionally ("idk"), so rename while unbuilt is free.
+Source: user chat message, 2026-08-13
+Status: active (provisional name)
+Revisit: on any rename request before first ship
+Scope: v0
+Load-bearing: no
+
+## D37 - 2026-08-13 - Turn receipts ship as a plugin in three stages
+
+Decision: The turn receipt is delivered as an Agent Plugins package, not as a standing instruction in a global instructions file. v1 injects a succinct per-turn receipt reminder through the host turn-context seam, the same mechanism wall-clock uses to inject measured time. v2 adds collapsible above-the-fold UI in the harness. v3 adds a companion model that writes the receipt content.
+Why: "think that is also best as a plugin since wallclock injects the time left etc after each turn. succinct reminder culd be nice. longterm would be nice to have collapsible arrows for above-the-fold stuff and/or a companion model (v2 and v3)" - user in chat, 2026-08-13.
+Alternatives: Standing instruction in the global instructions file first, extension later (rejected: the plugin owns delivery from v1, and the wall-clock turn-context seam is already proven on this machine).
+Consequences: The earlier layer-1/layer-2 split (log doc P5) is superseded. v1 needs no model call. v3's cheap-model call path must be verified against the installed omp/pi before implementation, same discipline as wall-clock's capability checks.
+Source: user chat message, 2026-08-13
+Status: active
+Scope: v0 (v1); v1+ (v2, v3)
+Load-bearing: no
