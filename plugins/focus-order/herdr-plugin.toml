@@ -1,0 +1,81 @@
+id = "focus-order"
+name = "Focus Order"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Keep attention on the highest-ranked urgent agent."
+platforms = ["linux", "macos", "windows"]
+
+[[startup]]
+command = ["node", "--experimental-strip-types", "src/herdr/guard.ts"]
+
+[[actions]]
+id = "manage"
+title = "Manage focus order"
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/herdr/open-manager.ts"]
+
+[[actions]]
+id = "toggle-mode"
+title = "Toggle focus guard mode"
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/herdr/toggle-mode.ts"]
+
+[[panes]]
+id = "manager"
+title = "Focus order"
+placement = "popup"
+width = "90%"
+height = 24
+command = ["node", "--experimental-strip-types", "src/herdr/manager.ts"]
+
+[[panes]]
+id = "attention"
+title = "Attention required"
+placement = "popup"
+width = "90%"
+height = 20
+command = ["node", "--experimental-strip-types", "src/herdr/attention.ts"]
+
+[[events]]
+on = "workspace.created"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "workspace.closed"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "workspace.focused"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "worktree.created"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "worktree.opened"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "worktree.removed"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "tab.focused"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "pane.created"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "pane.focused"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "--experimental-strip-types", "src/herdr/enforce.ts"]

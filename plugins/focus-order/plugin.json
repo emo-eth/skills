@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "focus-order",
+  "version": "0.1.0",
+  "description": "Keep attention on the highest-ranked urgent Herdr agent or worktree.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "herdr",
+    "focus",
+    "priority",
+    "agents",
+    "worktrees"
+  ]
+}
