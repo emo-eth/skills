@@ -19,18 +19,17 @@ a new contract when the follow-up itself needs a time limit.
 
 ## Proof
 
-- `node --experimental-strip-types --test --test-name-pattern='expired wrap-it-up guard|terminal OMP agent end|terminal settlement clears an explicit wallclock contract' tests/host.test.ts`: 4 passed, 0 failed.
-- `node --experimental-strip-types --test tests/host.test.ts`: 29 passed, 0 failed.
-- Dependency-free package tests across controller, host, adapters, abort, MCP,
-  plugin, store, and time files: 69 passed, 0 failed.
+- `npm run check`: passed with TypeScript 5.9.3 and the locked package
+  dependencies.
+- `npm test`: 74 Node tests passed, 0 failed; 6 Bun native-runner tests
+  passed, 0 failed.
+- Focused settlement tests: 4 passed, 0 failed.
 - Global OMP RPC smoke test loaded `src/omp.ts`, started a two-second contract,
   and returned status without an extension error.
 - Global Pi RPC smoke test loaded `src/pi.ts`, started a two-second contract,
   and returned status without an extension error.
 
-The package TypeScript check could not run because this worktree has no local
-`tsc` binary. The full Node test command could not run its real-host cases
-because this worktree has no local `pi` or `omp` binaries. The Bun native
-runner was not available because the installed dependencies do not include
-`@oh-my-pi/pi-ai`. The focused tests and direct Pi and OMP RPC smoke tests did
-not require that local dependency tree.
+The first verification attempt ran before `npm ci` installed the locked local
+dependencies. The global `tsc`, `pi`, `omp`, Bun runtime, and
+`@oh-my-pi/pi-ai` were available; the local package test dependencies were the
+missing setup, not a product limitation.
