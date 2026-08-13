@@ -13,6 +13,7 @@ description: "Create or revise one short standup from recent projects, initiativ
 - **Evidence**: A source that supports a claim, such as a Memex session, a command result, a file, a commit, or an observed running behavior.
 - **Memex**: The local command-line index of agent sessions from this device and any configured machines.
 - **Proof**: The observable check that supports a status claim. An install, merge, or finished session is not proof that runtime behavior works.
+- **Session ledger**: One row for each indexed agent session in the recent window. It is the required first pass for finding work; search terms are only follow-up filters.
 
 An initiative standup is one short decision document for work that a ticket-centered standup misses. It answers:
 
@@ -55,39 +56,69 @@ Use the current repository as the ledger unless the owner supplies another track
 
 Set the recent window explicitly near the top of the document. Prefer the last standup's end time. If there is no prior file, use the previous working day through the current time. Do not silently widen the window to make the report look fuller.
 
-## 2. Discover recent work
+## 2. Build the Memex session ledger
 
-Memex is the preferred source for cross-project work because it can connect sessions from different agents and repositories.
+Memex is the first required evidence source for this skill. Do not start from remembered project names, the current repository, user-supplied work terms, or keyword searches. Those are follow-up filters and can omit work done in another agent or repository.
 
-First check and refresh it:
+Resolve the recent window before querying Memex:
+
+- Use the previous initiative standup end as `<window-start>` when it exists.
+- Otherwise use the previous working day start through the current time.
+- Use full RFC3339 timestamps with an explicit timezone. Do not use a bare date when the timezone or reporting boundary matters.
+- Keep the reporting window exact. A wider query may be used only to diagnose a boundary problem; exclude rows outside the reporting window from the report.
+
+First check and refresh the index:
 
 ```sh
 command -v memex
 memex stats
-memex index
+memex index --include-agents
 ```
 
 If `memex` is unavailable, continue with repository and supplied sources but record `GAP: device-wide session history was not available`. Do not imply that the report covers the whole device.
 
-Use a narrow-first retrieval loop:
+Then build the session ledger before using search:
 
 ```sh
-memex sessions --since <window-start> --limit 100 --json-array
-memex search "<specific work term>" --since <window-start> --sort ts --unique-session --limit 50
+memex sessions --since <window-start-rfc3339> --limit 1000 --json-array
+```
+
+The ledger must cover every indexed source, not only the current agent or repository. Record one row per unique `session_id` with:
+
+- `started_at` and `last_at`;
+- `message_count`;
+- `source`, `project`, `cwd`, and `source_path` when present;
+- `session_id`.
+
+Use the ledger to select candidate sessions by activity and coverage, not by search score. Inspect every session with multiple messages or a meaningful time span. Also inspect sessions from another project, repository, or agent when their metadata can explain the owner's work. Do not discard a short session until artifact evidence shows it was routine or irrelevant. If the result count reaches the limit, repeat with a larger limit before treating the inventory as complete.
+
+For every candidate, fetch the full transcript:
+
+```sh
 memex session <session-id> -v
 ```
 
-Use session metadata to find candidate working directories, repositories, sources, and session lengths. Use targeted searches for names or terms already found in that metadata. Use the full session transcript before claiming an outcome; a search snippet is a lead, not proof.
+Extract the user's intended result, concrete artifacts, configuration changes, decisions, observed outcomes, strongest supported status, and next unfinished result or proof. Derive initiative groups from these session outcomes and the artifacts they name. Do not invent an initiative from a repository name or from a list of commands.
+
+Only after the ledger and candidate transcripts are reviewed, use targeted search to find sparse or cross-linked evidence:
+
+```sh
+memex search "<term found in the ledger or transcript>" --since <window-start-rfc3339> --sort ts --unique-session --limit 50
+```
+
+A search hit is a lead, not evidence. Fetch its full session before citing an outcome. Search terms must come from discovered session metadata, transcript text, or named artifacts; do not use a guessed term as the primary discovery method.
+
+If the session ledger is empty or contains only the current session when work should exist, do not draft yet. Refresh with `memex index --include-agents`, check the exact timestamp boundary, and run a wider query only as a boundary diagnostic. State which sources were indexed and which remain missing. If the missing history cannot be recovered, record the exact coverage gap in the standup.
 
 Use these source filters when narrowing:
 
-- `--source codex`, `--source claude`, `--source opencode`, `--source pi`, or another source shown by Memex.
-- `--role user` for the requested outcome or correction.
-- `--role assistant` for the reported result and remaining work.
-- `--role tool_result` for command output and validation evidence.
+- `--source codex`, `--source claude`, `--source opencode`, `--source pi`, or another source shown by Memex;
+- `--role user` for the requested outcome or correction;
+- `--role assistant` for the reported result and remaining work;
+- `--role tool_result` for command output and validation evidence;
 - `--project <name>` or `--session <id>` after a candidate is known.
 
-If the work includes agent subprocesses and their evidence matters, refresh with `memex index --include-agents` and state that agent transcripts were included. If `memex stats` reports no vectors, use lexical search; do not use semantic or hybrid search as though embeddings existed. If a search falls back from semantic retrieval, record the degraded retrieval mode when it affects coverage.
+If `memex stats` reports no vectors, use lexical search. Do not use semantic or hybrid search as though embeddings existed. If a search falls back from semantic retrieval, record the degraded retrieval mode when it affects coverage.
 
 For each candidate session, collect only:
 
