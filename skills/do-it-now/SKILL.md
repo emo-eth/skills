@@ -1,7 +1,7 @@
 ---
 name: do-it-now
 disable-model-invocation: true
-description: "Execute one small, explicit request in a narrow fast lane. Skip optional planning, delegation, broad research, and adjacent cleanup; stop at the first verified result."
+description: "Execute one small, explicit request in a narrow fast lane. Prefer one bounded delegated assignment when it can finish independent work faster; skip broad research and adjacent cleanup; stop at the first verified result."
 argument-hint: "[small, explicit request]"
 ---
 
@@ -19,9 +19,9 @@ argument-hint: "[small, explicit request]"
 
 On Pi or OMP with the wall-clock plugin enabled, this explicit invocation also
 activates a host guard: a 2-minute hard deadline, `abort-running` cancellation
-for supported actions, no delegation, and a 12-call limit for ordinary tools.
-Without that native plugin, the skill instructions still narrow model behavior
-but cannot force a stop.
+for supported actions, bounded delegation through one wall-clock assignment,
+and a 12-call limit for ordinary tools. Without that native plugin, the skill
+instructions still narrow model behavior but cannot force a stop.
 
 Use this skill only through an explicit `/do-it-now` invocation. It is for a
 small request that should finish in one focused pass. It is not a general
@@ -52,9 +52,13 @@ same turn. Return as soon as the finish line passes.
 3. Read only the files needed to complete the scope lock. Do not browse the
    repository, history, web, or unrelated records for context that cannot
    change the result.
-4. Do not dispatch subagents, run optional skills, write a plan, create a
-   decision or review artifact, update project taste, refactor nearby code, or
-   clean up unrelated files.
+4. Prefer one bounded wall-clock assignment for independent work when it can
+   finish the request faster or safer. Create the assignment first and give
+   the child one objective, narrow scope, observable acceptance target, and a
+   budget below measured remaining time. Do not use batch or nested delegation.
+   Do not run optional skills, write a plan, create a decision or review
+   artifact, update project taste, refactor nearby code, or clean up unrelated
+   files.
 5. Do not run a full test suite, formatter, linter, audit, or deployment unless
    the requested result requires it. Run one focused check after the change.
 6. Preserve existing human work. Do not reset, clean, stash, overwrite, kill,

@@ -22,7 +22,7 @@ with this plugin loaded activates a fixed fast lane:
 
 - 2-minute hard deadline;
 - `abort-running` for supported native actions;
-- delegation blocked;
+- bounded delegation through one active, unbound wall-clock assignment before wrap-up;
 - at most 12 ordinary tool calls.
 
 The lane ends when the agent run ends. This is a host guard, not a semantic
@@ -37,7 +37,7 @@ plugin loaded activates a fixed fast lane:
 
 - two-minute hard deadline;
 - `abort-running` for supported native actions;
-- delegation blocked;
+- bounded delegation through one active, unbound wall-clock assignment while the phase is active;
 - at most 12 ordinary tool calls.
 
 The bundled skill remains responsible for closing the active task. Without a
