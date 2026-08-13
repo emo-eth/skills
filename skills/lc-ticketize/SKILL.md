@@ -69,6 +69,12 @@ every ticket:
 - **Research names its artifact.** "Comparison grid + a pick," "memo with a
   recommendation" — never "explore" or "look into."
 - **Epics split.** A description holding two deliverables is two tickets.
+- **Deliverables get structure.** One deliverable is one ticket; its known
+  components are sub-tickets, enumerated and tracked. Implement-then-verify is
+  one common split, not a mandate applied to every task. Name dependencies
+  between tickets ("score opus 5" is downstream of "create a model eval
+  framework"). The failure to fight is deliverables that were never broken
+  down at all.
 - **Prior art travels.** When the repo already answers part of a ticket, the
   description says where in one line, so nobody re-researches what's known.
 

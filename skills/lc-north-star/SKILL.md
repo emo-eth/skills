@@ -16,6 +16,8 @@ Use the formal artifact chain only when the user is moving toward specs, plans, 
 Ideal-reality dump -> vibe.md -> PRD -> Spec -> Plan -> Implementation
 ```
 
+Treat this chain as one current shape, not a fixed system. When the project keeps a repo-level philosophy vibe (convention: `docs/vibe.md`), that vibe is the source of truth and this chain is a downstream facet of it, updated as the vibe iterates. Keep stages few: three is ideal, four or five in practice, and the whole pipeline should be as painless and fast as possible while still productive. Do not add stages, and do not treat the chain's form as settled.
+
 The ideal-reality dump is the raw material. `vibe.md` distills the desired feel, taste, anti-vibes, and north star. The PRD is downstream of the vibe: it translates the settled ideal into observable product behavior, scope, requirements, and acceptance criteria. The spec defines **how the product will satisfy the PRD and preserve the vibe**. The plan defines **how the agent will execute the spec**.
 
 ## Artifact Rules
@@ -26,6 +28,7 @@ The ideal-reality dump is the raw material. `vibe.md` distills the desired feel,
 - Treat the PRD and `vibe.md` as immutable after approval. Change either only when the user explicitly asks to amend it or edits it directly.
 - Treat the spec as living when it exists. Update it when implementation research, design changes, or refactors change the technical approach.
 - Treat the plan as disposable execution choreography when it exists. Rewrite it when the spec changes materially.
+- Bound the fix rounds. A contract document gets at most two review-and-fix rounds, and the goal is one. A document that seems to need a third means the draft failed: rewrite or re-interview instead of opening round three.
 - Do not hide product work in "phase 2". If a behavior matters to the golden ideal, either include it now or record an explicit scope boundary with the acceptable current behavior.
 - Do not let implementation details leak into north-star or PRD work unless they are product constraints the user would recognize, such as "must work on mobile web" or "must not require an installed app".
 
@@ -47,7 +50,7 @@ Completion criterion: choose the lightest mode that will answer the user. Block 
 
 ### 2. Run The North-Star Interview
 
-Read enough local context to avoid asking questions the repo already answers, but keep the interview at product level. Ask one blocking question at a time and wait for the answer. Prefer concrete choices when possible.
+Read enough local context to avoid asking questions the repo already answers, but keep the interview at product level. Ask one blocking question at a time and wait for the answer. Prefer concrete choices when possible. Probe understanding, not just requirements: a successful interview leaves the user able to explain the product back, not merely a document that captures it.
 
 Pressure-test every important behavior with negative probes:
 
@@ -110,6 +113,7 @@ Before finalizing any artifact, check:
 - **No fake completion:** no `TBD`, "etc.", "nice to have", "future phase", or "handle edge cases" without a concrete behavior.
 - **No collapsed layers:** PRD does not contain execution tasks; spec does not contain work sequencing; plan does not invent product behavior.
 - **No soft vibe:** `vibe.md` does not contain vague praise words without concrete feel checks, and vibe violations are not downgraded to polish.
+- **No prescriptive vibe:** clauses and definitions describe goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods.
 - **No silent narrowing:** platform, mobile, auth, permissions, empty states, errors, persistence, performance, and data visibility are either specified, explicitly irrelevant, or marked as blocking questions.
 - **No unowned amendments:** any desired PRD or vibe change discovered during spec or implementation is surfaced as an amendment request before downstream docs proceed.
 

@@ -125,6 +125,10 @@ corrections.
   principle.
 - **Capture promised, not run** — "I'll record that later." Fix: the pass
   is part of the round; a round is not done until step 7.
+- **Endless fix rounds** — a doc coming back for a third fix round. Fix: the
+  bound is two fix rounds per doc and the goal is one. A third-round need
+  means the draft failed; say so in the closure summary and recommend a
+  rewrite or re-interview instead of opening round three.
 - **Reconstructed rationale** — answering "why did we decide X" from
   memory when the log has no entry. Fix: say the log has no entry, check
   `.context/` snapshots and git history, and capture going forward —
