@@ -28,7 +28,7 @@ The ideal-reality dump is the raw material. `vibe.md` distills the desired feel,
 - Treat the PRD and `vibe.md` as immutable after approval. Change either only when the user explicitly asks to amend it or edits it directly.
 - Treat the spec as living when it exists. Update it when implementation research, design changes, or refactors change the technical approach.
 - Treat the plan as disposable execution choreography when it exists. Rewrite it when the spec changes materially.
-- Bound the fix rounds. A contract document gets at most two review-and-fix rounds, and the goal is one. A document that seems to need a third means the draft failed: rewrite or re-interview instead of opening round three.
+- Bound the fix rounds. A contract document gets at most two review-and-fix rounds, and the goal is one. There is no third round: a draft that fails twice gets rewritten, not re-reviewed.
 - Do not hide product work in "phase 2". If a behavior matters to the golden ideal, either include it now or record an explicit scope boundary with the acceptable current behavior.
 - Do not let implementation details leak into north-star or PRD work unless they are product constraints the user would recognize, such as "must work on mobile web" or "must not require an installed app".
 
