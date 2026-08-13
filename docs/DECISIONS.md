@@ -1,6 +1,6 @@
 # Decisions
 
-One append-only log for the whole repo. D1-D16 are wall-clock scoped; D17 onward include the repo-philosophy (sieve vibe) round.
+One append-only log for the whole repo. D1-D16 are wall-clock scoped; D20 onward include the repo-philosophy (sieve vibe) round.
 
 ## Glossary
 
@@ -173,7 +173,7 @@ Status: active
 Scope: v0
 Load-bearing: no
 
-## D17 - 2026-08-13 - Vibe docs describe, never prescribe
+## D20 - 2026-08-13 - Vibe docs describe, never prescribe
 
 Decision: Vibe and contract docs in this repo describe goals and feel; they never prescribe formulas. Mechanisms appear only as labeled examples ("Example:", never "Means:"), and definitions describe rather than legislate.
 Why: "do not be prescriptive in definitions" and "this is too prescriptive for a vibe. this is an example, not a formula" and "no prescriptive stuff in vibes" - Plannotator annotations, vibe.md round 1 (items 1, 16, 28).
@@ -184,7 +184,7 @@ Status: active
 Scope: v0
 Load-bearing: yes
 
-## D18 - 2026-08-13 - The goal is progress; sifting is the suspected mechanism
+## D21 - 2026-08-13 - The goal is progress; sifting is the suspected mechanism
 
 Decision: Tools and skills in this repo are judged by whether they produce real, felt progress toward action. The sieve is the current hypothesis for how, not the goal, and is replaceable if it stops producing progress.
 Why: "working with the tools and skills should both feel like and crucially ACTUALY BE making progress... the goal is not sifting. sifting is what i suspect works for me" - Plannotator annotation, vibe.md round 1 (item 8).
@@ -195,18 +195,18 @@ Status: active
 Scope: v0
 Load-bearing: yes
 
-## D19 - 2026-08-13 - Never delegate understanding
+## D22 - 2026-08-13 - Never delegate understanding
 
 Decision: Agents fetch, filter, rank, and propose; the user owns understanding. Skills build the user's working model rather than substituting for it, and conclusions must carry provenance.
 Why: "never delegate understanding... 'raw information plus intuition plus iteration leads to clarity leads to understanding' write that down" - Plannotator annotation, vibe.md round 1 (item 15).
 Alternatives: Let agent conclusions stand in for user understanding when the user is busy (rejected because it erodes exactly the compounding the toolchain exists to support).
 Consequences: V4 added to docs/vibe.md. lc-ticketize tickets only what is already understood. Any tool whose output cannot be explained back by the user violates the vibe.
 Source: plannotator round on docs/vibe.md, 2026-08-13
-Status: superseded-by D29
+Status: superseded-by D32
 Scope: v0
 Load-bearing: yes
 
-## D20 - 2026-08-13 - Turn receipts are a companion concern, not part of the sifting strategy
+## D23 - 2026-08-13 - Turn receipts are a companion concern, not part of the sifting strategy
 
 Decision: The end-of-turn receipt is an agent-communication preference tracked separately from the sieve philosophy; it lives in docs/vibe.md as an explicitly labeled companion clause.
 Why: "this is my overall vibe for interacting with the agent but i fear this is separate from the sifting strategy. but i do want this." - Plannotator annotation, vibe.md round 1 (item 34); also items 12 and 13.
@@ -216,7 +216,7 @@ Status: active
 Scope: v0
 Load-bearing: no
 
-## D21 - 2026-08-13 - "yearn" is taken; the skill-scoped logger needs its own name
+## D24 - 2026-08-13 - "yearn" is taken; the skill-scoped logger needs its own name
 
 Decision: The proposed papercut-style logger for skill invocations must not be named "yearn". Yearn already exists, is human-facing, and captures anything the user yearns for.
 Why: "yearn exists. it's anything the user yearns for. not necessarily about a skill. i proposed a skill-specific version; it is not yearn" and "should have a better name" - Plannotator annotations, vibe.md round 1 (items 5, 33).
@@ -226,7 +226,7 @@ Status: active
 Scope: v0
 Load-bearing: no
 
-## D22 - 2026-08-13 - Optimize for resumability, not for uninterrupted blocks
+## D25 - 2026-08-13 - Optimize for resumability, not for uninterrupted blocks
 
 Decision: Tools are designed so interruptions cost as little as possible: state saved after every decision, passes resumable mid-pile, minimal context loss on return. Uninterrupted blocks are the ideal; resumability is the requirement.
 Why: "i have adhd. ideally i have uninterrupted blocks. but i think the real preference is - interruptions cost as little as possible; i can continue sifting with minimal context loss." - Plannotator annotation, vibe.md round 1 (item 14).
@@ -236,18 +236,18 @@ Status: active
 Scope: v0
 Load-bearing: no
 
-## D23 - 2026-08-13 - Decomposition targets deliverables; implement/verify is one pattern, not a dichotomy
+## D26 - 2026-08-13 - Decomposition targets deliverables; implement/verify is one pattern, not a dichotomy
 
 Decision: Ticket decomposition attacks unbroken deliverables. The implement-plus-verify split is one common pattern, applied with judgment, not a rule imposed on every task; dependencies between tasks are named, and a multi-component deliverable can remain one ticket.
 Why: "i think our bigger problem is simply that we haven't been breaking down deliverables. don't over-index on the 'task-verify' dichotomy" and "'create a model eval framework' is a deliverable but has several sub-components not captured by the deliverable, which should still be a single ticket" and "not always necessary" - Plannotator annotations, vibe.md round 1 (items 25, 2, 3).
 Alternatives: Mandate an implement/verify sub-task split for every ticket (rejected as over-indexing on one axis of hidden work).
 Consequences: V3 rewritten as "Deliverables get broken down". Proposal P1 for lc-ticketize changes shape: no mandated split; instead decomposition guidance plus named proof.
 Source: plannotator round on docs/vibe.md, 2026-08-13
-Status: superseded-by D28
+Status: superseded-by D31
 Scope: v0
 Load-bearing: yes
 
-## D24 - 2026-08-13 - Defer lost-chat recovery spec
+## D27 - 2026-08-13 - Defer lost-chat recovery spec
 
 Decision: Recovery of word dumps and decisions from session history (memex or similar) is wanted but unspec'd; defer until the mechanism is understood.
 Why: "ideally we have systems that can recover from this; memex plugin is useful but unsure how to use/spec" - Plannotator annotation, vibe.md round 1 (item 24).
@@ -258,7 +258,7 @@ Revisit: when Memex usage matures beyond the standup ledger, or the next time a 
 Scope: v1+
 Load-bearing: no
 
-## D25 - 2026-08-13 - Defer loop-duration recording
+## D28 - 2026-08-13 - Defer loop-duration recording
 
 Decision: Recording how long iteration loops take (to learn whether changes help) is attractive but noisy and not yet in scope.
 Why: "would be great to record how long loops take so we can iterate on skills/approaches etc and see us make progress and/or rollback bad progress. really hard to say with certainty though lots of noise in the signal. also not necessarily in scope" - Plannotator annotation, vibe.md round 1 (item 31).
@@ -269,7 +269,7 @@ Revisit: when skill-iteration is next revised, or when a second loop feels too s
 Scope: v1+
 Load-bearing: no
 
-## D26 - 2026-08-13 - Few stages, settled by iteration
+## D29 - 2026-08-13 - Few stages, settled by iteration
 
 Decision: Clarity pipelines stay small: three stages is ideal, four or five in practice, settled by iterating rather than by rule; the pipeline should be as painless and fast as possible while still productive.
 Why: "20 stages isn't better than nothing-at-all. 3 stages is idealy; probably 4 or 5, but we have to iterate... should be as painless and fast as possible while also as productive as possible" - Plannotator annotation, vibe.md round 1 (item 20).
@@ -279,7 +279,7 @@ Status: active
 Scope: v0
 Load-bearing: no
 
-## D27 - 2026-08-13 - The vibe is the source of truth; the artifact chain is a facet
+## D30 - 2026-08-13 - The vibe is the source of truth; the artifact chain is a facet
 
 Decision: docs/vibe.md is the source of truth for this repo's philosophy. The lc-north-star artifact chain (dump, vibe, PRD, spec, plan, tickets) is one downstream facet of it, not a separate or fixed system, and is updated or replaced as the vibe iterates.
 Why: "i think ideally we replace/update this chain. it's not a source of truth or a separate system; it's a facet of the system/vibe we are cultivating (one that will need updating as we iterate on this vibe, which is the source of truth)" - Plannotator annotation, vibe.md round 2 (item 1).
@@ -290,29 +290,29 @@ Status: active
 Scope: v0
 Load-bearing: yes
 
-## D28 - 2026-08-13 - Deliverables are one ticket plus enumerated sub-tickets
+## D31 - 2026-08-13 - Deliverables are one ticket plus enumerated sub-tickets
 
 Decision: Decomposition targets deliverables. A deliverable is one ticket; its components are sub-tickets that must also be tracked and enumerated. Implement/verify remains one common split, applied with judgment, not a dichotomy; dependencies between tasks are named.
 Why: "the deliverable is one ticket; the components are sub-tickets that must also be tracked and enumerated" - Plannotator annotation, vibe.md round 2 (item 2).
 Alternatives: A multi-component deliverable as a single flat ticket with no tracked sub-tickets (rejected because components then hide); forcing every component into a separate top-level ticket (rejected because the deliverable loses its single handle).
-Consequences: Supersedes D23, carrying forward its decomposition intent. lc-ticketize's eventual revision must model deliverable ticket plus enumerated sub-tickets.
+Consequences: Supersedes D26, carrying forward its decomposition intent. lc-ticketize's eventual revision must model deliverable ticket plus enumerated sub-tickets.
 Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: yes
 
-## D29 - 2026-08-13 - Understanding is symbiotic
+## D32 - 2026-08-13 - Understanding is symbiotic
 
 Decision: The user strives for understanding; the system strives to measure and ensure it, and the system has failed if it cannot guide the user there. Once the user has full understanding, the user guides the system. Understanding is never delegated away; conclusions carry provenance; agents fetch, filter, and propose.
 Why: "the user does not own understanding; the user strives for understanding, and the system strives to measure and ensure their understanding. the system has failed if it cannot guide the user to understanding. once the user has full understanding, the user can guide the system. it is symbiotic." - Plannotator annotation, vibe.md round 2 (item 4); probing/measurement from item 6.
 Alternatives: The user owns understanding unaided (rejected: the system then has no failure mode when the user is lost); the system owns understanding (rejected: that is delegation).
-Consequences: Supersedes D19, carrying forward "never delegate understanding" and provenance. V4 rewritten around symbiosis; the system needs probing and measurement mechanisms (teach-back, spot questions) as first-class features.
+Consequences: Supersedes D22, carrying forward "never delegate understanding" and provenance. V4 rewritten around symbiosis; the system needs probing and measurement mechanisms (teach-back, spot questions) as first-class features.
 Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: yes
 
-## D30 - 2026-08-13 - Existing skills are seeds, not fixtures
+## D33 - 2026-08-13 - Existing skills are seeds, not fixtures
 
 Decision: Existing skills and tools are seeds and context - works in progress, some to be scrapped. Nothing is load-bearing merely because it exists, and iterations on any of them (ticketize included) are downstream of this vibe. Do not be poisoned by existing context and history.
 Why: "do not over-index on existing skills; if the skills worked, we would not need this vibe doc or to plan this system. they are seeds and context. they are works in progress, or (often) work that should be scrapped. crucial: do not be poisoned by existing context and history" - Plannotator annotation, vibe.md round 2 (item 5); item 3 on ticketize.
@@ -323,23 +323,23 @@ Status: active
 Scope: v0
 Load-bearing: yes
 
-## D31 - 2026-08-13 - At most two fix rounds per doc; aim for one
+## D34 - 2026-08-13 - At most two fix rounds per doc; aim for one
 
 Decision: Review of a written doc converges fast: at most two fix rounds, and the goal is one. A doc needing a third fix round signals the draft process failed, not that a third round should happen.
 Why: "minimal fix-rounds. i want to say max 2. avoid 2 if possible" - Plannotator annotation, vibe.md round 2 (item 8).
-Consequences: Drafts are written to converge (self-contained, glossary first, non-prescriptive per D17). lc-review-capture's rounds stay bounded per D26's stage discipline.
+Consequences: Drafts are written to converge (self-contained, glossary first, non-prescriptive per D20). lc-review-capture's rounds stay bounded per D29's stage discipline.
 Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: no
 
-## D32 - 2026-08-13 - Ticketize's refusal to ticket vibes stands provisionally
+## D35 - 2026-08-13 - Ticketize's refusal to ticket vibes stands provisionally
 
 Decision: lc-ticketize's hard rule against ticketing ununderstood work ("refuses to ticket vibes") stands for now on the grounds that it minimizes noise for coworkers. The user is not sure they agree; the rule is provisional and revisited when lc-ticketize is revised.
 Why: "not sure i agree. but good to minimize noise for coworkers, so can stand for now" - Plannotator annotation, vibe.md round 3 (item 1, anchored to the V4 example). Reading: the target is the ticketize line, since "minimize noise for coworkers" fits keeping half-baked work off a shared board; if the disagreement was with the symbiosis framing instead, the user can reopen V4.
 Consequences: No text change to docs/vibe.md (the annotation says the line can stand). The uncertainty is on the record so a future revision does not mistake the rule for settled.
 Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active (provisional)
-Revisit: when lc-ticketize is revised under D28, or if the user reopens it
+Revisit: when lc-ticketize is revised under D31, or if the user reopens it
 Scope: v0
 Load-bearing: no

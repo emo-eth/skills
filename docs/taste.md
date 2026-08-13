@@ -11,10 +11,10 @@
 
 ## Repo philosophy (vibe rounds 1-2, 2026-08-13)
 
-- Vibes and definitions describe, never prescribe; mechanisms appear as labeled examples, not formulas. [D17]
-- Hold mechanisms loosely: the goal is progress; the sieve is a hypothesis under test, not an identity. [D18]
-- The vibe is the source of truth; chains and skills are downstream facets that iterate with it. [D27]
-- Understanding is symbiotic: the user strives; the system measures, probes, and guides; a system that cannot guide has failed. [D29]
-- Existing skills are seeds and context, often to be scrapped; never be poisoned by what already exists. [D30]
-- Design for interruption: near-zero context loss and resumable passes beat uninterrupted blocks. [D22]
-- Few stages, bounded rounds: three stages ideal, four or five in practice; at most two fix rounds per doc, aim for one. [D26, D31]
+- Vibes and definitions describe, never prescribe; mechanisms appear as labeled examples, not formulas. [D20]
+- Hold mechanisms loosely: the goal is progress; the sieve is a hypothesis under test, not an identity. [D21]
+- The vibe is the source of truth; chains and skills are downstream facets that iterate with it. [D30]
+- Understanding is symbiotic: the user strives; the system measures, probes, and guides; a system that cannot guide has failed. [D32]
+- Existing skills are seeds and context, often to be scrapped; never be poisoned by what already exists. [D33]
+- Design for interruption: near-zero context loss and resumable passes beat uninterrupted blocks. [D25]
+- Few stages, bounded rounds: three stages ideal, four or five in practice; at most two fix rounds per doc, aim for one. [D29, D34]

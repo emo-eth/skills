@@ -10,29 +10,29 @@ round-1/round-2 diff of V2.
 1. **The chain is a facet, not a source of truth; it iterates with the vibe** -
    V2's example now says the lc-north-star chain is "a facet of this system,
    not a source of truth. It will be updated or replaced as this vibe
-   iterates; this vibe is the source of truth." Recorded as D27. Consequent
+   iterates; this vibe is the source of truth." Recorded as D30. Consequent
    follow-up (no input needed, gated on vibe approval): revise lc-north-star
    and docs/lifecycle.md so the chain declares the vibe upstream. Landed: V2.
 2. **Deliverable = one ticket; components = tracked, enumerated sub-tickets** -
    V3's example now reads: the framework is one deliverable ticket, and its
    components are sub-tickets that must also be tracked and enumerated.
-   Recorded as D28, which supersedes D23 and carries forward its still-true
+   Recorded as D31, which supersedes D26 and carries forward its still-true
    parts (decomposition targets deliverables; implement/verify is one
    pattern, not a dichotomy; dependencies are named). Landed: V3.
 3. **ticketize iterations are downstream of this vibe** - V3's example now
-   flags lc-ticketize as "itself downstream of this vibe", and D30's
+   flags lc-ticketize as "itself downstream of this vibe", and D33's
    consequences say the same for all named tools. Landed: V3.
 4. **Understanding is symbiotic: user strives, system measures/ensures/guides;
    then the user guides the system** - V4's promise rewritten nearly in your
-   words. This refines round-1's "the user owns understanding," so D29
-   supersedes D19 and carries forward its standing parts (never delegate;
+   words. This refines round-1's "the user owns understanding," so D32
+   supersedes D22 and carries forward its standing parts (never delegate;
    conclusions carry provenance; agents fetch, filter, propose). Landed: V4.
 5. **Do not over-index on existing skills; seeds and context; do not be
    poisoned by existing context and history** - A blanket caveat now opens the
    Vibe Clauses section: every named tool or skill is a seed, some should be
    scrapped, nothing is load-bearing merely because it exists. V4's example
    also marks understand/synthesize as "seeds in this direction, not
-   fixtures." Recorded as D30. Landed: clauses intro, V4.
+   fixtures." Recorded as D33. Landed: clauses intro, V4.
 6. **The system measures/ensures/probes understanding; somewhat outside
    sifting but core to the broad system** - V4's example now names probing
    (teach-back, spot questions) and user-side measurement, with your scope
@@ -42,7 +42,7 @@ round-1/round-2 diff of V2.
    sentence now owns its placement: "noted here on purpose, while remaining
    out of scope for this vibe." No decision entry; wording only. Landed: V5.
 8. **Max 2 fix rounds, avoid 2 if possible** - V2's example now states: a doc
-   gets at most two fix rounds, and the goal is one. Recorded as D31.
+   gets at most two fix rounds, and the goal is one. Recorded as D34.
    Landed: V2.
 
 ## Still needs you

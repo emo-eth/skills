@@ -9,16 +9,16 @@ Plannotator folder session. Raw snapshot:
 1. **"not sure i agree. but good to minimize noise for coworkers, so can stand
    for now"** (anchored to the V4 diff containing "lc-ticketize only tickets
    what is already understood, and refuses to ticket vibes") - No text change:
-   the annotation says the line can stand. Recorded as D32 (active,
+   the annotation says the line can stand. Recorded as D35 (active,
    provisional) so the uncertainty survives: the rule is revisited when
-   lc-ticketize is revised under D28, or whenever you reopen it. My reading is
+   lc-ticketize is revised under D31, or whenever you reopen it. My reading is
    that the target is the ticketize line - "minimize noise for coworkers"
    fits keeping half-baked work off a shared board. If you meant the
    symbiosis framing instead, say so and V4 reopens.
 
 ## Still needs you
 
-Nothing. Review rounds are closed (D31's two-round bound, your direction).
+Nothing. Review rounds are closed (D34's two-round bound, your direction).
 The three items previously listed as open are resolved by default:
 
 1. Skill-scoped logger name: deferred until the tool is actually built;
