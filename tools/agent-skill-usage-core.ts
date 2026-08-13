@@ -1,19 +1,15 @@
-import { execFile as execFileCallback } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
-import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { basename, join, resolve } from "node:path";
-
-const execFile = promisify(execFileCallback);
 
 export const NO_SKILL = "(none)";
 export const SOURCES = ["claude", "codex", "pi", "omp"] as const;
 export type UsageSource = (typeof SOURCES)[number];
-export type AttributionKind = "observed" | "unknown";
+export type AttributionKind = "exact" | "unknown";
 export type AttributionMethod =
   | "claude-attributionSkill"
-  | "explicit-skill-invocation"
+  | "explicit-skill-in-record"
   | "unknown";
 
 type JsonObject = Record<string, unknown>;
@@ -48,7 +44,7 @@ export type SkillSummary = TokenBuckets & {
   skill: string;
   attribution: AttributionKind;
   requests: number;
-  observedRequests: number;
+  exactRequests: number;
   unknownRequests: number;
   share: number;
 };
@@ -56,7 +52,7 @@ export type SkillSummary = TokenBuckets & {
 export type SourceSummary = TokenBuckets & {
   source: UsageSource;
   requests: number;
-  observedRequests: number;
+  exactRequests: number;
   unknownRequests: number;
   share: number;
 };
@@ -67,9 +63,9 @@ export type UsageReport = {
   requests: number;
   tokens: TokenBuckets;
   attribution: {
-    observedRequests: number;
+    exactRequests: number;
     unknownRequests: number;
-    observedTokens: number;
+    exactTokens: number;
     unknownTokens: number;
   };
   bySkill: SkillSummary[];
@@ -90,11 +86,6 @@ export type SourceRoots = Partial<Record<UsageSource, readonly string[]>>;
 export type AllSourceScanOptions = ScanOptions & {
   sources?: readonly UsageSource[];
   sourceRoots?: SourceRoots;
-  /** Set false to exercise local parsers without invoking Memex. */
-  useMemex?: boolean;
-  /** Test hook and offline input: normalized output from `memex usage --json --events`. */
-  memexOutput?: string | JsonObject;
-  memexCommand?: string;
 };
 
 const EMPTY_BUCKETS: TokenBuckets = {
@@ -110,9 +101,7 @@ function optionalString(value: unknown): string | null {
 }
 
 function tokenNumber(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    return 0;
-  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
   return Math.floor(value);
 }
 
@@ -128,17 +117,6 @@ function timestampMillis(value: unknown): number {
     return value < 1_000_000_000_000 ? Math.floor(value * 1_000) : Math.floor(value);
   }
   if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-}
-
-function timestampMsValue(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.floor(value));
-  if (typeof value === "string") {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric) && value.trim() !== "") return Math.max(0, Math.floor(numeric));
     const parsed = Date.parse(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -192,24 +170,6 @@ function codexBucketsFor(usage: JsonObject): TokenBuckets {
     cacheCreation: 0,
     output,
     total: rawInput + output,
-  };
-}
-
-function memexBucketsFor(usage: JsonObject): TokenBuckets {
-  const input = firstTokenNumber(usage, ["uncached_input", "input", "input_tokens"]);
-  const cacheRead = firstTokenNumber(usage, ["cache_read", "cacheRead", "cached_input"]);
-  const cacheCreation = firstTokenNumber(usage, [
-    "cache_write",
-    "cacheWrite",
-    "cache_write_1h",
-  ]);
-  const output = firstTokenNumber(usage, ["output", "output_tokens", "outputTokens"]);
-  return {
-    input,
-    cacheRead,
-    cacheCreation,
-    output,
-    total: input + cacheRead + cacheCreation + output,
   };
 }
 
@@ -333,24 +293,24 @@ function buildReport(
     bySource.set(source, {
       source,
       requests: 0,
-      observedRequests: 0,
+      exactRequests: 0,
       unknownRequests: 0,
       share: 0,
       ...EMPTY_BUCKETS,
     });
   }
 
-  let observedRequests = 0;
+  let exactRequests = 0;
   let unknownRequests = 0;
-  let observedTokens = 0;
+  let exactTokens = 0;
   let unknownTokens = 0;
 
   for (const event of filtered) {
     addBuckets(tokens, event.tokens);
-    const observed = event.attribution === "observed" && event.skill !== null;
-    if (observed) {
-      observedRequests += 1;
-      observedTokens += event.tokens.total;
+    const exact = event.attribution === "exact" && event.skill !== null;
+    if (exact) {
+      exactRequests += 1;
+      exactTokens += event.tokens.total;
     } else {
       unknownRequests += 1;
       unknownTokens += event.tokens.total;
@@ -361,9 +321,9 @@ function buildReport(
     if (!skillSummary) {
       skillSummary = {
         skill,
-        attribution: skill === NO_SKILL ? "unknown" : "observed",
+        attribution: skill === NO_SKILL ? "unknown" : "exact",
         requests: 0,
-        observedRequests: 0,
+        exactRequests: 0,
         unknownRequests: 0,
         share: 0,
         ...EMPTY_BUCKETS,
@@ -371,14 +331,14 @@ function buildReport(
       bySkill.set(skill, skillSummary);
     }
     skillSummary.requests += 1;
-    if (observed) skillSummary.observedRequests += 1;
+    if (exact) skillSummary.exactRequests += 1;
     else skillSummary.unknownRequests += 1;
     addBuckets(skillSummary, event.tokens);
 
     const sourceSummary = bySource.get(event.source);
     if (sourceSummary) {
       sourceSummary.requests += 1;
-      if (observed) sourceSummary.observedRequests += 1;
+      if (exact) sourceSummary.exactRequests += 1;
       else sourceSummary.unknownRequests += 1;
       addBuckets(sourceSummary, event.tokens);
     }
@@ -407,16 +367,22 @@ function buildReport(
     files,
     requests: filtered.length,
     tokens,
-    attribution: {
-      observedRequests,
-      unknownRequests,
-      observedTokens,
-      unknownTokens,
-    },
+    attribution: { exactRequests, unknownRequests, exactTokens, unknownTokens },
     bySkill: summaries,
     bySource: sourceSummaries,
     warnings: normalizeWarnings(warnings),
   };
+}
+
+function sortEvents(events: Iterable<UsageEvent>, options: ScanOptions): UsageEvent[] {
+  return [...events]
+    .filter((event) => matches(event, options))
+    .sort((left, right) => {
+      if (left.timestampMs !== right.timestampMs) return left.timestampMs - right.timestampMs;
+      if (left.source !== right.source) return left.source.localeCompare(right.source);
+      if (left.sourcePath !== right.sourcePath) return left.sourcePath.localeCompare(right.sourcePath);
+      return left.line - right.line;
+    });
 }
 
 export function defaultUsageRoots(
@@ -443,113 +409,33 @@ export function defaultSourceRoots(
     claude: defaultUsageRoots(env, home),
     codex: [env.CODEX_SESSION_DIR ?? join(home, ".codex", "sessions")],
     pi: [env.PI_CODING_AGENT_SESSION_DIR ?? join(home, ".pi", "agent", "sessions")],
-    omp: [
-      env.OMP_AGENT_SESSION_DIR ?? env.OMP_SESSION_DIR ?? join(home, ".omp", "agent", "sessions"),
-    ],
+    omp: [env.OMP_AGENT_SESSION_DIR ?? env.OMP_SESSION_DIR ?? join(home, ".omp", "agent", "sessions")],
   };
-}
-
-type AttributionInfo = {
-  skill: string | null;
-  method: AttributionMethod;
-};
-
-type AttributionPoint = AttributionInfo & {
-  source: UsageSource;
-  sourcePath: string;
-  sessionId: string | null;
-  timestampMs: number;
-  order: number;
-};
-
-type AttributionIndex = {
-  exact: Map<string, AttributionInfo>;
-  timelines: Map<string, AttributionPoint[]>;
-  consumed: Set<AttributionPoint>;
-};
-
-function attributionKey(source: UsageSource, sourcePath: string, sourceRecordId: string): string {
-  return `${source}:${resolve(sourcePath)}:${sourceRecordId}`;
-}
-
-function timelineKey(source: UsageSource, sourcePath: string, sessionId: string | null): string {
-  return `${source}:${resolve(sourcePath)}:${sessionId ?? ""}`;
-}
-
-function pathTimelineKey(source: UsageSource, sourcePath: string): string {
-  return `${source}:${resolve(sourcePath)}:`;
-}
-
-function addAttributionPoint(index: AttributionIndex, point: AttributionPoint): void {
-  const key = timelineKey(point.source as UsageSource, point.sourcePath, point.sessionId);
-  const points = index.timelines.get(key) ?? [];
-  points.push(point);
-  index.timelines.set(key, points);
-}
-
-function setExactAttribution(
-  index: AttributionIndex,
-  source: UsageSource,
-  sourcePath: string,
-  sourceRecordId: string,
-  info: AttributionInfo,
-): void {
-  index.exact.set(attributionKey(source, sourcePath, sourceRecordId), info);
-}
-
-function sourceFromMemex(value: unknown): UsageSource | null {
-  if (value === "claude" || value === "codex" || value === "pi" || value === "omp") return value;
-  return null;
 }
 
 function valueAsObject(value: unknown): JsonObject | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : null;
 }
 
-function textFromUnknown(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.map(textFromUnknown).filter(Boolean).join("\n");
-  const object = valueAsObject(value);
-  if (!object) return "";
-  for (const key of ["text", "input_text", "message", "content", "value"]) {
-    const text = textFromUnknown(object[key]);
-    if (text) return text;
-  }
-  return "";
-}
-
-function roleAndText(record: JsonObject): { role: string | null; text: string } {
-  const candidates: JsonObject[] = [];
+function roleFromRecord(record: JsonObject): string | null {
   for (const candidate of [record.message, record.payload, record]) {
     const object = valueAsObject(candidate);
-    if (object) candidates.push(object);
+    const role = optionalString(object?.role);
+    if (role) return role;
   }
-  for (const candidate of candidates) {
-    const role = optionalString(candidate.role);
-    if (role) {
-      return {
-        role,
-        text: textFromUnknown(candidate.content ?? candidate.text ?? candidate.message),
-      };
-    }
-  }
-  return { role: null, text: "" };
+  return null;
 }
 
 function explicitSkillName(value: unknown): string | null {
   const name = optionalString(value);
   return name && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : null;
 }
+
 function explicitSkillFromText(text: string): string | null {
   const slash = text.match(/(?:^|\s)\/skill:([A-Za-z0-9][A-Za-z0-9._-]*)\b/);
   if (slash) return slash[1] ?? null;
   const url = text.match(/skill:\/\/([A-Za-z0-9][A-Za-z0-9._-]*)/);
   return url?.[1] ?? null;
-}
-
-function explicitSkillFromUserText(text: string): string | null {
-  const match = text.match(/^\s*\/skill:([A-Za-z0-9][A-Za-z0-9._-]*)\b/);
-  return match?.[1] ?? null;
 }
 
 function explicitSkillFromToolCalls(value: unknown): string | null {
@@ -583,36 +469,44 @@ function explicitSkillFromToolCalls(value: unknown): string | null {
   return null;
 }
 
-function explicitSkillFromRecord(
-  record: JsonObject,
-  role: string | null,
-  text: string,
-): string | null {
+function explicitSkillFromRecord(record: JsonObject): string | null {
+  const message = valueAsObject(record.message);
+  const payload = valueAsObject(record.payload);
+  const direct = [
+    record.skill,
+    record.attributionSkill,
+    message?.skill,
+    message?.attributionSkill,
+    payload?.skill,
+    payload?.attributionSkill,
+  ];
+  for (const value of direct) {
+    const skill = explicitSkillName(value);
+    if (skill) return skill;
+  }
+
   const type = optionalString(record.type)?.toLowerCase() ?? "";
   if (type.includes("skill")) {
-    const direct = explicitSkillName(record.skill) ?? explicitSkillName(record.name);
-    if (direct) return direct;
+    const skill = explicitSkillName(record.name);
+    if (skill) return skill;
   }
-  const payload = valueAsObject(record.payload);
   if (payload && optionalString(payload.type)?.toLowerCase().includes("skill")) {
-    const direct = explicitSkillName(payload.skill) ?? explicitSkillName(payload.name);
-    if (direct) return direct;
+    const skill = explicitSkillName(payload.name);
+    if (skill) return skill;
   }
-  const message = valueAsObject(record.message);
-  const toolSkill = explicitSkillFromToolCalls(message?.content)
+
+  return explicitSkillFromToolCalls(message?.content)
     ?? explicitSkillFromToolCalls(payload?.content)
-    ?? explicitSkillFromToolCalls(record.content);
-  if (toolSkill) return toolSkill;
-  if (optionalString(record.customType)?.toLowerCase() === "tool_execution_start") {
-    const data = valueAsObject(record.data);
-    const toolName = optionalString(data?.toolName ?? record.toolName)?.toLowerCase();
-    if (toolName === "read") {
-      const argumentsObject = valueAsObject(data?.args ?? data?.arguments);
-      const skill = explicitSkillFromText(optionalString(argumentsObject?.path) ?? "");
-      if (skill) return skill;
-    }
-  }
-  return role === "user" ? explicitSkillFromUserText(text) : null;
+    ?? explicitSkillFromToolCalls(record.content)
+    ?? (optionalString(record.customType)?.toLowerCase() === "tool_execution_start"
+      ? (() => {
+        const data = valueAsObject(record.data);
+        const toolName = optionalString(data?.toolName ?? record.toolName)?.toLowerCase();
+        if (toolName !== "read") return null;
+        const args = valueAsObject(data?.args ?? data?.arguments);
+        return explicitSkillFromText(optionalString(args?.path) ?? "");
+      })()
+      : null);
 }
 
 function sessionIdFromRecord(record: JsonObject, current: string | null): string | null {
@@ -624,15 +518,21 @@ function sessionIdFromRecord(record: JsonObject, current: string | null): string
   return optionalString(record.session_id ?? record.sessionId) ?? current;
 }
 
-function timestampFromRecord(record: JsonObject): number {
-  const message = valueAsObject(record.message);
-  return timestampMillis(record.timestamp ?? message?.timestamp ?? record.created_at);
-}
-
 function modelFromRecord(record: JsonObject, current: string | null): string | null {
   const message = valueAsObject(record.message);
   const payload = valueAsObject(record.payload);
   return optionalString(message?.model ?? record.model ?? payload?.model ?? payload?.model_name) ?? current;
+}
+
+function cwdFromRecord(record: JsonObject): string | null {
+  const message = valueAsObject(record.message);
+  const payload = valueAsObject(record.payload);
+  return optionalString(record.cwd ?? message?.cwd ?? payload?.cwd);
+}
+
+function timestampFromRecord(record: JsonObject): number {
+  const message = valueAsObject(record.message);
+  return timestampMillis(record.timestamp ?? message?.timestamp ?? record.created_at);
 }
 
 function usageFromRecord(record: JsonObject): JsonObject | null {
@@ -663,7 +563,6 @@ function usageEventFromRecord(
   model: string | null,
   skill: string | null,
   method: AttributionMethod,
-  usage: JsonObject,
   buckets: TokenBuckets,
 ): UsageEvent | null {
   if (buckets.total === 0) return null;
@@ -676,10 +575,10 @@ function usageEventFromRecord(
     requestId: optionalString(record.requestId ?? record.request_id),
     messageId: optionalString(message?.id ?? record.id),
     sessionId,
-    cwd: optionalString(record.cwd),
+    cwd: cwdFromRecord(record),
     model,
     skill,
-    attribution: skill ? "observed" : "unknown",
+    attribution: skill ? "exact" : "unknown",
     attributionMethod: method,
     sidechain: record.isSidechain === true,
     timestampMs: timestampFromRecord(record),
@@ -690,23 +589,19 @@ function usageEventFromRecord(
 async function scanLocalSourceFile(
   path: string,
   source: UsageSource,
-  index: AttributionIndex,
   events: Map<string, UsageEvent>,
   warnings: string[],
-  includeTokens: boolean,
-  orderRef: { value: number },
 ): Promise<void> {
   const input = createReadStream(path, { encoding: "utf8" });
   const lines = createInterface({ input, crlfDelay: Infinity });
   let lineNumber = 0;
   let sessionId: string | null = null;
-  let pendingSkill: string | null = null;
   let currentModel: string | null = null;
 
   try {
     for await (const line of lines) {
       lineNumber += 1;
-      const hasUsageHint = /"usage"|"token_count"|\/skill:|skill:\/\//i.test(line);
+      const hasUsageHint = /"usage"|"token_count"/i.test(line);
       let record: unknown;
       try {
         record = JSON.parse(line);
@@ -719,120 +614,47 @@ async function scanLocalSourceFile(
 
       sessionId = sessionIdFromRecord(object, sessionId);
       currentModel = modelFromRecord(object, currentModel);
-      const { role, text } = roleAndText(object);
-      const timestampMs = timestampFromRecord(object);
+      const role = roleFromRecord(object);
+      let usage: JsonObject | null = null;
+      let buckets: TokenBuckets | null = null;
 
-      const invokedSkill = explicitSkillFromRecord(object, role, text);
-      if (role === "user" || (source !== "claude" && invokedSkill)) {
-        pendingSkill = invokedSkill;
-        if (source !== "claude") {
-          addAttributionPoint(index, {
-            source,
-            sourcePath: resolve(path),
-            sessionId,
-            timestampMs,
-            order: orderRef.value++,
-            skill: invokedSkill,
-            method: invokedSkill ? "explicit-skill-invocation" : "unknown",
-          });
-        }
+      if (source === "claude") {
+        if (object.type !== "assistant") continue;
+        usage = usageFromRecord(object);
+        if (usage) buckets = bucketsFor(usage);
+      } else if (source === "codex") {
+        usage = codexUsageFromRecord(object);
+        if (usage) buckets = codexBucketsFor(usage);
+      } else if (role === "assistant") {
+        usage = usageFromRecord(object);
+        if (usage) buckets = bucketsFor(usage);
       }
 
-      if (!includeTokens) {
-        if (source === "claude" && (object.type === "assistant" || role === "assistant")) {
-          const nativeSkill = optionalString(object.attributionSkill);
-          const sourceRecordId = `line:${lineNumber}`;
-          setExactAttribution(index, source, path, sourceRecordId, {
-            skill: nativeSkill,
-            method: nativeSkill ? "claude-attributionSkill" : "unknown",
-          });
-        }
-        continue;
-      }
-
-      if (source === "claude" && object.type === "assistant") {
-        const usage = usageFromRecord(object);
-        if (!usage) continue;
-        const nativeSkill = optionalString(object.attributionSkill);
-        const event = usageEventFromRecord(
-          source,
-          path,
-          lineNumber,
-          object,
-          sessionId,
-          currentModel,
-          nativeSkill,
-          nativeSkill ? "claude-attributionSkill" : "unknown",
-          usage,
-          bucketsFor(usage),
-        );
-        if (event) {
-          setExactAttribution(index, source, path, event.sourceRecordId!, {
-            skill: nativeSkill,
-            method: nativeSkill ? "claude-attributionSkill" : "unknown",
-          });
-          addEvent(events, event);
-        }
-        continue;
-      }
-
-      if ((source === "pi" || source === "omp") && role === "assistant") {
-        const usage = usageFromRecord(object);
-        if (!usage) continue;
-        const event = usageEventFromRecord(
-          source,
-          path,
-          lineNumber,
-          object,
-          sessionId,
-          currentModel,
-          pendingSkill,
-          pendingSkill ? "explicit-skill-invocation" : "unknown",
-          usage,
-          bucketsFor(usage),
-        );
-        if (event) {
-          addEvent(events, event);
-          pendingSkill = null;
-        }
-        continue;
-      }
-
-      if (source === "codex") {
-        const usage = codexUsageFromRecord(object);
-        if (!usage) continue;
-        const event = usageEventFromRecord(
-          source,
-          path,
-          lineNumber,
-          object,
-          sessionId,
-          currentModel,
-          pendingSkill,
-          pendingSkill ? "explicit-skill-invocation" : "unknown",
-          usage,
-          codexBucketsFor(usage),
-        );
-        if (event) {
-          addEvent(events, event);
-          pendingSkill = null;
-        }
-      }
+      if (!usage || !buckets) continue;
+      const skill = source === "claude"
+        ? optionalString(object.attributionSkill)
+        : explicitSkillFromRecord(object);
+      const method: AttributionMethod = skill
+        ? source === "claude" ? "claude-attributionSkill" : "explicit-skill-in-record"
+        : "unknown";
+      const event = usageEventFromRecord(
+        source,
+        path,
+        lineNumber,
+        object,
+        sessionId,
+        currentModel,
+        skill,
+        method,
+        buckets,
+      );
+      if (event) addEvent(events, event);
     }
   } catch (error: unknown) {
     warnings.push(`cannot scan ${path}: ${String(error)}`);
   } finally {
     lines.close();
   }
-}
-
-async function scanClaudeFile(
-  path: string,
-  events: Map<string, UsageEvent>,
-  warnings: string[],
-): Promise<void> {
-  const index: AttributionIndex = { exact: new Map(), timelines: new Map(), consumed: new Set() };
-  await scanLocalSourceFile(path, "claude", index, events, warnings, true, { value: 0 });
 }
 
 export async function scanUsage(options: ScanOptions = {}): Promise<UsageReport> {
@@ -844,163 +666,10 @@ export async function scanUsage(options: ScanOptions = {}): Promise<UsageReport>
   }
 
   const events = new Map<string, UsageEvent>();
-  for (const file of [...files].sort()) await scanClaudeFile(file, events, warnings);
-
-  const filtered = [...events.values()]
-    .filter((event) => matches(event, options))
-    .sort((left, right) => {
-      if (left.timestampMs !== right.timestampMs) return left.timestampMs - right.timestampMs;
-      if (left.sourcePath !== right.sourcePath) return left.sourcePath.localeCompare(right.sourcePath);
-      return left.line - right.line;
-    });
-
-  return buildReport(filtered, roots, files.size, warnings);
-}
-
-type MemexEventInput = {
-  source: UsageSource;
-  sourcePath: string;
-  sourceRecordId: string | null;
-  requestId: string | null;
-  messageId: string | null;
-  sessionId: string | null;
-  cwd: string | null;
-  model: string | null;
-  timestampMs: number;
-  tokens: TokenBuckets;
-};
-
-function parseMemexOutput(
-  output: string | JsonObject,
-  warnings: string[],
-): MemexEventInput[] {
-  let value: unknown = output;
-  if (typeof output === "string") {
-    try {
-      value = JSON.parse(output);
-    } catch (error) {
-      warnings.push(`invalid Memex JSON: ${String(error)}`);
-      return [];
-    }
+  for (const file of [...files].sort()) {
+    await scanLocalSourceFile(file, "claude", events, warnings);
   }
-  const object = valueAsObject(value);
-  const details = Array.isArray(object?.details) ? object.details : [];
-  const events: MemexEventInput[] = [];
-  for (const [index, detail] of details.entries()) {
-    const item = valueAsObject(detail);
-    if (!item) continue;
-    const source = sourceFromMemex(item.source);
-    if (!source) continue;
-    const sourcePath = optionalString(item.source_path);
-    if (!sourcePath) {
-      warnings.push(`Memex event ${index} has no source path`);
-      continue;
-    }
-    const tokensObject = valueAsObject(item.tokens);
-    if (!tokensObject) continue;
-    const tokens = memexBucketsFor(tokensObject);
-    if (tokens.total === 0) continue;
-    events.push({
-      source,
-      sourcePath: resolve(sourcePath),
-      sourceRecordId: optionalString(item.source_record_id),
-      requestId: optionalString(item.request_id),
-      messageId: optionalString(item.message_id),
-      sessionId: optionalString(item.session_id),
-      cwd: optionalString(item.project),
-      model: optionalString(item.model),
-      timestampMs: timestampMsValue(item.timestamp_ms),
-      tokens,
-    });
-  }
-  return events;
-}
-
-async function loadMemexEvents(
-  options: AllSourceScanOptions,
-  warnings: string[],
-  sources: readonly UsageSource[],
-): Promise<MemexEventInput[]> {
-  if (options.memexOutput !== undefined) return parseMemexOutput(options.memexOutput, warnings);
-  if (
-    options.useMemex === false
-    || (!sources.includes("claude") && !sources.includes("codex"))
-  ) {
-    return [];
-  }
-
-  try {
-    const result = await execFile(options.memexCommand ?? "memex", ["usage", "--json", "--events"], {
-      env: options.env ?? process.env,
-      maxBuffer: 256 * 1024 * 1024,
-    });
-    return parseMemexOutput(result.stdout, warnings);
-  } catch (error: unknown) {
-    warnings.push(`Memex unavailable; using local parsers: ${String(error)}`);
-    return [];
-  }
-}
-
-function applyAttribution(event: MemexEventInput, index: AttributionIndex): UsageEvent {
-  let info: AttributionInfo | undefined;
-  if (event.sourceRecordId) {
-    info = index.exact.get(attributionKey(event.source, event.sourcePath, event.sourceRecordId));
-  }
-  if (!info) {
-    const keys = [
-      timelineKey(event.source, event.sourcePath, event.sessionId),
-      pathTimelineKey(event.source, event.sourcePath),
-    ];
-    for (const key of keys) {
-      const points = index.timelines.get(key);
-      if (!points) continue;
-
-      let selected: AttributionPoint | undefined;
-      for (const point of points) {
-        if (index.consumed.has(point)) continue;
-        if (event.timestampMs !== 0 && point.timestampMs > event.timestampMs) continue;
-        if (
-          !selected
-          || point.timestampMs > selected.timestampMs
-          || (point.timestampMs === selected.timestampMs && point.order > selected.order)
-        ) {
-          selected = point;
-        }
-      }
-      if (!selected) continue;
-
-      for (const point of points) {
-        if (index.consumed.has(point)) continue;
-        if (event.timestampMs !== 0 && point.timestampMs > event.timestampMs) continue;
-        if (
-          point.timestampMs < selected.timestampMs
-          || (point.timestampMs === selected.timestampMs && point.order <= selected.order)
-        ) {
-          index.consumed.add(point);
-        }
-      }
-      info = selected;
-      break;
-    }
-  }
-  const skill = info?.skill ?? null;
-  return {
-    source: event.source,
-    sourcePath: event.sourcePath,
-    line: 0,
-    sourceRecordId: event.sourceRecordId,
-    requestId: event.requestId,
-    messageId: event.messageId,
-    sessionId: event.sessionId,
-    cwd: event.cwd,
-    model: event.model,
-    skill,
-    attribution: skill ? "observed" : "unknown",
-    attributionMethod: info?.method ?? "unknown",
-    sidechain: false,
-    timestampMs: event.timestampMs,
-    tokens: event.tokens,
-  };
+  return buildReport(sortEvents(events.values(), options), roots, files.size, warnings, ["claude"]);
 }
 
 function rootsForSources(
@@ -1018,51 +687,23 @@ function rootsForSources(
 }
 
 export async function scanAllSources(options: AllSourceScanOptions = {}): Promise<UsageReport> {
-  const sources = [...(options.sources ?? SOURCES)];
+  const sources = [...new Set(options.sources ?? SOURCES)];
   const warnings: string[] = [];
-  const memexEvents = await loadMemexEvents(options, warnings, sources);
-  const selectedMemexEvents = memexEvents.filter((event) => sources.includes(event.source));
-  const memexSources = new Set(selectedMemexEvents.map((event) => event.source));
   const sourceRoots = rootsForSources(options, sources);
-  const attribution: AttributionIndex = { exact: new Map(), timelines: new Map(), consumed: new Set() };
-  const localEvents = new Map<string, UsageEvent>();
+  const files = new Set<string>();
+  const events = new Map<string, UsageEvent>();
 
   for (const source of sources) {
     const paths = new Set<string>();
     for (const root of sourceRoots[source]) {
       for (const file of await discoverJsonlFiles(root, warnings)) paths.add(file);
     }
-    for (const event of selectedMemexEvents) {
-      if (event.source === source) paths.add(event.sourcePath);
-    }
-
     for (const path of [...paths].sort()) {
-      await scanLocalSourceFile(
-        path,
-        source,
-        attribution,
-        localEvents,
-        warnings,
-        !memexSources.has(source),
-        { value: 0 },
-      );
+      files.add(path);
+      await scanLocalSourceFile(path, source, events, warnings);
     }
   }
-
-  const events = selectedMemexEvents.map((event) => applyAttribution(event, attribution));
-  for (const event of localEvents.values()) {
-    if (!memexSources.has(event.source)) events.push(event);
-  }
-
-  const filtered = events
-    .filter((event) => matches(event, options))
-    .sort((left, right) => {
-      if (left.timestampMs !== right.timestampMs) return left.timestampMs - right.timestampMs;
-      if (left.source !== right.source) return left.source.localeCompare(right.source);
-      return left.sourcePath.localeCompare(right.sourcePath);
-    });
 
   const roots = sources.flatMap((source) => sourceRoots[source].map((root) => resolve(root)));
-  const files = new Set(filtered.map((event) => event.sourcePath));
-  return buildReport(filtered, roots, files.size, warnings, sources);
+  return buildReport(sortEvents(events.values(), options), roots, files.size, warnings, sources);
 }

@@ -28,7 +28,6 @@ type CliOptions = {
   skill?: string;
   json: boolean;
   help: boolean;
-  noMemex: boolean;
 };
 
 function requireValue(argv: string[], index: number, option: string): string {
@@ -48,7 +47,6 @@ function parseArguments(argv: string[]): CliOptions {
     sources: [],
     json: false,
     help: false,
-    noMemex: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -73,9 +71,6 @@ function parseArguments(argv: string[]): CliOptions {
       case "--skill":
         options.skill = requireValue(argv, index, argument);
         index += 1;
-        break;
-      case "--no-memex":
-        options.noMemex = true;
         break;
       case "--json":
         options.json = true;
@@ -103,30 +98,30 @@ function formatPercent(value: number): string {
 function printHelp(): void {
   console.log(`Usage: agent-skill-usage [options]
 
-Report local agent token usage grouped by skill and harness.
+Read local token usage grouped by skill and harness.
 Supported harnesses: Claude, Codex, Pi, and OMP.
-Memex supplies normalized Claude and Codex events when available. Pi and OMP use
-local session parsers. Claude uses native attributionSkill. Other sources use an
-explicit /skill:<name> or skill://<name> invocation for one following usage
-event; ordinary user messages reset it. Later events are grouped under (none).
+This command reads local JSONL logs directly. It does not use Memex.
+Claude uses native attributionSkill. Other harnesses use a skill field or a
+skill:// read in the same usage record. Earlier user messages do not label later
+usage events. Unlinked usage is grouped under (none).
 
 Options:
   --root DIR       Claude projects directory or JSONL file (repeatable)
+  --source NAME    Limit output to claude, codex, pi, or omp (repeatable)
   --since VALUE    Include events on or after an ISO date or Unix timestamp
   --until VALUE    Include events before an ISO date or Unix timestamp
-  --skill NAME     Show only one active skill; use (none) for unknown
-  --no-memex       Skip Memex and use local source parsers
+  --skill NAME     Show only one exact skill; use (none) for unknown
   --json           Emit the report as JSON
   -h, --help       Show this help
 
 Defaults:
-  Memex usage --json --events, then ~/.claude/projects, ~/.codex/sessions,
-  ~/.pi/agent/sessions, and ~/.omp/agent/sessions for local attribution/parsing.
+  ~/.claude/projects or ~/.config/claude/projects
+  ~/.codex/sessions
+  ~/.pi/agent/sessions
+  ~/.omp/agent/sessions
 
-Attribution is observed only when a native Claude field or explicit skill
-invocation record supports it. Non-Claude attribution is one-shot: one
-invocation can label one following usage event. Unknown events are grouped
-under (none).
+Attribution is exact only when the skill is present on the usage record itself.
+Unknown events are grouped under (none).
 `);
 }
 
@@ -136,7 +131,7 @@ function renderSkillTable(summaries: readonly SkillSummary[]): string[] {
   const lines = [
     [
       "Skill".padEnd(skillWidth),
-      "Attribution".padEnd(11),
+      "Evidence".padEnd(8),
       "Requests".padStart(10),
       "Total".padStart(15),
       "Input".padStart(13),
@@ -150,7 +145,7 @@ function renderSkillTable(summaries: readonly SkillSummary[]): string[] {
     lines.push(
       [
         summary.skill.padEnd(skillWidth),
-        summary.attribution.padEnd(11),
+        summary.attribution.padEnd(8),
         formatNumber(summary.requests).padStart(10),
         formatNumber(summary.total).padStart(15),
         formatNumber(summary.input).padStart(13),
@@ -170,7 +165,7 @@ function renderSourceTable(summaries: readonly SourceSummary[]): string[] {
     [
       "Source".padEnd(sourceWidth),
       "Requests".padStart(10),
-      "Observed".padStart(10),
+      "Exact".padStart(10),
       "Unknown".padStart(10),
       "Total".padStart(15),
       "Share".padStart(8),
@@ -181,7 +176,7 @@ function renderSourceTable(summaries: readonly SourceSummary[]): string[] {
       [
         summary.source.padEnd(sourceWidth),
         formatNumber(summary.requests).padStart(10),
-        formatNumber(summary.observedRequests).padStart(10),
+        formatNumber(summary.exactRequests).padStart(10),
         formatNumber(summary.unknownRequests).padStart(10),
         formatNumber(summary.total).padStart(15),
         formatPercent(summary.share).padStart(8),
@@ -193,9 +188,9 @@ function renderSourceTable(summaries: readonly SourceSummary[]): string[] {
 
 function renderHuman(report: UsageReport): string {
   const lines = [
-    "Local agent token usage by skill",
+    "Direct local token usage by skill",
     `Files: ${formatNumber(report.files)}  Requests: ${formatNumber(report.requests)}  Tokens: ${formatNumber(report.tokens.total)}`,
-    `Attribution: observed ${formatNumber(report.attribution.observedRequests)} request(s) / ${formatNumber(report.attribution.observedTokens)} token(s); unknown ${formatNumber(report.attribution.unknownRequests)} request(s) / ${formatNumber(report.attribution.unknownTokens)} token(s)`,
+    `Exact attribution: ${formatNumber(report.attribution.exactRequests)} request(s) / ${formatNumber(report.attribution.exactTokens)} token(s); unknown ${formatNumber(report.attribution.unknownRequests)} request(s) / ${formatNumber(report.attribution.unknownTokens)} token(s)`,
     "",
     "By skill",
     ...renderSkillTable(report.bySkill),
@@ -230,7 +225,6 @@ async function main(): Promise<void> {
     sinceMs: options.sinceMs,
     untilMs: options.untilMs,
     skill: options.skill,
-    useMemex: !options.noMemex,
   });
   console.log(options.json ? JSON.stringify(report, null, 2) : renderHuman(report));
 }
