@@ -1,5 +1,5 @@
 export const TURN_RECEIPT_REMINDER =
-  "End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 120 words.";
+  "End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.";
 
 const TURN_RECEIPT_COMMAND = "receipt";
 

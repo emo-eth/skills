@@ -61,6 +61,13 @@ function lastMessageText(result: ContextResult | undefined): string {
   return item.text;
 }
 
+test("the reminder allows up to 400 words", () => {
+  assert.equal(
+    TURN_RECEIPT_REMINDER,
+    "End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.",
+  );
+});
+
 const adapters = [
   ["Pi", turnReceiptPiExtension],
   ["OMP", turnReceiptOmpExtension],

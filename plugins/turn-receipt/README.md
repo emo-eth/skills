@@ -10,14 +10,24 @@
 Turn-receipt uses the same native `context` seam as wall-clock. Each context event receives one user message containing this fixed reminder:
 
 ```text
-End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 120 words.
+End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.
 ```
 
 The package makes no model calls, has no UI, and does not provide an MCP operation. A host without the native context seam is a no-op and does not crash.
 
-## Enable and disable
+## Install, enable, and disable
 
-Load the native adapter from this checkout:
+Install from this checkout:
+
+```sh
+omp plugin install /absolute/path/to/plugins/turn-receipt
+pi install /absolute/path/to/plugins/turn-receipt
+```
+
+Start a new OMP or Pi process after installing. The package is enabled by
+default and uses the native `context` event.
+
+For a one-process load without installing:
 
 ```sh
 omp --extension /absolute/path/to/plugins/turn-receipt/src/omp.ts
