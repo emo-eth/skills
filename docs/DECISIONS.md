@@ -202,7 +202,7 @@ Why: "never delegate understanding... 'raw information plus intuition plus itera
 Alternatives: Let agent conclusions stand in for user understanding when the user is busy (rejected because it erodes exactly the compounding the toolchain exists to support).
 Consequences: V4 added to docs/vibe.md. lc-ticketize tickets only what is already understood. Any tool whose output cannot be explained back by the user violates the vibe.
 Source: plannotator round on docs/vibe.md, 2026-08-13
-Status: active
+Status: superseded-by D29
 Scope: v0
 Load-bearing: yes
 
@@ -243,7 +243,7 @@ Why: "i think our bigger problem is simply that we haven't been breaking down de
 Alternatives: Mandate an implement/verify sub-task split for every ticket (rejected as over-indexing on one axis of hidden work).
 Consequences: V3 rewritten as "Deliverables get broken down". Proposal P1 for lc-ticketize changes shape: no mandated split; instead decomposition guidance plus named proof.
 Source: plannotator round on docs/vibe.md, 2026-08-13
-Status: active
+Status: superseded-by D28
 Scope: v0
 Load-bearing: yes
 
@@ -274,6 +274,60 @@ Load-bearing: no
 Decision: Clarity pipelines stay small: three stages is ideal, four or five in practice, settled by iterating rather than by rule; the pipeline should be as painless and fast as possible while still productive.
 Why: "20 stages isn't better than nothing-at-all. 3 stages is idealy; probably 4 or 5, but we have to iterate... should be as painless and fast as possible while also as productive as possible" - Plannotator annotation, vibe.md round 1 (item 20).
 Consequences: docs/vibe.md V2 adopts this framing. Any proposed pipeline with more than five stages carries the burden of proof.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D27 - 2026-08-13 - The vibe is the source of truth; the artifact chain is a facet
+
+Decision: docs/vibe.md is the source of truth for this repo's philosophy. The lc-north-star artifact chain (dump, vibe, PRD, spec, plan, tickets) is one downstream facet of it, not a separate or fixed system, and is updated or replaced as the vibe iterates.
+Why: "i think ideally we replace/update this chain. it's not a source of truth or a separate system; it's a facet of the system/vibe we are cultivating (one that will need updating as we iterate on this vibe, which is the source of truth)" - Plannotator annotation, vibe.md round 2 (item 1).
+Alternatives: Treat the chain as fixed infrastructure the vibe must fit into (rejected because it inverts the authority); treat chain and vibe as independent systems (rejected because the chain is downstream).
+Consequences: After vibe approval, lc-north-star and docs/lifecycle.md are revised to declare the vibe upstream. All skills and tools answer to the vibe.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D28 - 2026-08-13 - Deliverables are one ticket plus enumerated sub-tickets
+
+Decision: Decomposition targets deliverables. A deliverable is one ticket; its components are sub-tickets that must also be tracked and enumerated. Implement/verify remains one common split, applied with judgment, not a dichotomy; dependencies between tasks are named.
+Why: "the deliverable is one ticket; the components are sub-tickets that must also be tracked and enumerated" - Plannotator annotation, vibe.md round 2 (item 2).
+Alternatives: A multi-component deliverable as a single flat ticket with no tracked sub-tickets (rejected because components then hide); forcing every component into a separate top-level ticket (rejected because the deliverable loses its single handle).
+Consequences: Supersedes D23, carrying forward its decomposition intent. lc-ticketize's eventual revision must model deliverable ticket plus enumerated sub-tickets.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D29 - 2026-08-13 - Understanding is symbiotic
+
+Decision: The user strives for understanding; the system strives to measure and ensure it, and the system has failed if it cannot guide the user there. Once the user has full understanding, the user guides the system. Understanding is never delegated away; conclusions carry provenance; agents fetch, filter, and propose.
+Why: "the user does not own understanding; the user strives for understanding, and the system strives to measure and ensure their understanding. the system has failed if it cannot guide the user to understanding. once the user has full understanding, the user can guide the system. it is symbiotic." - Plannotator annotation, vibe.md round 2 (item 4); probing/measurement from item 6.
+Alternatives: The user owns understanding unaided (rejected: the system then has no failure mode when the user is lost); the system owns understanding (rejected: that is delegation).
+Consequences: Supersedes D19, carrying forward "never delegate understanding" and provenance. V4 rewritten around symbiosis; the system needs probing and measurement mechanisms (teach-back, spot questions) as first-class features.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D30 - 2026-08-13 - Existing skills are seeds, not fixtures
+
+Decision: Existing skills and tools are seeds and context - works in progress, some to be scrapped. Nothing is load-bearing merely because it exists, and iterations on any of them (ticketize included) are downstream of this vibe. Do not be poisoned by existing context and history.
+Why: "do not over-index on existing skills; if the skills worked, we would not need this vibe doc or to plan this system. they are seeds and context. they are works in progress, or (often) work that should be scrapped. crucial: do not be poisoned by existing context and history" - Plannotator annotation, vibe.md round 2 (item 5); item 3 on ticketize.
+Alternatives: Treat shipped skills as the baseline to preserve (rejected because it anchors the new system to the old one's assumptions).
+Consequences: docs/vibe.md carries the seed caveat above its clauses. Future skill work may scrap and rebuild rather than amend.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D31 - 2026-08-13 - At most two fix rounds per doc; aim for one
+
+Decision: Review of a written doc converges fast: at most two fix rounds, and the goal is one. A doc needing a third fix round signals the draft process failed, not that a third round should happen.
+Why: "minimal fix-rounds. i want to say max 2. avoid 2 if possible" - Plannotator annotation, vibe.md round 2 (item 8).
+Consequences: Drafts are written to converge (self-contained, glossary first, non-prescriptive per D17). lc-review-capture's rounds stay bounded per D26's stage discipline.
 Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
