@@ -297,7 +297,7 @@ test("do-it-now arms a bounded fast lane and permits bounded delegation", async 
     input: { task: "Update the title" },
   }, ctx) as { block: boolean; reason: string };
   assert.equal(unbounded.block, true);
-  assert.match(unbounded.reason, /exactly one active, unbound/);
+  assert.match(unbounded.reason, /active, unbound/);
 
   controller.assign("main", {
     parentPlanItemId: "item-1",
@@ -474,6 +474,43 @@ test("terminal OMP agent end clears a fast lane", async () => {
 
   await host.emit("agent_end", { willContinue: false }, ctx);
   assert.equal(controller.status("main").active, false);
+});
+
+test("terminal OMP agent end clears an explicit wallclock contract", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  await host.emit("agent_end", { willContinue: true }, ctx);
+  assert.equal(controller.status("main").active, true);
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  assert.equal(controller.status("main").active, false);
+});
+
+test("terminal settlement clears an explicit wallclock contract for a normal follow-up", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-pi", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  assert.equal(controller.status("main").active, true);
+  await host.emit("agent_settled", {}, ctx);
+
+  assert.equal(controller.status("main").active, false);
+  assert.equal(await host.emit("tool_call", { toolCallId: "normal-follow-up", toolName: "read", input: {} }, ctx), undefined);
 });
 
 test("Pi-shaped host injects measured context and blocks expired work before execution", async () => {
@@ -686,7 +723,13 @@ test("parent and child action identifiers are isolated by native session", async
   const childHost = new FakeHost(events);
   const options = {
     coordination,
-    enforcement: { name: "fake-omp", canBlockNew: true },
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
     schedule: () => "timer",
     cancelSchedule: () => undefined,
   } as const;
@@ -714,7 +757,7 @@ test("parent and child action identifiers are isolated by native session", async
   assert.equal(controller.runningActions("main").length, 0);
 });
 
-test("delegation requires exactly one unbound assignment and blocks batch tasks", async () => {
+test("delegation supports atomic inline batch assignments", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as any, {
@@ -728,13 +771,163 @@ test("delegation requires exactly one unbound assignment and blocks batch tasks"
 
   const missing = await host.emit("tool_call", { toolCallId: "task-1", toolName: "task", input: { task: "Do work" } }, ctx) as any;
   assert.equal(missing.block, true);
-  assert.match(missing.reason, /exactly one active, unbound/);
+  assert.match(missing.reason, /active, unbound/);
 
   controller.assign("main", { parentPlanItemId: "one", objective: "One", scope: ["one"], acceptance: ["done"], budgetMs: 5_000 });
-  const batch = await host.emit("tool_call", { toolCallId: "task-2", toolName: "task", input: { tasks: [{ task: "One" }] } }, ctx) as any;
-  assert.equal(batch.block, true);
-  assert.match(batch.reason, /batch delegation is blocked/);
+  const beforeInvalidBatch = controller.snapshot("main")?.assignments.length;
+  const invalidBatch = await host.emit("tool_call", {
+    toolCallId: "invalid-batch",
+    toolName: "task",
+    input: {
+      tasks: [
+        { task: "Valid", wallClock: { parentPlanItemId: "one", objective: "Valid", scope: ["one"], acceptance: ["Return"], budgetMs: 5_000 } },
+        { task: "Invalid", wallClock: { parentPlanItemId: "one", objective: "Invalid", scope: ["two"], acceptance: ["Return"] } },
+      ],
+    },
+  }, ctx) as { block: boolean; reason: string };
+  assert.equal(invalidBatch.block, true);
+  assert.match(invalidBatch.reason, /budgetMs must be positive/);
+  assert.equal(controller.snapshot("main")?.assignments.length, beforeInvalidBatch);
+  const taskEvent = {
+    toolCallId: "task-2",
+    toolName: "task",
+    input: {
+      tasks: [
+        {
+          task: "Inspect one",
+          wallClock: { parentPlanItemId: "one", objective: "Inspect one", scope: ["one"], acceptance: ["Return one"], budgetMs: 5_000 },
+        },
+        {
+          task: "Inspect two",
+          wallClock: { parentPlanItemId: "one", objective: "Inspect two", scope: ["two"], acceptance: ["Return two"], budgetMs: 5_000 },
+        },
+      ],
+    },
+  };
+  assert.equal(await host.emit("tool_call", taskEvent, ctx), undefined);
+  assert.match(taskEvent.input.tasks[0].task, /Assignment assignment-2/);
+  assert.equal("wallClock" in taskEvent.input.tasks[0], false);
+  assert.equal(controller.snapshot("main")?.assignments.length, 3);
+  await host.emitBus("task:subagent:lifecycle", { id: "child-one", sessionFile: "child-one", status: "started", parentToolCallId: "task-2", index: 0 });
+  await host.emitBus("task:subagent:lifecycle", { id: "child-two", sessionFile: "child-two", status: "started", parentToolCallId: "task-2", index: 1 });
+  assert.equal(controller.status("main", "assignment-2").assignment?.childSessionId, "child-one");
+  assert.equal(controller.status("main", "assignment-3").assignment?.childSessionId, "child-two");
+  await host.emitBus("task:subagent:lifecycle", { id: "child-one", sessionFile: "child-one", status: "completed", parentToolCallId: "task-2", index: 0 });
+  await host.emitBus("task:subagent:lifecycle", { id: "child-two", sessionFile: "child-two", status: "completed", parentToolCallId: "task-2", index: 1 });
+  assert.equal(controller.runningActions("main").length, 0);
 });
+test("block-new child work stops at the parent deadline", async () => {
+  let now = 1_000;
+  const scheduled: Array<() => void> = [];
+  const abortRequests: any[] = [];
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: (request) => { abortRequests.push(request); },
+      abortObserved: () => true,
+    },
+    schedule: (callback) => { scheduled.push(callback); return callback; },
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as any, options);
+  installHostExtension(childHost as any, options);
+  const parentCtx = context("main", [], () => undefined);
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", parentCtx);
+
+  const taskEvent = {
+    toolCallId: "batch-call",
+    toolName: "task",
+    input: {
+      tasks: [{
+        task: "Inspect the module",
+        wallClock: {
+          parentPlanItemId: "inspect",
+          objective: "Inspect the module",
+          scope: ["src"],
+          acceptance: ["Return findings"],
+          budgetMs: 60_000,
+        },
+      }],
+    },
+  };
+  await parentHost.emit("tool_call", taskEvent, parentCtx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "child-agent",
+    sessionFile: "child-session",
+    status: "started",
+    parentToolCallId: "batch-call",
+    index: 0,
+  });
+
+  const childCtx = context("child-session", [], () => undefined);
+  await childHost.emit("session_start", {}, childCtx);
+  await childHost.emit("tool_call", { toolCallId: "child-read", toolName: "read", input: {} }, childCtx);
+
+  now = 61_000;
+  for (const callback of scheduled) callback();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(abortRequests.length, 1);
+  assert.equal(abortRequests[0].targets.length, 1);
+  assert.match(abortRequests[0].targets[0].actionId, /child-read/);
+  assert.equal(controller.status("main").phase, "expired");
+});
+
+test("child work is rejected when the host cannot enforce its inherited deadline", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: { name: "fake-host", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as any, options);
+  installHostExtension(childHost as any, options);
+  const parentCtx = context();
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", parentCtx);
+  await parentHost.emit("tool_call", {
+    toolCallId: "batch-call",
+    toolName: "task",
+    input: {
+      tasks: [{
+        task: "Inspect the module",
+        wallClock: {
+          parentPlanItemId: "inspect",
+          objective: "Inspect the module",
+          scope: ["src"],
+          acceptance: ["Return findings"],
+          budgetMs: 60_000,
+        },
+      }],
+    },
+  }, parentCtx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "child-agent",
+    sessionFile: "child-session",
+    status: "started",
+    parentToolCallId: "batch-call",
+    index: 0,
+  });
+  const blocked = await childHost.emit("tool_call", {
+    toolCallId: "child-read",
+    toolName: "read",
+    input: {},
+  }, context("child-session")) as any;
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /host abort seam/);
+});
+
 
 test("inference timing ends when the assistant message stream ends", async () => {
   let now = 1_000;
@@ -841,7 +1034,13 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
   const childHost = new FakeHost(events);
   const hostOptions = {
     coordination,
-    enforcement: { name: "fake-omp", canBlockNew: true },
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
     schedule: () => "timer",
     cancelSchedule: () => undefined,
   } as const;
@@ -864,6 +1063,9 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
 
   await events.emit("task:subagent:lifecycle", { id: "child-agent", sessionFile: "child-session", status: "started", parentToolCallId: "task-call" });
   assert.equal(controller.status("main", assignment.id).assignment?.childSessionId, "child-session");
+
+  await parentHost.emit("agent_end", { willContinue: false }, ctx);
+  assert.equal(controller.status("main").active, true);
   const childCtx = context("child-session");
   await childHost.emit("session_start", {}, childCtx);
   const childContext = await childHost.emit("context", { messages: [] }, childCtx) as any;
@@ -918,6 +1120,8 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
     input: { result: { data: "reported" } },
   }, childCtx);
   assert.equal(allowedYield, undefined);
+  await events.emit("task:subagent:lifecycle", { id: "child-agent", sessionFile: "child-session", status: "completed", parentToolCallId: "task-call" });
+  assert.equal(controller.status("main").active, false);
 });
 
 test("a child lifecycle end without a report produces a blocked fallback report", async () => {

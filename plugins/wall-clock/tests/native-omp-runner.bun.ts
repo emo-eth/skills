@@ -257,7 +257,28 @@ test("OMP native fast lane requires bounded delegation from an explicit do-it-no
       input: { task: "Refresh the ticket list" },
     } as any);
     expect(blocked?.block).toBe(true);
-    expect(blocked?.reason ?? "").toMatch(/exactly one active, unbound/);
+    expect(blocked?.reason ?? "").toMatch(/active, unbound/);
+    const batchInput = {
+      tasks: [{
+        task: "Refresh the ticket list",
+        wallClock: {
+          parentPlanItemId: "refresh",
+          objective: "Refresh the ticket list",
+          scope: ["tickets"],
+          acceptance: ["Return the refreshed list"],
+          budgetMs: 30_000,
+        },
+      }],
+    };
+    const admitted = await runner.emitToolCall({
+      type: "tool_call",
+      toolCallId: "fast-lane-batch",
+      toolName: "task",
+      input: batchInput,
+    } as any);
+    expect(admitted).toBeUndefined();
+    expect(batchInput.tasks[0]?.task ?? "").toMatch(/Assignment assignment-1/);
+    expect(batchInput.tasks[0]?.wallClock).toBeUndefined();
   } finally {
     await session.dispose();
     rmSync(root, { recursive: true, force: true });
