@@ -132,12 +132,12 @@ Status: active
 Scope: v0
 Load-bearing: no
 
-## D14 - 2026-08-12 - Give do-it-now two minutes
+## D14 - 2026-08-12 - Give fast lanes two minutes
 
-Decision: The native do-it-now lane uses a two-minute hard deadline, `abort-running`, no delegation, and 12 ordinary tool calls.
-Why: Ninety seconds leaves too little margin for host and model startup plus one slow external operation. Two minutes remains a hard ceiling while keeping the lane focused.
-Alternatives: Keep 90 seconds (rejected because it is too brittle for simple updates); remove the hard limit (rejected because it would recreate the delay this lane is meant to prevent).
-Consequences: The native host, bundled skills, documentation, and focused host test all use the two-minute limit. The existing 15-second pre-deadline interval is unchanged.
+Decision: The native do-it-now and wrap-it-up lanes use a two-minute hard deadline, `abort-running`, bounded delegation through one wall-clock assignment while active, and 12 ordinary tool calls. Wrap-up still blocks new delegation and destructive work.
+Why: Two minutes leaves margin for host and model startup plus one slow external operation. Bounded delegation can reduce uncertainty or finish independent work faster without weakening the phase gate.
+Alternatives: Keep no delegation (rejected because it prevents useful parallel work); remove the hard limit (rejected because it would recreate the delay these lanes are meant to prevent).
+Consequences: Fast-lane delegation must use one active unbound assignment; batch and nested delegation remain blocked. The 15-second pre-deadline interval is unchanged.
 Status: active
 Scope: v0
 Load-bearing: no

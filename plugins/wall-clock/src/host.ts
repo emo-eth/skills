@@ -348,7 +348,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     fastLanes.set(sessionId, { ...invocation, request: invocation.request || "the current user request", toolCalls: 0 });
     notify(
       ctx,
-      `${config.displayName} active: ${config.durationMs / 1_000}s hard deadline, abort-running, delegation blocked, ${FAST_LANE_MAX_TOOL_CALLS} tool calls maximum`,
+      `${config.displayName} active: ${config.durationMs / 1_000}s hard deadline, abort-running, bounded delegation allowed before wrap-up, ${FAST_LANE_MAX_TOOL_CALLS} tool calls maximum`,
       "info",
     );
     return status;
@@ -453,7 +453,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const contextText = [
       controller.context(scope.sessionId, scope.assignmentId),
       fastLane
-        ? `${FAST_LANE_CONFIGS[fastLane.kind].displayName} host guard: execute only ${fastLane.request}; do not delegate or add adjacent work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
+        ? `${FAST_LANE_CONFIGS[fastLane.kind].displayName} host guard: execute only ${fastLane.request}; use one bounded wall-clock assignment for independent work before wrap-up; do not add adjacent non-delegated work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
         : undefined,
     ].filter((part): part is string => part !== undefined).join("\n");
     return {
@@ -541,9 +541,6 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const fastLane = fastLanes.get(scope.sessionId);
     const fastLaneConfig = fastLane ? FAST_LANE_CONFIGS[fastLane.kind] : undefined;
     if (fastLane && fastLaneConfig && !nativeTool) {
-      if (action === "delegate" || /task|spawn|delegate|assign/i.test(toolName)) {
-        return { block: true, reason: `${fastLaneConfig.displayName} blocks delegation; complete the current request in this session` };
-      }
       if (fastLane.toolCalls >= FAST_LANE_MAX_TOOL_CALLS) {
         return { block: true, reason: `${fastLaneConfig.displayName} reached its ${FAST_LANE_MAX_TOOL_CALLS}-tool limit` };
       }

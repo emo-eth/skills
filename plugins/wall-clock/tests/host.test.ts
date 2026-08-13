@@ -258,7 +258,7 @@ test("inactive host sessions do not change delegation or ordinary tool calls", a
   assert.equal(controller.runningActions("main").length, 0);
 });
 
-test("do-it-now arms a bounded fast lane and blocks delegation", async () => {
+test("do-it-now arms a bounded fast lane and permits bounded delegation", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as any, {
@@ -291,15 +291,29 @@ test("do-it-now arms a bounded fast lane and blocks delegation", async () => {
   assert.match(contextResult.messages[0].content[0].text, /update the ticket title/);
   assert.match(contextResult.messages[0].content[0].text, /12 tool calls remain/);
 
-  const delegated = await host.emit("tool_call", {
+  const unbounded = await host.emit("tool_call", {
+    toolCallId: "unbounded",
+    toolName: "task",
+    input: { task: "Update the title" },
+  }, ctx) as { block: boolean; reason: string };
+  assert.equal(unbounded.block, true);
+  assert.match(unbounded.reason, /exactly one active, unbound/);
+
+  controller.assign("main", {
+    parentPlanItemId: "item-1",
+    objective: "Update the title",
+    scope: ["ticket"],
+    acceptance: ["Return the updated title"],
+    budgetMs: 30_000,
+  });
+  assert.equal(await host.emit("tool_call", {
     toolCallId: "delegated",
     toolName: "task",
     input: { task: "Update the title" },
-  }, ctx) as any;
-  assert.equal(delegated.block, true);
-  assert.match(delegated.reason, /blocks delegation/);
+  }, ctx), undefined);
+  await host.emit("tool_result", { toolCallId: "delegated", toolName: "task", isError: false }, ctx);
 
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index < 11; index += 1) {
     const toolCallId = `fast-lane-${index}`;
     assert.equal(await host.emit("tool_call", { toolCallId, toolName: "read", input: {} }, ctx), undefined);
     await host.emit("tool_result", { toolCallId, toolName: "read", isError: false }, ctx);
@@ -308,7 +322,7 @@ test("do-it-now arms a bounded fast lane and blocks delegation", async () => {
     toolCallId: "over-limit",
     toolName: "read",
     input: {},
-  }, ctx) as any;
+  }, ctx) as { block: boolean; reason: string };
   assert.equal(overLimit.block, true);
   assert.match(overLimit.reason, /12-tool limit/);
 });
@@ -342,7 +356,7 @@ test("do-it-now custom skill messages arm the host guard", async () => {
   assert.match(contextResult.messages[0].content[0].text, /refresh the list/);
 });
 
-test("wrap-it-up arms a two-minute fast lane and blocks delegation", async () => {
+test("wrap-it-up arms a two-minute fast lane and permits bounded delegation", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as unknown as RuntimeHost, {
@@ -375,13 +389,19 @@ test("wrap-it-up arms a two-minute fast lane and blocks delegation", async () =>
   assert.match(contextResult.messages[0].content[0].text, /Wrap-it-up host guard/);
   assert.match(contextResult.messages[0].content[0].text, /finish the active task/);
 
-  const delegated = await host.emit("tool_call", {
+  controller.assign("main", {
+    parentPlanItemId: "item-1",
+    objective: "Finish the active task",
+    scope: ["ticket"],
+    acceptance: ["Return the finished result"],
+    budgetMs: 30_000,
+  });
+  assert.equal(await host.emit("tool_call", {
     toolCallId: "wrap-up-delegated",
     toolName: "task",
     input: { task: "Finish the task" },
-  }, ctx) as { block: boolean; reason: string };
-  assert.equal(delegated.block, true);
-  assert.match(delegated.reason, /Wrap-it-up blocks delegation/);
+  }, ctx), undefined);
+  await host.emit("tool_result", { toolCallId: "wrap-up-delegated", toolName: "task", isError: false }, ctx);
 });
 test("expired wrap-it-up guard remains enforced after agent end", async () => {
   let now = 1_000;

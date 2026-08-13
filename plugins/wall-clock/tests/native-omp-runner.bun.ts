@@ -221,7 +221,7 @@ test("OMP native wallclock command starts the trailing prompt after activation",
   }
 }, 30_000);
 
-test("OMP native fast lane blocks delegation from an explicit do-it-now skill", async () => {
+test("OMP native fast lane requires bounded delegation from an explicit do-it-now skill", async () => {
   const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-fast-lane-"));
   const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
   const { session } = await createAgentSession({
@@ -257,7 +257,7 @@ test("OMP native fast lane blocks delegation from an explicit do-it-now skill", 
       input: { task: "Refresh the ticket list" },
     } as any);
     expect(blocked?.block).toBe(true);
-    expect(blocked?.reason ?? "").toMatch(/blocks delegation/);
+    expect(blocked?.reason ?? "").toMatch(/exactly one active, unbound/);
   } finally {
     await session.dispose();
     rmSync(root, { recursive: true, force: true });
