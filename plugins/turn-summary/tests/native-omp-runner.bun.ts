@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentSession, SessionManager } from "@oh-my-pi/pi-coding-agent";
-import { TURN_RECEIPT_REMINDER } from "../src/receipt.ts";
+import { TURN_SUMMARY_REMINDER } from "../src/summary.ts";
 
 const pluginRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -81,7 +81,7 @@ function initializeRunner(session: { extensionRunner: unknown; model: unknown },
 }
 
 test("OMP ExtensionRunner loads the adapter and injects the reminder through context", async () => {
-  const root = mkdtempSync(join(tmpdir(), "turn-receipt-omp-runner-"));
+  const root = mkdtempSync(join(tmpdir(), "turn-summary-omp-runner-"));
   const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
   const { session } = await createAgentSession({
     cwd: pluginRoot,
@@ -99,10 +99,10 @@ test("OMP ExtensionRunner loads the adapter and injects the reminder through con
   try {
     const runner = initializeRunner(session, sessionManager);
     await runner.emit({ type: "session_start" });
-    const command = runner.getCommand("receipt");
+    const command = runner.getCommand("summary");
     expect(command).toBeDefined();
-    expect(messageText(await runner.emitContext([]))).toBe(TURN_RECEIPT_REMINDER);
-    expect(messageText(await runner.emitContext([]))).toBe(TURN_RECEIPT_REMINDER);
+    expect(messageText(await runner.emitContext([]))).toBe(TURN_SUMMARY_REMINDER);
+    expect(messageText(await runner.emitContext([]))).toBe(TURN_SUMMARY_REMINDER);
   } finally {
     await session.dispose();
     rmSync(root, { recursive: true, force: true });

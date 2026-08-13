@@ -19,7 +19,7 @@ Definitions here describe, they do not prescribe. Where a term names a pattern, 
 - **Verify tail**: the prove-it work that can hide inside an apparently atomic task. Not every task has one; the habit is to look, not to assume.
 - **Proof needed**: existing repo term (lc-ticketize, standup): the observable check that closes a ticket.
 - **Taste signal**: a recorded gut call, such as one pairwise comparison or one keep/drop decision, kept so that future agents might inherit the user's judgment. Whether the current mechanisms actually achieve that inheritance is unproven.
-- **Turn receipt**: a fixed short block at the end of an agent turn: what happened, what the agent needs, open questions, what is next.
+- **Turn summary**: a fixed short block at the end of an agent turn: what happened, what the agent needs, open questions, what is next.
 - **Yearn**: an existing user-facing capture for anything the user yearns for; not specific to skills. A skill-scoped variant has been proposed but is a separate, not-yet-named thing; it is not yearn.
 - **Papercut**: existing repo term: a small tool or workflow friction logged in the moment it happens.
 - **Top-k**: picking the best k items out of a pile without ordering the whole pile. A sibling idea under exploration: tiered heaps, dropping items into a few coarse tiers instead of a precise order.
@@ -59,7 +59,7 @@ Agent-communication preferences from the same dump (deliberately filed under the
 
 - Triaging a large pile (tickets, skills, options) in one sitting, fast.
 - Working with ADHD: ideally in uninterrupted blocks; in practice interruptions happen, so what matters is that an interruption costs as little as possible and sifting resumes with minimal context loss.
-- Reading agent output while distracted. Most turns, only the receipt gets read.
+- Reading agent output while distracted. Most turns, only the summary gets read.
 - Iterating on a skill inside a single sitting.
 - Receiving an unstructured word dump and needing it to become actionable without heavy process.
 - Running parallel agents across worktrees, where decisions must survive context death.
@@ -124,13 +124,13 @@ One caveat applies to every example below: the tools and skills named are seeds 
 - Violation: "I should remember to fix that skill" said in chat and lost; friction reconstructed in a retro that half-remembers what hurt.
 - Check: the logs show entries written mid-task, timestamped, one or two sentences each.
 
-## Companion clause: every turn ends with a receipt
+## Companion clause: every turn ends with a summary
 
 This one is an agent-communication preference, not part of the sifting strategy. It is recorded here because it governs every agent working in this repo, and the user wants it held: "this is my overall vibe for interacting with the agent but i fear this is separate from the sifting strategy. but i do want this."
 
 - Promise: every agent turn ends in a fixed, short block: what happened, what the agent needs from the user, open questions, what happens next. The user can read only that block and lose nothing.
-- Example: a standing instruction in the files every agent reads is one candidate mechanism; a pi/omp extension that builds the receipt with a fast model at turn end is another. The mechanism is undecided; the feel is not.
-- Does not mean: hiding detail the user asked for. The receipt is the default ending, not a cap on what a turn may contain.
+- Example: a standing instruction in the files every agent reads is one candidate mechanism; a pi/omp extension that builds the summary with a fast model at turn end is another. The mechanism is undecided; the feel is not.
+- Does not mean: hiding detail the user asked for. The summary is the default ending, not a cap on what a turn may contain.
 - Violation: a turn that trails off in prose, buries its question in paragraph four, or scatters action items through the transcript.
 - Check: pick any turn at random. The last screen alone answers: what happened, what do you need from me, what is next.
 
@@ -147,7 +147,7 @@ This one is an agent-communication preference, not part of the sifting strategy.
 | Decisions that live only in the transcript | The user's judgment never becomes inheritable | V5 |
 | Loops too slow to finish in one sitting | Unmeasured, slow loops get abandoned; skills accumulate sediment | V6 |
 | "Remind me to fix that later" | Friction logged nowhere is friction kept forever | V7 |
-| Walls of text with the question buried somewhere inside | The user cannot find what the agent needs from them | Receipt |
+| Walls of text with the question buried somewhere inside | The user cannot find what the agent needs from them | Summary |
 
 ## Approval
 

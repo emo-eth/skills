@@ -414,3 +414,16 @@ Source: user chat message, 2026-08-13
 Status: active
 Scope: v0 (v1); v1+ (v2, v3)
 Load-bearing: no
+
+## D38 - 2026-08-13 - Turn summary replaces turn receipt as the current name
+
+Decision: The current product name, package name, native command, and user-facing reminder use "summary" instead of "receipt". The package is `turn-summary`, the command is `/summary on|off`, and the old package and command are removed rather than kept as aliases. Historical decision and review records retain their original wording.
+
+Why: The user requested "change name to summary;replace" after asking what "receipt" meant.
+
+Consequences: Current code and current contract documents use summary terminology. Existing Pi and OMP processes must restart after the package replacement; new processes load the renamed package.
+
+Source: user chat message, 2026-08-13
+Status: active
+Scope: v0 (v1)
+Load-bearing: no

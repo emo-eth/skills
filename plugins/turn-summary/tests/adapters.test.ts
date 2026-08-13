@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import turnReceiptOmpExtension from "../src/omp.ts";
-import { TURN_RECEIPT_REMINDER } from "../src/receipt.ts";
-import turnReceiptPiExtension from "../src/pi.ts";
+import turnSummaryOmpExtension from "../src/omp.ts";
+import { TURN_SUMMARY_REMINDER } from "../src/summary.ts";
+import turnSummaryPiExtension from "../src/pi.ts";
 
 type Handler = (event: unknown, context: unknown) => unknown;
 type Command = {
@@ -63,14 +63,14 @@ function lastMessageText(result: ContextResult | undefined): string {
 
 test("the reminder allows up to 400 words", () => {
   assert.equal(
-    TURN_RECEIPT_REMINDER,
-    "End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.",
+    TURN_SUMMARY_REMINDER,
+    "End this turn with a summary: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.",
   );
 });
 
 const adapters = [
-  ["Pi", turnReceiptPiExtension],
-  ["OMP", turnReceiptOmpExtension],
+  ["Pi", turnSummaryPiExtension],
+  ["OMP", turnSummaryOmpExtension],
 ] as const;
 
 for (const [name, adapter] of adapters) {
@@ -86,47 +86,47 @@ for (const [name, adapter] of adapters) {
     assert.ok(first);
     assert.deepEqual(first.messages, [
       existingMessage,
-      { role: "user", content: [{ type: "text", text: TURN_RECEIPT_REMINDER }] },
+      { role: "user", content: [{ type: "text", text: TURN_SUMMARY_REMINDER }] },
     ]);
     assert.ok(second);
     assert.deepEqual(second.messages, [
-      { role: "user", content: [{ type: "text", text: TURN_RECEIPT_REMINDER }] },
+      { role: "user", content: [{ type: "text", text: TURN_SUMMARY_REMINDER }] },
     ]);
   });
 
   test(`${name} toggle command disables and re-enables the reminder`, async () => {
     const host = new Host();
     const controller = adapter(host);
-    const command = host.commands.get("receipt");
+    const command = host.commands.get("summary");
     assert.ok(command);
 
     await command.handler("off", host.context());
     assert.equal(controller?.isEnabled(), false);
     assert.equal(await host.emitContext([]), undefined);
-    assert.deepEqual(host.notices, ["Turn receipt reminder disabled"]);
+    assert.deepEqual(host.notices, ["Turn summary reminder disabled"]);
 
     await command.handler("on", host.context());
     assert.equal(controller?.isEnabled(), true);
-    assert.equal(lastMessageText(await host.emitContext([])), TURN_RECEIPT_REMINDER);
-    assert.deepEqual(host.notices, ["Turn receipt reminder disabled", "Turn receipt reminder enabled"]);
+    assert.equal(lastMessageText(await host.emitContext([])), TURN_SUMMARY_REMINDER);
+    assert.deepEqual(host.notices, ["Turn summary reminder disabled", "Turn summary reminder enabled"]);
 
-    assert.throws(() => command.handler("maybe", host.context()), /Usage: \/receipt on\|off/);
+    assert.throws(() => command.handler("maybe", host.context()), /Usage: \/summary on\|off/);
   });
 }
 
 test("a host without the optional command seam still receives the reminder", async () => {
   const host = new ContextOnlyHost();
-  assert.doesNotThrow(() => turnReceiptOmpExtension(host));
-  assert.equal(lastMessageText(await host.emitContext()), TURN_RECEIPT_REMINDER);
+  assert.doesNotThrow(() => turnSummaryOmpExtension(host));
+  assert.equal(lastMessageText(await host.emitContext()), TURN_SUMMARY_REMINDER);
 });
 
 test("hosts without the native context seam fail closed without crashing", () => {
-  assert.doesNotThrow(() => turnReceiptPiExtension({}));
-  assert.doesNotThrow(() => turnReceiptOmpExtension(null));
+  assert.doesNotThrow(() => turnSummaryPiExtension({}));
+  assert.doesNotThrow(() => turnSummaryOmpExtension(null));
 });
 
 test("a throwing host registration seam fails closed without crashing", () => {
   const host = { on: () => { throw new Error("unsupported host"); } };
-  assert.doesNotThrow(() => turnReceiptPiExtension(host));
-  assert.doesNotThrow(() => turnReceiptOmpExtension(host));
+  assert.doesNotThrow(() => turnSummaryPiExtension(host));
+  assert.doesNotThrow(() => turnSummaryOmpExtension(host));
 });

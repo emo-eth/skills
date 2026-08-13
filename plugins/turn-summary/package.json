@@ -1,5 +1,5 @@
 {
-  "name": "@emo-eth/turn-receipt-plugin",
+  "name": "@emo-eth/turn-summary-plugin",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
   "keywords": [
     "pi-package",
     "omp-package",
-    "turn-receipts"
+    "turn-summaries"
   ],
   "pi": {
     "extensions": [
@@ -22,7 +22,7 @@
     ]
   },
   "exports": {
-    ".": "./src/receipt.ts",
+    ".": "./src/summary.ts",
     "./pi": "./src/pi.ts",
     "./omp": "./src/omp.ts"
   },

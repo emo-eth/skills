@@ -1,15 +1,15 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "turn-receipt",
+  "name": "turn-summary",
   "version": "0.1.0",
-  "description": "Remind each native agent turn to end with a short receipt.",
+  "description": "Remind each native agent turn to end with a short summary.",
   "author": {
     "name": "emo-eth",
     "url": "https://github.com/emo-eth"
   },
   "repository": "https://github.com/emo-eth/skills",
   "keywords": [
-    "turn receipts",
+    "turn summaries",
     "agent communication",
     "context reminder"
   ]

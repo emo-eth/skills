@@ -1,7 +1,7 @@
-export const TURN_RECEIPT_REMINDER =
-  "End this turn with a receipt: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.";
+export const TURN_SUMMARY_REMINDER =
+  "End this turn with a summary: Did / Needs you / Questions / Next. Omit empty sections. Keep it under 400 words.";
 
-const TURN_RECEIPT_COMMAND = "receipt";
+const TURN_SUMMARY_COMMAND = "summary";
 
 type RuntimeContext = {
   ui?: {
@@ -20,11 +20,11 @@ type RuntimeHost = {
   ) => void;
 };
 
-export type TurnReceiptController = {
+export type TurnSummaryController = {
   isEnabled: () => boolean;
 };
 
-export function installTurnReceipt(hostValue: unknown): TurnReceiptController | undefined {
+export function installTurnSummary(hostValue: unknown): TurnSummaryController | undefined {
   const host = asRuntimeHost(hostValue);
   if (!host?.on) return undefined;
 
@@ -38,7 +38,7 @@ export function installTurnReceipt(hostValue: unknown): TurnReceiptController | 
           ...messages,
           {
             role: "user",
-            content: [{ type: "text", text: TURN_RECEIPT_REMINDER }],
+            content: [{ type: "text", text: TURN_SUMMARY_REMINDER }],
           },
         ],
       };
@@ -49,21 +49,21 @@ export function installTurnReceipt(hostValue: unknown): TurnReceiptController | 
 
   if (host.registerCommand) {
     try {
-      host.registerCommand(TURN_RECEIPT_COMMAND, {
-        description: "Enable or disable the end-of-turn receipt reminder.",
+      host.registerCommand(TURN_SUMMARY_COMMAND, {
+        description: "Enable or disable the end-of-turn summary reminder.",
         handler: (args, context) => {
           const command = args.trim().toLowerCase();
           if (command === "on") {
             enabled = true;
-            notify(context, "Turn receipt reminder enabled");
+            notify(context, "Turn summary reminder enabled");
             return undefined;
           }
           if (command === "off") {
             enabled = false;
-            notify(context, "Turn receipt reminder disabled");
+            notify(context, "Turn summary reminder disabled");
             return undefined;
           }
-          throw new Error("Usage: /receipt on|off");
+          throw new Error("Usage: /summary on|off");
         },
       });
     } catch {
