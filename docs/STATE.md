@@ -18,6 +18,7 @@ A normal follow-up does not need `/wallclock stop`. Evidence is in
 `docs/log/2026-08-13-wall-clock-self-clear.md`.
 
 The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement. Nested assignment limits are specified but not implemented in `proposals/wall-clock/nested-assignment-limits.md`; the proposed version 4 data shape requires user sign-off before implementation.
+Turn-receipt v1 is implemented on branch `turn-receipt` at `plugins/turn-receipt/`. Its Pi and OMP native adapters use the same `context` event seam as wall-clock to append one fixed end-of-turn reminder; `/receipt on|off` uses the optional native command seam. The package has no model calls, UI, or MCP surface. Unsupported hosts fail closed. Focused Node and pinned OMP native-runner tests pass, and clean pinned OMP live evidence is recorded in `docs/log/2026-08-13-turn-receipt.md`; this branch is not pushed or merged.
 
 Known child-test boundary: the native OMP `TaskTool` tests set `async.enabled` to false, while OMP 17.2.15 defaults it to true. The nested-assignment proposal makes a one-level background-child characterization test its first gate. Current synchronous child evidence must not be presented as proof of normal background-task behavior.
 
@@ -52,6 +53,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
 | Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
 | Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, `npm test` (74 Node tests and 6 Bun native-runner tests), Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and the dated completion logs | verified-live |
+| Turn receipts | `docs/DECISIONS.md` D37, `docs/vibe.md` companion clause | `plugins/turn-receipt/` | `docs/log/2026-08-13-turn-receipt.md`, package checks, pinned OMP live request capture | verified-live |
 | Nested assignment limits | `proposals/wall-clock/nested-assignment-limits.md` | not implemented | data-shape sign-off and Gate 0 still required | proposed |
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex session inventory and transcript retrieval, with optional Herdr navigation | `memex index --include-agents` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
 | Understanding before delegation | `skills/understand/SKILL.md` | `skills/understand/SKILL.md` | skill contract inspection and fresh-eyes review | documented |
