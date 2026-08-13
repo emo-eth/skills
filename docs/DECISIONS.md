@@ -190,8 +190,27 @@ deadline until its terminal lifecycle event.
 Status: active
 Scope: v0
 Load-bearing: no
+## D18 - 2026-08-13 - Child deadlines inherit the parent hard stop
 
-## D18 - 2026-08-13 - Inline batch delegation
+Decision: Every child assignment is bounded by the earlier of its requested
+budget and the parent session's hard deadline. A child action must have a
+host action identifier and a tested abort seam before admission. When a child
+deadline expires, the host aborts running child actions even if the parent's
+expiry policy is `block-new`; that policy controls only work admitted directly
+in the parent. When the parent deadline expires, all running child actions
+are aborted.
+Why: A child that can continue after its parent budget ends violates the
+parent's time contract and can keep the overall task alive past its deadline.
+Alternatives: Let `block-new` children finish (rejected because parent time
+would not be a hard bound); rely on child instructions only (rejected because
+instructions cannot stop an already-running executor).
+Consequences: Child work fails closed on hosts without a proven abort path.
+Cancellation is reported only after the host observes the native abort result.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D19 - 2026-08-13 - Inline batch delegation
 
 Decision: An active parent may choose any number of independent child tasks in one OMP `task` call. Each item carries its own `wallClock` assignment contract; the host validates the full batch before creating assignments or children, then maps each item to one assignment and one child session.
 Why: The user explicitly wants agents to choose how many delegations they need, and one parent dispatch should not require one setup call per child.

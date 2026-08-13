@@ -61,8 +61,7 @@ This is a packaging and discovery contract. It is not an agent execution contrac
 | Before-tool interception | No | A tested native pre-action boundary is required before wall-clock can activate. |
 | Blocking a tool after expiry | No | Claim enforcement only for a tested native adapter; otherwise reject activation. |
 | Automatic child-session creation | No | Let the host create children; wall-clock records assignments and associates children where the host exposes identifiers. |
-| Passing a hard child budget into a native executor | No | Refuse activation for a policy that needs hard child enforcement unless the host exposes a tested setting or abort signal. |
-| Stopping an in-flight local tool | No | Use the selected abort policy only when the executor accepts and obeys an abort signal. |
+| Stopping an in-flight local tool | No | Use the selected abort policy only when the executor accepts and obeys an abort signal. Child assignments always require this seam, regardless of the parent policy. |
 | Cancelling a remote action | No | Require provider-specific cancellation and evidence; otherwise report running or unknown. |
 | User interface, status display, and notifications | No | Use the client's supported surfaces without treating any one user interface as portable. |
 | Installation, marketplace, permissions, or authentication policy | No | Leave these to the client. Do not present a Codex marketplace entry as part of the portable standard. |
@@ -106,7 +105,7 @@ For this product, Pi and OMP are the first native enforcement targets. Codex and
 | Inactive | The package remains dormant. No active limit exists. | No pre-action blocking. |
 | Active | Activation is rejected; there is no guidance-only active phase. | Inject measured elapsed-time context and admit only actions allowed by the host policy. |
 | Wrap-up | Activation is rejected; there is no guidance-only active phase. | Block new delegation and destructive work at the pre-action boundary. |
-| Expired | Activation is rejected; there is no guidance-only active phase. | Block every new work action. Under `block-new`, admitted work may finish; under `abort-running`, the host aborts each owned running action and records the observed result. |
+| Expired | Activation is rejected; there is no guidance-only active phase. | Block every new work action. Parent `block-new` permits already-admitted direct parent work to finish, but every child assignment remains bounded by the parent hard deadline; the host aborts running child actions at child or parent expiry. Under parent `abort-running`, the host also aborts owned direct parent actions and records observed results. |
 | Complete | The package can be discovered but cannot claim active completion behavior. | Record completion and return control to the parent. Stop a host-owned child only through a confirmed executor path. |
 
 ## Claims wall-clock may make
@@ -117,9 +116,9 @@ Wall-clock may say:
 - "This session has 12 minutes remaining."
 - "This assignment is in wrap-up, so new delegation and destructive work are not allowed."
 - "The host blocked this new tool call at its pre-action boundary."
-- "The selected `block-new` policy blocks new work while an already-admitted action may continue."
-- "The selected `abort-running` policy sent and observed an abort signal for this wall-clock-owned action."
-- "The child reported a vertical slice with these skipped checks, shortcuts, risks, and unknowns."
+- "The selected `block-new` policy blocks new parent work while an already-admitted direct parent action may continue; child assignments remain bounded by the parent hard deadline."
+- "The host sent and observed an abort signal for a running child action at its child or parent deadline."
+- "The selected `abort-running` policy sent and observed an abort signal for this wall-clock-owned parent action."
 - "The local deadline blocked new work, but an already-running remote action may continue."
 - "Activation was rejected because this client does not expose the required enforcement seam."
 
