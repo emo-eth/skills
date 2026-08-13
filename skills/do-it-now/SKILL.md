@@ -1,7 +1,7 @@
 ---
 name: do-it-now
 disable-model-invocation: true
-description: "Execute one small, explicit request in a narrow fast lane. Prefer one bounded delegated assignment when it can finish independent work faster; skip broad research and adjacent cleanup; stop at the first verified result."
+description: "Execute one small, explicit request in a narrow fast lane. Decide how many bounded delegated assignments are useful; skip broad research and adjacent cleanup; stop at the first verified result."
 argument-hint: "[small, explicit request]"
 ---
 
@@ -52,10 +52,10 @@ same turn. Return as soon as the finish line passes.
 3. Read only the files needed to complete the scope lock. Do not browse the
    repository, history, web, or unrelated records for context that cannot
    change the result.
-4. Prefer one bounded wall-clock assignment for independent work when it can
-   finish the request faster or safer. Create the assignment first and give
-   the child one objective, narrow scope, observable acceptance target, and a
-   budget below measured remaining time. Do not use batch or nested delegation.
+4. Decide how many bounded wall-clock assignments are useful for independent
+   work. Use one inline batch when several children should start together. Give
+   each child one objective, narrow scope, observable acceptance target, and a
+   budget below measured remaining time. Do not use nested delegation.
    Do not run optional skills, write a plan, create a decision or review
    artifact, update project taste, refactor nearby code, or clean up unrelated
    files.

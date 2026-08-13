@@ -137,7 +137,7 @@ Load-bearing: no
 Decision: The native do-it-now and wrap-it-up lanes use a two-minute hard deadline, `abort-running`, bounded delegation through one wall-clock assignment while active, and 12 ordinary tool calls. Wrap-up still blocks new delegation and destructive work.
 Why: Two minutes leaves margin for host and model startup plus one slow external operation. Bounded delegation can reduce uncertainty or finish independent work faster without weakening the phase gate.
 Alternatives: Keep no delegation (rejected because it prevents useful parallel work); remove the hard limit (rejected because it would recreate the delay these lanes are meant to prevent).
-Consequences: Fast-lane delegation must use one active unbound assignment; batch and nested delegation remain blocked. The 15-second pre-deadline interval is unchanged.
+Consequences: Fast-lane delegation may use any number of independently bounded inline batch items. Nested delegation remains blocked. The 15-second pre-deadline interval is unchanged.
 Status: active
 Scope: v0
 Load-bearing: no
@@ -190,3 +190,13 @@ deadline until its terminal lifecycle event.
 Status: active
 Scope: v0
 Load-bearing: no
+
+## D18 - 2026-08-13 - Inline batch delegation
+
+Decision: An active parent may choose any number of independent child tasks in one OMP `task` call. Each item carries its own `wallClock` assignment contract; the host validates the full batch before creating assignments or children, then maps each item to one assignment and one child session.
+Why: The user explicitly wants agents to choose how many delegations they need, and one parent dispatch should not require one setup call per child.
+Alternatives: Pre-create assignments in separate calls (rejected because it adds agent-facing round trips); share one assignment across children (rejected because it loses per-child budgets, scope, reports, and lifecycle boundaries).
+Consequences: Batch delegation is supported in the parent session. Nested delegation remains deferred. Under `abort-running`, the native host still serializes parent actions within one abort domain.
+Status: active
+Scope: v0
+Load-bearing: yes

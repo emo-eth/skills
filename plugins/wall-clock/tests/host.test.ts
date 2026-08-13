@@ -297,7 +297,7 @@ test("do-it-now arms a bounded fast lane and permits bounded delegation", async 
     input: { task: "Update the title" },
   }, ctx) as { block: boolean; reason: string };
   assert.equal(unbounded.block, true);
-  assert.match(unbounded.reason, /exactly one active, unbound/);
+  assert.match(unbounded.reason, /active, unbound/);
 
   controller.assign("main", {
     parentPlanItemId: "item-1",
@@ -751,7 +751,7 @@ test("parent and child action identifiers are isolated by native session", async
   assert.equal(controller.runningActions("main").length, 0);
 });
 
-test("delegation requires exactly one unbound assignment and blocks batch tasks", async () => {
+test("delegation supports atomic inline batch assignments", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as any, {
@@ -765,12 +765,50 @@ test("delegation requires exactly one unbound assignment and blocks batch tasks"
 
   const missing = await host.emit("tool_call", { toolCallId: "task-1", toolName: "task", input: { task: "Do work" } }, ctx) as any;
   assert.equal(missing.block, true);
-  assert.match(missing.reason, /exactly one active, unbound/);
+  assert.match(missing.reason, /active, unbound/);
 
   controller.assign("main", { parentPlanItemId: "one", objective: "One", scope: ["one"], acceptance: ["done"], budgetMs: 5_000 });
-  const batch = await host.emit("tool_call", { toolCallId: "task-2", toolName: "task", input: { tasks: [{ task: "One" }] } }, ctx) as any;
-  assert.equal(batch.block, true);
-  assert.match(batch.reason, /batch delegation is blocked/);
+  const beforeInvalidBatch = controller.snapshot("main")?.assignments.length;
+  const invalidBatch = await host.emit("tool_call", {
+    toolCallId: "invalid-batch",
+    toolName: "task",
+    input: {
+      tasks: [
+        { task: "Valid", wallClock: { parentPlanItemId: "one", objective: "Valid", scope: ["one"], acceptance: ["Return"], budgetMs: 5_000 } },
+        { task: "Invalid", wallClock: { parentPlanItemId: "one", objective: "Invalid", scope: ["two"], acceptance: ["Return"] } },
+      ],
+    },
+  }, ctx) as { block: boolean; reason: string };
+  assert.equal(invalidBatch.block, true);
+  assert.match(invalidBatch.reason, /budgetMs must be positive/);
+  assert.equal(controller.snapshot("main")?.assignments.length, beforeInvalidBatch);
+  const taskEvent = {
+    toolCallId: "task-2",
+    toolName: "task",
+    input: {
+      tasks: [
+        {
+          task: "Inspect one",
+          wallClock: { parentPlanItemId: "one", objective: "Inspect one", scope: ["one"], acceptance: ["Return one"], budgetMs: 5_000 },
+        },
+        {
+          task: "Inspect two",
+          wallClock: { parentPlanItemId: "one", objective: "Inspect two", scope: ["two"], acceptance: ["Return two"], budgetMs: 5_000 },
+        },
+      ],
+    },
+  };
+  assert.equal(await host.emit("tool_call", taskEvent, ctx), undefined);
+  assert.match(taskEvent.input.tasks[0].task, /Assignment assignment-2/);
+  assert.equal("wallClock" in taskEvent.input.tasks[0], false);
+  assert.equal(controller.snapshot("main")?.assignments.length, 3);
+  await host.emitBus("task:subagent:lifecycle", { id: "child-one", sessionFile: "child-one", status: "started", parentToolCallId: "task-2", index: 0 });
+  await host.emitBus("task:subagent:lifecycle", { id: "child-two", sessionFile: "child-two", status: "started", parentToolCallId: "task-2", index: 1 });
+  assert.equal(controller.status("main", "assignment-2").assignment?.childSessionId, "child-one");
+  assert.equal(controller.status("main", "assignment-3").assignment?.childSessionId, "child-two");
+  await host.emitBus("task:subagent:lifecycle", { id: "child-one", sessionFile: "child-one", status: "completed", parentToolCallId: "task-2", index: 0 });
+  await host.emitBus("task:subagent:lifecycle", { id: "child-two", sessionFile: "child-two", status: "completed", parentToolCallId: "task-2", index: 1 });
+  assert.equal(controller.runningActions("main").length, 0);
 });
 
 test("inference timing ends when the assistant message stream ends", async () => {
