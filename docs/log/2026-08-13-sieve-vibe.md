@@ -2,6 +2,12 @@
 
 Worktree: `sieve-vibe`. Branch: `sieve-vibe`.
 
+> Corrections from vibe.md review round 1 are applied in `docs/vibe.md` and
+> answered item-by-item in `docs/review/2026-08-13-vibe-round-1-answers.md`.
+> Two proposals below changed shape there: P1 (no mandated implement/verify
+> split; decomposition instead [D23]) and P4 (the logger is not "yearn"; name
+> pending [D21]). This log otherwise stays as written.
+
 The user dumped a word pile about how they think: knowledge, understanding,
 tasks, and prioritization as a sieve; tickets that hide their verify work;
 crystallization from vibe to plan; wanting agents to inherit their intuition;

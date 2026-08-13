@@ -1,8 +1,18 @@
-# Wall Clock Taste
+# Taste
+
+## Wall clock
 
 - A time limit is useful only when the host enforces it; reject activation instead of falling back to "hurry up." [D4]
 - Give parent and child agents measured elapsed-time context at every turn; never ask agents to estimate task duration. [D5]
 - Prove Pi and OMP enforcement first; treat Codex and Claude as package targets until open enforcement seams exist, and exclude Claude proprietary systems. [D6]
-- Let the user choose whether expiry blocks new work or aborts running wall-clock-owned work. [D7]
+- Let the user choose whether expiry blocks new work or also aborts running wall-clock-owned work. [D7]
 - Compress toward a working vertical slice and name skipped validation, shortcuts, risks, and unknowns. [D8]
 - Keep MCP optional and separate from deadline enforcement. [D9]
+
+## Repo philosophy (vibe round 1, 2026-08-13)
+
+- Vibes and definitions describe, never prescribe; mechanisms appear as labeled examples, not formulas. [D17]
+- Hold mechanisms loosely: the goal is progress; the sieve is a hypothesis under test, not an identity. [D18]
+- The user owns understanding; agents fetch, filter, and propose; conclusions carry provenance. [D19]
+- Design for interruption: near-zero context loss and resumable passes beat uninterrupted blocks. [D22]
+- Few stages, bounded rounds: three stages ideal, four or five in practice; no unbounded review loops. [D26, D17]
