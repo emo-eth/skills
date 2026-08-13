@@ -66,6 +66,8 @@ Agent-communication preferences from the same dump (deliberately filed under the
 
 ## Vibe Clauses
 
+One caveat applies to every example below: the tools and skills named are seeds and context - works in progress, some of which should be scrapped. Nothing is load-bearing merely because it already exists; each is downstream of this vibe and subject to rewrite as the vibe iterates.
+
 ### V1. Progress you can feel
 
 - Promise: working with a tool here moves the pile toward action, and the user can feel it moving. Anything that produces motion without progress is a failure, however busy it looks.
@@ -77,7 +79,7 @@ Agent-communication preferences from the same dump (deliberately filed under the
 ### V2. Clarity arrives in a few stages
 
 - Promise: fuzzy thought sharpens in stages, and the number of stages stays small and deliberate: three is ideal, four or five in practice, settled by iterating rather than by rule. The whole pipeline should be as painless and fast as possible while still being productive.
-- Example: the lc-north-star chain (dump, vibe, PRD, spec, plan, tickets) is one such shape. Plannotator gives edges to fuzzy pictures by making them annotatable. lc-review-capture records each sharpening round, with an upper bound on review rounds so a doc cannot loop forever.
+- Example: the lc-north-star chain (dump, vibe, PRD, spec, plan, tickets) is one current shape - a facet of this system, not a source of truth. It will be updated or replaced as this vibe iterates; this vibe is the source of truth. Plannotator gives edges to fuzzy pictures by making them annotatable. lc-review-capture records each sharpening round. Review rounds are bounded: a doc gets at most two fix rounds, and the goal is one.
 - Does not mean: bureaucracy for small work (hugely important: bounded fixes skip the chain). It also does not mean stalling a session to force artifacts the work does not need.
 - Violation: demanding acceptance criteria during a vibe dump; writing code from an unsettled vibe when behavior is undecided; a word dump that evaporates as lost chat. (Recovery systems for lost chat - session-history search such as memex - are wanted but unspec'd; see open questions.)
 - Check: a word dump ends its session as a distilled artifact under review, or as an explicit no-artifact exploration outcome.
@@ -85,23 +87,23 @@ Agent-communication preferences from the same dump (deliberately filed under the
 ### V3. Deliverables get broken down
 
 - Promise: work is decomposed far enough that nothing closes while part of it is still hiding. The historical failure is not any one missing step; it is deliverables that were never broken down at all.
-- Example: a task that cannot close until it is verified carries at least an implement part and a verify part, whether or not they are separate tickets. Some tasks are really dependencies: "score opus 5" is downstream of "create a model eval framework", and that framework is one deliverable with several sub-components that still belong in a single ticket. lc-ticketize's proof needed is one mechanism (itself not yet proven in use).
+- Example: a task that cannot close until it is verified carries at least an implement part and a verify part, whether or not they are separate tickets. Some tasks are really dependencies: "score opus 5" is downstream of "create a model eval framework". That framework is one deliverable ticket, and its components are sub-tickets that must also be tracked and enumerated. lc-ticketize's proof needed is one mechanism (not yet proven in use, and itself downstream of this vibe).
 - Does not mean: an implement/verify dichotomy imposed on every task, or splitting for its own sake. The verify work is named; whether it is a separate ticket is a judgment call.
 - Violation: a ticket that reads "add X" with no way to tell when it is done; a deliverable closed while a sub-component everyone knows about is still unbuilt.
 - Check: pick any closed ticket at random. What closed it is visible - evidence, or a named judgment call.
 
 ### V4. Never delegate understanding
 
-- Promise: the user owns understanding. Raw information plus intuition plus iteration leads to clarity leads to understanding, and that compounding happens in the user's head. Agents fetch, filter, rank, and propose; they do not replace the user's working model of the problem.
-- Example: the `understand` and `synthesize` skills exist to build the user's model, not to substitute for it. lc-ticketize only tickets what is already understood, and refuses to ticket vibes.
+- Promise: understanding is symbiotic. The user strives for understanding; the system strives to measure and ensure it, and the system has failed if it cannot guide the user there. Once the user has full understanding, the user guides the system. Raw information plus intuition plus iteration leads to clarity leads to understanding - and the compounding must happen in the user's head, never delegated away.
+- Example: a system that probes the user's understanding (teach-back, spot questions) and gives the user a way to measure it. This sits somewhat outside sifting, but is core to the broad system. Skills like `understand` and `synthesize` are seeds in this direction, not fixtures. lc-ticketize only tickets what is already understood, and refuses to ticket vibes.
 - Does not mean: agents stop doing legwork, or the user re-reads every primary source. Legwork is delegated; understanding is not.
 - Violation: a tool that hands back a conclusion with no way to see how it got there; a workflow where the agent's model of the problem silently replaces the user's.
-- Check: after using a tool, the user can say why its output is right, not only that it is right.
+- Check: the system has a way to probe the user's understanding, and the user has a way to measure it. After using a tool, the user can say why its output is right, not only that it is right.
 
 ### V5. Judgment is recorded so it can be inherited
 
 - Promise: when the user makes calls - in sieve passes, in review rounds - the record survives, so that future agents can learn to make the call the user would have made.
-- Example: `docs/taste.md`, `docs/DECISIONS.md`, and agent memory are the current candidate mechanisms; whether they actually transmit judgment is unproven, and multi-person repos may need a different shape (possibly a skill or plugin). Comparison logs from prioritize runs and keep/drop outcomes from decision-wizard runs are candidate inputs. Distillations are worth sanity-checking with fresh eyes or a second agent from a different model family. An agnostic migration path between mechanisms matters eventually but is not part of this vibe.
+- Example: `docs/taste.md`, `docs/DECISIONS.md`, and agent memory are the current candidate mechanisms; whether they actually transmit judgment is unproven, and multi-person repos may need a different shape (possibly a skill or plugin). Comparison logs from prioritize runs and keep/drop outcomes from decision-wizard runs are candidate inputs. Distillations are worth sanity-checking with fresh eyes or a second agent from a different model family. An agnostic migration path between mechanisms matters eventually; it is noted here on purpose, while remaining out of scope for this vibe.
 - Does not mean: every review round produces a distillation; many rounds are just fixes. And recording never interrupts a pass to ask why.
 - Violation: a 200-comparison ranking whose results vanish into a tool's state file; a decision that changed a doc but left no trace anywhere an agent would look.
 - Check: after a ranking or review session, whatever the user decided exists somewhere durable, in their words.
