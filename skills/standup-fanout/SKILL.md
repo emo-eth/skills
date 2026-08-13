@@ -58,10 +58,14 @@ do not try to emulate Herdr from outside it.
 - Never mutate an external ticket, merge a branch, or deploy to an environment
   without the owner's explicit approval. The fanout drives tickets toward done
   in isolated trees; it publishes only what the owner approves.
-- Branches land in `dev` only through a pull request, and that PR must be
-  merged by a human. The fanout and its agents open the PR and prepare it for
-  merge; they never merge into `dev` themselves. A branch is not merged into
-  `dev` by automation, by an agent, or by the fanout orchestrator.
+- A source or test change lands in `dev` only through a pull request, and that
+  PR must be merged by a human. The fanout and its agents open the PR and
+  prepare it for merge; they never merge code into `dev` themselves. A branch
+  is not merged into `dev` by automation, by an agent, or by the fanout
+  orchestrator.
+- Verification and research work do not create a PR. Run the required check or
+  produce the stated artifact, then record the result in the dated evidence log
+  and standup. Only create a PR when the work changes source or tests.
 - An agent asks for human input when it needs an answer only a person has:
   a decision between options, a missing credential or value, an approval, or a
   fact the code cannot reveal. An agent that needs such input stops and asks
@@ -166,15 +170,18 @@ herdr worktree create \
   --no-focus
 ```
 
-The base ref is the shared base (`dev`) by default, so each worktree branches
-independently and lands as its own PR. Use **stacked PRs** when one ticket's
-work or proof depends on another: create the dependent worktree with
-`--base <dependency-branch>` instead of `dev`, so it builds on the ticket it
-needs rather than duplicating or guessing. The stack lands in dependency order
-— merge the dependency's PR first, then the dependent PR shows only its own
-diff and can be reviewed and merged on top. Keep a stack serial and shallow:
-one dependency per PR, and only stack where a real dependency exists, never to
-save worktree count. A worktree with no dependency branches from `dev`.
+The base ref is the shared base (`dev`) by default. Build worktrees branch
+independently and land source or test changes as their own PRs. Verification
+and research work may use a worktree for isolation, but they finish by
+running the check or producing the artifact; they do not create a PR or merge
+anything. Use **stacked PRs** only when one code ticket's work depends on
+another: create the dependent worktree with `--base <dependency-branch>`
+instead of `dev`, so it builds on the ticket it needs rather than duplicating
+or guessing. The stack lands in dependency order — merge the dependency's PR
+first, then the dependent PR shows only its own diff and can be reviewed and
+merged on top. Keep a stack serial and shallow: one dependency per PR, and
+only stack where a real dependency exists, never to save worktree count. A
+worktree with no dependency branches from `dev`.
 
 Read the new workspace ID and worktree path from the command's JSON response;
 do not guess them. The slug is short and names the ticket (for example
@@ -268,14 +275,20 @@ depends on what it is:
   evidence-state recorded. Do not merge the branch into `dev` yourself: a
   human must review and merge the PR. The tree's branch stays open until that
   human merge happens;
-- a dated evidence log: move or copy the tree's log into
-  `docs/log/YYYY-MM-DD-<name>.md` in the shared source and name the
-  environment and date it ran on;
+- a verification ticket: run the exact check that proves its done-when, record
+  the environment, date, result, and any gap in the dated evidence log, then
+  update the standup. Do not create a PR or merge a branch for verification
+  alone;
+- a research ticket: produce its stated comparison, measurement,
+  recommendation, or other artifact in the dated evidence log, then update the
+  standup. Do not create a PR or merge a branch for research alone;
 - a claimed change to a doc or ticket: this is still unverified unless a check
   reproduced it. Update the standup only with what a check supports.
 
-Leave the worktree open until a human merges the PR into `dev`. Do not delete
-a worktree or branch that still holds unverified or unmerged work.
+Leave a code worktree open until a human merges its PR into `dev`. A
+verification or research worktree can close after its check or artifact is
+recorded and no uncommitted work remains. Do not delete a worktree or branch
+that still holds unverified or unmerged source changes.
 
 Read the outside tool's actual result for any change that touches a ticket,
 branch, or deployment: a fanout may propose it, but the verification is the
