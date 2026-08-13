@@ -9,7 +9,7 @@ import {
   SOURCES,
   scanAllSources,
   scanUsage,
-} from "./claude-skill-usage-core.ts";
+} from "./agent-skill-usage-core.ts";
 
 type UsageRecord = {
   type: "assistant";
@@ -42,7 +42,7 @@ function record(
 }
 
 async function fixture(lines: string[]): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "claude-skill-usage-"));
+  const root = await mkdtemp(join(tmpdir(), "agent-skill-usage-"));
   await writeFile(join(root, "session.jsonl"), `${lines.join("\n")}\n`);
   return root;
 }
@@ -97,7 +97,7 @@ test("deduplicates repeated Claude records and retains skill attribution", async
 });
 
 test("prefers the main session over a duplicate sidechain event", async () => {
-  const root = await mkdtemp(join(tmpdir(), "claude-skill-usage-"));
+  const root = await mkdtemp(join(tmpdir(), "agent-skill-usage-"));
   await mkdir(join(root, "subagents"));
   await writeFile(
     join(root, "main.jsonl"),

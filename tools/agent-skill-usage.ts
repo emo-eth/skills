@@ -8,7 +8,7 @@ import {
   type SkillSummary,
   type UsageReport,
   type UsageSource,
-} from "./claude-skill-usage-core.ts";
+} from "./agent-skill-usage-core.ts";
 
 function parseTimestamp(value: string, option: string): number {
   const numeric = Number(value);
@@ -101,8 +101,10 @@ function formatPercent(value: number): string {
 }
 
 function printHelp(): void {
-  console.log(`Usage: claude-skill-usage [options]
+  console.log(`Usage: agent-skill-usage [options]
 
+Report local agent token usage grouped by skill and harness.
+Supported harnesses: Claude, Codex, Pi, and OMP.
 Memex supplies normalized Claude and Codex events when available. Pi and OMP use
 local session parsers. Claude uses native attributionSkill. Other sources use an
 explicit /skill:<name> or skill://<name> invocation for one following usage
@@ -110,7 +112,6 @@ event; ordinary user messages reset it. Later events are grouped under (none).
 
 Options:
   --root DIR       Claude projects directory or JSONL file (repeatable)
-  --source NAME    Limit output to claude, codex, pi, or omp (repeatable)
   --since VALUE    Include events on or after an ISO date or Unix timestamp
   --until VALUE    Include events before an ISO date or Unix timestamp
   --skill NAME     Show only one active skill; use (none) for unknown
@@ -236,6 +237,6 @@ async function main(): Promise<void> {
 
 await main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(`claude-skill-usage: ${message}`);
+  console.error(`agent-skill-usage: ${message}`);
   process.exitCode = 1;
 });
