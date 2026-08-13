@@ -25,11 +25,11 @@ git push origin main
 If you're on a branch for some reason, fast-forward it into `main` and push before considering the change done. A skill edit is not "done" until it is on `origin/main`.
 
 Keep the local `main` working tree in sync with the push: after pushing
-`origin/main`, also fast-forward the main checkout (e.g.
-`git -C ~/dev/skills merge --ff-only origin/main`) so it never drifts behind
-its remote. If that working tree has uncommitted changes that would block the
-fast-forward, leave them to the owner and say so — never stash, commit, or
-discard their work just to force the update.
+`origin/main`, fast-forward the checkout that owns the local `main` branch
+(for example, `git -C <main-checkout> merge --ff-only origin/main`) so it
+never drifts behind its remote. If that working tree has uncommitted changes
+that would block the fast-forward, leave them to the owner and say so —
+never stash, commit, or discard their work just to force the update.
 
 Then, on any machine, pick up the change with:
 

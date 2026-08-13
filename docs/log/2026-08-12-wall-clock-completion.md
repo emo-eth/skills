@@ -12,7 +12,7 @@
 
 Wall Clock v0 is on `origin/main` at commit `a99403bd18a3aa63dc9e3c5da0966ab037d09419`. The stable local main checkout is at the same commit.
 
-OMP 17.2.15 has `@emo-eth/wall-clock-plugin` version 0.1.0 installed and enabled in the normal OMP profile. Its source is `/Users/emo/dev/skills/plugins/wall-clock`, and OMP installed it under `/Users/emo/.omp/plugins/node_modules/@emo-eth/wall-clock-plugin`.
+OMP 17.2.15 has `@emo-eth/wall-clock-plugin` version 0.1.0 installed and enabled in the normal OMP profile. Its source is the wall-clock plugin checkout, and OMP installed it under the normal OMP plugin directory.
 
 ## Verification
 
