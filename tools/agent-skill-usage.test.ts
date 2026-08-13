@@ -312,6 +312,19 @@ test("local Pi and OMP parsers derive explicit skills and preserve unknown event
     { source: "omp", total: 21 },
   ]);
 });
+test("does not invoke Memex for OMP-only reports", async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
+  const report = await scanAllSources({
+    sources: ["omp"],
+    sourceRoots: { omp: [join(root, "omp")] },
+    memexCommand: "/definitely/missing/memex",
+  });
+
+  assert.equal(report.warnings.length, 0);
+  assert.equal(report.requests, 2);
+  assert.equal(report.bySource[0]?.source, "omp");
+});
+
 
 test("derives a skill from an OMP skill:// read inside assistant content", async () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");

@@ -919,9 +919,15 @@ function parseMemexOutput(
 async function loadMemexEvents(
   options: AllSourceScanOptions,
   warnings: string[],
+  sources: readonly UsageSource[],
 ): Promise<MemexEventInput[]> {
   if (options.memexOutput !== undefined) return parseMemexOutput(options.memexOutput, warnings);
-  if (options.useMemex === false) return [];
+  if (
+    options.useMemex === false
+    || (!sources.includes("claude") && !sources.includes("codex"))
+  ) {
+    return [];
+  }
 
   try {
     const result = await execFile(options.memexCommand ?? "memex", ["usage", "--json", "--events"], {
@@ -1014,7 +1020,7 @@ function rootsForSources(
 export async function scanAllSources(options: AllSourceScanOptions = {}): Promise<UsageReport> {
   const sources = [...(options.sources ?? SOURCES)];
   const warnings: string[] = [];
-  const memexEvents = await loadMemexEvents(options, warnings);
+  const memexEvents = await loadMemexEvents(options, warnings, sources);
   const selectedMemexEvents = memexEvents.filter((event) => sources.includes(event.source));
   const memexSources = new Set(selectedMemexEvents.map((event) => event.source));
   const sourceRoots = rootsForSources(options, sources);
