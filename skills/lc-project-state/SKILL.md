@@ -109,7 +109,7 @@ If the repo uses `CLAUDE.md` that `@`-imports `AGENTS.md` (or vice versa), wire 
 When the repo has a philosophy vibe at `docs/vibe.md`, add a fourth directive above the others:
 
 ```md
-- If `docs/vibe.md` exists, read it before any work: it is the source of truth for this project's philosophy and working contracts, and every skill and chain here is downstream of it.
+- If `docs/vibe.md` exists, read it before any process-affecting work (skills, tickets, planning, reviews): it is the source of truth for how work is done here, and every skill and chain is downstream of it.
 ```
 
 Completion: `AGENTS.md` carries the three directives at its top (four when a repo vibe exists).
