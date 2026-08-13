@@ -39,6 +39,16 @@ named dependencies, routes unsettled input to `synthesize` or `understand`,
 keeps `standup` on small deltas, uses one canonical ticket contract, and names
 the child-proof handoff to parent close.
 
+Both finished fanout branches are merged into `sieve-vibe` (2026-08-13):
+`ticketize-revision` (docs revision above; the merge also restored the
+"merge alone does not close a parent whose proof needs live behavior or a
+measurement" sentence) and `skiterate` (v1 command plugin; package tests 7/7
+reproduced by the orchestrator). The third tree, `turn-receipt`, completed
+v1 with clean-OMP injection evidence, but its worktree is mid-rename to
+`turn-summary` under the user's hands (plugin installed, working tree
+uncommitted). It is not integrated; the tree stays untouched until the user
+says the rename settled.
+
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 ## Standing constraints

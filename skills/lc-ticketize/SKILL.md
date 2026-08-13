@@ -75,9 +75,12 @@ every ticket:
   and track its known components as sub-tickets. Each child has its own
   owner-sized output and proof; name dependencies between tickets. When current
   work only adds setup for the parent outcome, make the setup a child. Keep the
-  parent open until the required child proofs pass. Implement-then-verify is
-  one common split, not a mandate applied to every task. The failure to fight is
-  deliverables that were never broken down at all.
+  parent open until the required child proofs pass. One PR may close multiple
+  child tickets only when each child has its own satisfied proof; a merge alone
+  does not close a parent whose proof still needs live behavior or a
+  measurement. Implement-then-verify is one common split, not a mandate applied
+  to every task. The failure to fight is deliverables that were never broken
+  down at all.
 - **Prior art travels.** When the repo already answers part of a ticket, the
   description says where in one line, so nobody re-researches what's known.
 
