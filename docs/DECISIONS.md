@@ -1,4 +1,6 @@
-# Wall Clock Plugin Decisions
+# Decisions
+
+One append-only log for the whole repo. D1-D16 are wall-clock scoped; D17 onward include the repo-philosophy (sieve vibe) round.
 
 ## Glossary
 
@@ -167,6 +169,112 @@ it leaks the temporary guard into the next normal request).
 Consequences: Terminal settlement persists a stopped fast-lane state and clears
 its deadline and status-refresh timers. Ordinary `/wallclock` contracts remain
 session-scoped and still require explicit stop.
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D17 - 2026-08-13 - Vibe docs describe, never prescribe
+
+Decision: Vibe and contract docs in this repo describe goals and feel; they never prescribe formulas. Mechanisms appear only as labeled examples ("Example:", never "Means:"), and definitions describe rather than legislate.
+Why: "do not be prescriptive in definitions" and "this is too prescriptive for a vibe. this is an example, not a formula" and "no prescriptive stuff in vibes" - Plannotator annotations, vibe.md round 1 (items 1, 16, 28).
+Alternatives: Keep prescriptive means in vibes (rejected because the human reads them as rules, making the vibe a straitjacket); strip all mechanism detail from vibes (rejected because labeled examples carry taste).
+Consequences: Every clause in docs/vibe.md uses "Example:". Future vibe drafts are checked against this rule before review. Strong words like "need" are quoted as source material, never paraphrased into requirements.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D18 - 2026-08-13 - The goal is progress; sifting is the suspected mechanism
+
+Decision: Tools and skills in this repo are judged by whether they produce real, felt progress toward action. The sieve is the current hypothesis for how, not the goal, and is replaceable if it stops producing progress.
+Why: "working with the tools and skills should both feel like and crucially ACTUALY BE making progress... the goal is not sifting. sifting is what i suspect works for me" - Plannotator annotation, vibe.md round 1 (item 8).
+Alternatives: Keep sifting as the stated goal (rejected because a metaphor cannot be a success criterion); drop the sieve metaphor entirely (rejected because it remains the best current hypothesis).
+Consequences: V1 is "Progress you can feel": after one sitting, the user can name what moved. Sieve-style tooling (passes, gut calls, top-k) is a mechanism under test.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D19 - 2026-08-13 - Never delegate understanding
+
+Decision: Agents fetch, filter, rank, and propose; the user owns understanding. Skills build the user's working model rather than substituting for it, and conclusions must carry provenance.
+Why: "never delegate understanding... 'raw information plus intuition plus iteration leads to clarity leads to understanding' write that down" - Plannotator annotation, vibe.md round 1 (item 15).
+Alternatives: Let agent conclusions stand in for user understanding when the user is busy (rejected because it erodes exactly the compounding the toolchain exists to support).
+Consequences: V4 added to docs/vibe.md. lc-ticketize tickets only what is already understood. Any tool whose output cannot be explained back by the user violates the vibe.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D20 - 2026-08-13 - Turn receipts are a companion concern, not part of the sifting strategy
+
+Decision: The end-of-turn receipt is an agent-communication preference tracked separately from the sieve philosophy; it lives in docs/vibe.md as an explicitly labeled companion clause.
+Why: "this is my overall vibe for interacting with the agent but i fear this is separate from the sifting strategy. but i do want this." - Plannotator annotation, vibe.md round 1 (item 34); also items 12 and 13.
+Consequences: Receipt work (standing instruction, possible pi/omp extension) proceeds on its own track and is not evidence for or against sieve tooling.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D21 - 2026-08-13 - "yearn" is taken; the skill-scoped logger needs its own name
+
+Decision: The proposed papercut-style logger for skill invocations must not be named "yearn". Yearn already exists, is human-facing, and captures anything the user yearns for.
+Why: "yearn exists. it's anything the user yearns for. not necessarily about a skill. i proposed a skill-specific version; it is not yearn" and "should have a better name" - Plannotator annotations, vibe.md round 1 (items 5, 33).
+Consequences: Proposal P4 in docs/log/2026-08-13-sieve-vibe.md is renamed-pending. Nothing in this repo ships a skill-scoped tool called "yearn". Naming is an open question returned to the user.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D22 - 2026-08-13 - Optimize for resumability, not for uninterrupted blocks
+
+Decision: Tools are designed so interruptions cost as little as possible: state saved after every decision, passes resumable mid-pile, minimal context loss on return. Uninterrupted blocks are the ideal; resumability is the requirement.
+Why: "i have adhd. ideally i have uninterrupted blocks. but i think the real preference is - interruptions cost as little as possible; i can continue sifting with minimal context loss." - Plannotator annotation, vibe.md round 1 (item 14).
+Consequences: Use Circumstances in docs/vibe.md rewritten around interruption cost. Review and triage tools must not lose state when interrupted.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D23 - 2026-08-13 - Decomposition targets deliverables; implement/verify is one pattern, not a dichotomy
+
+Decision: Ticket decomposition attacks unbroken deliverables. The implement-plus-verify split is one common pattern, applied with judgment, not a rule imposed on every task; dependencies between tasks are named, and a multi-component deliverable can remain one ticket.
+Why: "i think our bigger problem is simply that we haven't been breaking down deliverables. don't over-index on the 'task-verify' dichotomy" and "'create a model eval framework' is a deliverable but has several sub-components not captured by the deliverable, which should still be a single ticket" and "not always necessary" - Plannotator annotations, vibe.md round 1 (items 25, 2, 3).
+Alternatives: Mandate an implement/verify sub-task split for every ticket (rejected as over-indexing on one axis of hidden work).
+Consequences: V3 rewritten as "Deliverables get broken down". Proposal P1 for lc-ticketize changes shape: no mandated split; instead decomposition guidance plus named proof.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D24 - 2026-08-13 - Defer lost-chat recovery spec
+
+Decision: Recovery of word dumps and decisions from session history (memex or similar) is wanted but unspec'd; defer until the mechanism is understood.
+Why: "ideally we have systems that can recover from this; memex plugin is useful but unsure how to use/spec" - Plannotator annotation, vibe.md round 1 (item 24).
+Consequences: docs/vibe.md V2 notes the aspiration without promising a mechanism. initiative-standup already starts from a Memex session ledger and is the natural proving ground.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: deferred
+Revisit: when Memex usage matures beyond the standup ledger, or the next time a word dump is lost
+Scope: v1+
+Load-bearing: no
+
+## D25 - 2026-08-13 - Defer loop-duration recording
+
+Decision: Recording how long iteration loops take (to learn whether changes help) is attractive but noisy and not yet in scope.
+Why: "would be great to record how long loops take so we can iterate on skills/approaches etc and see us make progress and/or rollback bad progress. really hard to say with certainty though lots of noise in the signal. also not necessarily in scope" - Plannotator annotation, vibe.md round 1 (item 31).
+Consequences: docs/vibe.md V6 mentions the idea as not yet in scope; no instrumentation is built now.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: deferred
+Revisit: when skill-iteration is next revised, or when a second loop feels too slow
+Scope: v1+
+Load-bearing: no
+
+## D26 - 2026-08-13 - Few stages, settled by iteration
+
+Decision: Clarity pipelines stay small: three stages is ideal, four or five in practice, settled by iterating rather than by rule; the pipeline should be as painless and fast as possible while still productive.
+Why: "20 stages isn't better than nothing-at-all. 3 stages is idealy; probably 4 or 5, but we have to iterate... should be as painless and fast as possible while also as productive as possible" - Plannotator annotation, vibe.md round 1 (item 20).
+Consequences: docs/vibe.md V2 adopts this framing. Any proposed pipeline with more than five stages carries the burden of proof.
+Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: no
