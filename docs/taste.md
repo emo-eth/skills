@@ -9,7 +9,7 @@
 - Compress toward a working vertical slice and name skipped validation, shortcuts, risks, and unknowns. [D8]
 - Keep MCP optional and separate from deadline enforcement. [D9]
 
-## Repo philosophy (vibe rounds 1-2, 2026-08-13)
+## Repo philosophy (vibe rounds 1-3, 2026-08-13)
 
 - Vibes and definitions describe, never prescribe; mechanisms appear as labeled examples, not formulas. [D20]
 - Hold mechanisms loosely: the goal is progress; the sieve is a hypothesis under test, not an identity. [D21]

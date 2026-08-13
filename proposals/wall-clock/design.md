@@ -90,11 +90,12 @@ The native `tool_call` event is the admission boundary. For an active session, t
 
 1. resolves the parent or child scope;
 2. classifies the proposed action;
-3. links a delegation to exactly one active unbound assignment;
+3. parses inline batch assignment contracts when the action carries multiple child tasks;
 4. asks the controller for the current phase decision;
 5. checks executor cancellation support for `abort-running`;
-6. records the action only after every check passes;
-7. returns a native block result when any check fails.
+6. creates all batch assignments atomically only after admission passes;
+7. records the action and assignment-to-child links after every check passes;
+8. returns a native block result when any check fails.
 
 Portable `wallclock_check` returns the same phase decision for inspection but is not a gate.
 
@@ -118,16 +119,15 @@ If support, identity, context, or observation is missing, activation or action a
 
 ## Parent and child flow
 
-1. The owner session activates wall-clock and creates a bounded assignment.
-2. An OMP `task` call is allowed only when exactly one active assignment is unbound. Batch delegation is blocked.
-3. The adapter adds the measured assignment context to the task input.
-4. OMP lifecycle events publish the child lifecycle identifier and session-path prefix to the child session registry.
-5. The child adapter resolves all state operations to the parent session and current assignment.
-6. The child cannot activate or stop the parent contract, create nested assignments, inspect a sibling assignment, revise the parent plan, or report for another assignment.
-7. The child reports a complete, partial, blocked, or expired vertical slice. The parent session persists it.
-8. The adapter then permits OMP's required native yield as a narrow completion step. Yield is blocked before the child report exists.
-9. If the child ends without a report, the adapter records a blocked or expired fallback report with the missing evidence and validation stated.
-10. The parent can link the report to a plan revision with complete, partial, blocked, or deferred items.
+1. The owner session activates wall-clock.
+2. An OMP `task` call may carry any number of inline child assignment contracts. The host validates the complete batch, creates one assignment per item, and injects each assignment's measured context into the corresponding child.
+3. OMP lifecycle events publish the child lifecycle identifier, batch index, and session-path prefix to the child session registry.
+4. The child adapter resolves all state operations to the parent state and its own assignment.
+5. The child cannot activate or stop the parent contract, create nested assignments, inspect a sibling assignment, revise the parent plan, or report for another assignment.
+6. The child reports a complete, partial, blocked, or expired vertical slice. The parent session persists it.
+7. The adapter then permits OMP's required native yield as a narrow completion step. Yield is blocked before the child report exists.
+8. If the child ends without a report, the adapter records a blocked or expired fallback report with the missing evidence and validation stated.
+9. The parent can link the report to a plan revision with complete, partial, blocked, or deferred items.
 
 The child binding survives a parent task result arriving before the terminal child lifecycle event. Terminal events remove both stable child identifiers.
 

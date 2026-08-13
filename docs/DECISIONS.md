@@ -139,7 +139,7 @@ Load-bearing: no
 Decision: The native do-it-now and wrap-it-up lanes use a two-minute hard deadline, `abort-running`, bounded delegation through one wall-clock assignment while active, and 12 ordinary tool calls. Wrap-up still blocks new delegation and destructive work.
 Why: Two minutes leaves margin for host and model startup plus one slow external operation. Bounded delegation can reduce uncertainty or finish independent work faster without weakening the phase gate.
 Alternatives: Keep no delegation (rejected because it prevents useful parallel work); remove the hard limit (rejected because it would recreate the delay these lanes are meant to prevent).
-Consequences: Fast-lane delegation must use one active unbound assignment; batch and nested delegation remain blocked. The 15-second pre-deadline interval is unchanged.
+Consequences: Fast-lane delegation may use any number of independently bounded inline batch items. Nested delegation remains blocked. The 15-second pre-deadline interval is unchanged.
 Status: active
 Scope: v0
 Load-bearing: no
@@ -167,11 +167,60 @@ Alternatives: Stop on every `agent_end` (rejected because Pi can still retry,
 compact, or continue); keep an expired lane until manual stop (rejected because
 it leaks the temporary guard into the next normal request).
 Consequences: Terminal settlement persists a stopped fast-lane state and clears
-its deadline and status-refresh timers. Ordinary `/wallclock` contracts remain
-session-scoped and still require explicit stop.
+its deadline and status-refresh timers. D17 extends the same cleanup to every
+explicit native wall-clock contract.
+Status: superseded-by D17
+Scope: v0
+Load-bearing: no
+
+## D17 - 2026-08-13 - Clear every explicit contract after terminal settlement
+
+Decision: Every native wall-clock contract started by an explicit
+`/wallclock` command or `wallclock_start` stops after terminal agent
+settlement. Pi uses `agent_settled`; OMP uses terminal `agent_end`. Expiry
+enforcement remains active through retries and continuations. If a child action
+is still running, cleanup waits for that child to finish.
+Why: A user may need to send a follow-up because the task is unfinished. A
+completed agent turn must not leave a stale contract that forces the user to
+type `/wallclock stop` before the follow-up.
+Alternatives: Keep ordinary contracts session-scoped (rejected because it
+leaks the time boundary into the next normal request); clear at every
+`agent_end` (rejected because Pi and OMP can still schedule continuation work).
+Consequences: Follow-ups run normally after settlement. A follow-up that needs
+its own time limit must start a new contract. Active child work retains its
+deadline until its terminal lifecycle event.
 Status: active
 Scope: v0
 Load-bearing: no
+## D18 - 2026-08-13 - Child deadlines inherit the parent hard stop
+
+Decision: Every child assignment is bounded by the earlier of its requested
+budget and the parent session's hard deadline. A child action must have a
+host action identifier and a tested abort seam before admission. When a child
+deadline expires, the host aborts running child actions even if the parent's
+expiry policy is `block-new`; that policy controls only work admitted directly
+in the parent. When the parent deadline expires, all running child actions
+are aborted.
+Why: A child that can continue after its parent budget ends violates the
+parent's time contract and can keep the overall task alive past its deadline.
+Alternatives: Let `block-new` children finish (rejected because parent time
+would not be a hard bound); rely on child instructions only (rejected because
+instructions cannot stop an already-running executor).
+Consequences: Child work fails closed on hosts without a proven abort path.
+Cancellation is reported only after the host observes the native abort result.
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D19 - 2026-08-13 - Inline batch delegation
+
+Decision: An active parent may choose any number of independent child tasks in one OMP `task` call. Each item carries its own `wallClock` assignment contract; the host validates the full batch before creating assignments or children, then maps each item to one assignment and one child session.
+Why: The user explicitly wants agents to choose how many delegations they need, and one parent dispatch should not require one setup call per child.
+Alternatives: Pre-create assignments in separate calls (rejected because it adds agent-facing round trips); share one assignment across children (rejected because it loses per-child budgets, scope, reports, and lifecycle boundaries).
+Consequences: Batch delegation is supported in the parent session. Nested delegation remains deferred. Under `abort-running`, the native host still serializes parent actions within one abort domain.
+Status: active
+Scope: v0
+Load-bearing: yes
 
 ## D20 - 2026-08-13 - Vibe docs describe, never prescribe
 
