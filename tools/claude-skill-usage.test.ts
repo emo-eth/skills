@@ -238,6 +238,61 @@ test("joins Memex Claude and Codex events with local attribution", async () => {
   assert.equal(report.bySkill.find((summary) => summary.skill === "delta")?.total, 18);
 });
 
+test("consumes normalized Codex attribution after one usage event", async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
+  const codexPath = join(root, "codex/session.jsonl");
+  const report = await scanAllSources({
+    sources: ["codex"],
+    sourceRoots: { codex: [join(root, "codex")] },
+    memexOutput: {
+      details: [
+        {
+          source: "codex",
+          source_path: codexPath,
+          source_record_id: "event:0",
+          request_id: null,
+          message_id: null,
+          timestamp_ms: Date.parse("2026-08-12T10:00:12.000Z"),
+          session_id: "codex-session-1",
+          model: "codex-fixture",
+          tokens: { uncached_input: 4, cache_read: 5, output: 6 },
+        },
+        {
+          source: "codex",
+          source_path: codexPath,
+          source_record_id: "event:1",
+          request_id: null,
+          message_id: null,
+          timestamp_ms: Date.parse("2026-08-12T10:00:12.500Z"),
+          session_id: "codex-session-1",
+          model: "codex-fixture",
+          tokens: { uncached_input: 2, output: 3 },
+        },
+        {
+          source: "codex",
+          source_path: codexPath,
+          source_record_id: "event:2",
+          request_id: null,
+          message_id: null,
+          timestamp_ms: Date.parse("2026-08-12T10:00:14.000Z"),
+          session_id: "codex-session-1",
+          model: "codex-fixture",
+          tokens: { uncached_input: 1, output: 1 },
+        },
+      ],
+    },
+  });
+
+  assert.equal(report.requests, 3);
+  assert.deepEqual(
+    report.bySkill.map(({ skill, requests, total }) => ({ skill, requests, total })),
+    [
+      { skill: "beta", requests: 1, total: 15 },
+      { skill: NO_SKILL, requests: 2, total: 7 },
+    ],
+  );
+});
+
 test("local Pi and OMP parsers derive explicit skills and preserve unknown events", async () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
   const report = await scanAllSources({
@@ -277,6 +332,69 @@ test("derives a skill from an OMP skill:// read inside assistant content", async
     [{ skill: "epsilon", attribution: "observed", requests: 1, total: 9 }],
   );
 });
+
+test("derives a skill from an OMP custom read execution record", async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
+  const report = await scanAllSources({
+    sources: ["omp"],
+    useMemex: false,
+    sourceRoots: { omp: [join(root, "omp-custom-tool")] },
+  });
+
+  assert.equal(report.requests, 1);
+  assert.deepEqual(
+    report.bySkill.map(({ skill, attribution, requests, total }) => ({
+      skill,
+      attribution,
+      requests,
+      total,
+    })),
+    [{ skill: "zeta", attribution: "observed", requests: 1, total: 13 }],
+  );
+});
+test("attributes only the next OMP usage after an explicit skill read", async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
+  const report = await scanAllSources({
+    sources: ["omp"],
+    useMemex: false,
+    sourceRoots: { omp: [join(root, "omp-one-shot")] },
+  });
+
+  assert.equal(report.requests, 4);
+  assert.deepEqual(
+    report.bySkill.find(({ skill }) => skill === "papercut"),
+    {
+      skill: "papercut",
+      attribution: "observed",
+      requests: 2,
+      observedRequests: 2,
+      unknownRequests: 0,
+      input: 6,
+      cacheRead: 0,
+      cacheCreation: 0,
+      output: 7,
+      total: 13,
+      share: 0.5,
+    },
+  );
+  assert.deepEqual(
+    report.bySkill.find(({ skill }) => skill === NO_SKILL),
+    {
+      skill: NO_SKILL,
+      attribution: "unknown",
+      requests: 2,
+      observedRequests: 0,
+      unknownRequests: 2,
+      input: 6,
+      cacheRead: 0,
+      cacheCreation: 0,
+      output: 7,
+      total: 13,
+      share: 0.5,
+    },
+  );
+});
+
 test("local Codex parser counts cached input once", async () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "../fixtures/all-source-skill-usage");
   const report = await scanAllSources({

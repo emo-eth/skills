@@ -1,0 +1,8 @@
+{"type":"session","id":"omp-one-shot-session-1","timestamp":"2026-08-12T10:03:00.000Z","cwd":"/tmp/fixture"}
+{"type":"message","id":"omp-one-shot-user-1","timestamp":"2026-08-12T10:03:01.000Z","message":{"role":"user","content":[{"type":"text","text":"/skill:papercut"}]}}
+{"type":"message","id":"omp-one-shot-assistant-1","timestamp":"2026-08-12T10:03:02.000Z","message":{"role":"assistant","model":"omp-fixture","usage":{"input":1,"output":1}}}
+{"type":"message","id":"omp-one-shot-assistant-2","timestamp":"2026-08-12T10:03:03.000Z","message":{"role":"assistant","model":"omp-fixture","usage":{"input":2,"output":3}}}
+{"type":"message","id":"omp-one-shot-user-2","timestamp":"2026-08-12T10:03:04.000Z","message":{"role":"user","content":[{"type":"text","text":"ordinary request"}]}}
+{"type":"message","id":"omp-one-shot-assistant-3","timestamp":"2026-08-12T10:03:05.000Z","message":{"role":"assistant","model":"omp-fixture","content":[{"type":"text","text":"The phrase skill://ghost is not a tool invocation."}],"usage":{"input":4,"output":4}}}
+{"type":"message","id":"omp-one-shot-user-3","timestamp":"2026-08-12T10:03:06.000Z","message":{"role":"user","content":[{"type":"text","text":"/skill:papercut"}]}}
+{"type":"message","id":"omp-one-shot-assistant-4","timestamp":"2026-08-12T10:03:07.000Z","message":{"role":"assistant","model":"omp-fixture","usage":{"input":5,"output":6}}}

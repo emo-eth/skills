@@ -465,6 +465,7 @@ type AttributionPoint = AttributionInfo & {
 type AttributionIndex = {
   exact: Map<string, AttributionInfo>;
   timelines: Map<string, AttributionPoint[]>;
+  consumed: Set<AttributionPoint>;
 };
 
 function attributionKey(source: UsageSource, sourcePath: string, sourceRecordId: string): string {
@@ -539,12 +540,16 @@ function explicitSkillName(value: unknown): string | null {
   const name = optionalString(value);
   return name && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) ? name : null;
 }
-
 function explicitSkillFromText(text: string): string | null {
   const slash = text.match(/(?:^|\s)\/skill:([A-Za-z0-9][A-Za-z0-9._-]*)\b/);
   if (slash) return slash[1] ?? null;
   const url = text.match(/skill:\/\/([A-Za-z0-9][A-Za-z0-9._-]*)/);
   return url?.[1] ?? null;
+}
+
+function explicitSkillFromUserText(text: string): string | null {
+  const match = text.match(/^\s*\/skill:([A-Za-z0-9][A-Za-z0-9._-]*)\b/);
+  return match?.[1] ?? null;
 }
 
 function explicitSkillFromToolCalls(value: unknown): string | null {
@@ -578,7 +583,11 @@ function explicitSkillFromToolCalls(value: unknown): string | null {
   return null;
 }
 
-function explicitSkillFromRecord(record: JsonObject, text: string): string | null {
+function explicitSkillFromRecord(
+  record: JsonObject,
+  role: string | null,
+  text: string,
+): string | null {
   const type = optionalString(record.type)?.toLowerCase() ?? "";
   if (type.includes("skill")) {
     const direct = explicitSkillName(record.skill) ?? explicitSkillName(record.name);
@@ -603,7 +612,7 @@ function explicitSkillFromRecord(record: JsonObject, text: string): string | nul
       if (skill) return skill;
     }
   }
-  return explicitSkillFromText(text);
+  return role === "user" ? explicitSkillFromUserText(text) : null;
 }
 
 function sessionIdFromRecord(record: JsonObject, current: string | null): string | null {
@@ -691,7 +700,7 @@ async function scanLocalSourceFile(
   const lines = createInterface({ input, crlfDelay: Infinity });
   let lineNumber = 0;
   let sessionId: string | null = null;
-  let currentSkill: string | null = null;
+  let pendingSkill: string | null = null;
   let currentModel: string | null = null;
 
   try {
@@ -713,9 +722,9 @@ async function scanLocalSourceFile(
       const { role, text } = roleAndText(object);
       const timestampMs = timestampFromRecord(object);
 
-      const invokedSkill = explicitSkillFromRecord(object, text);
+      const invokedSkill = explicitSkillFromRecord(object, role, text);
       if (role === "user" || (source !== "claude" && invokedSkill)) {
-        currentSkill = invokedSkill;
+        pendingSkill = invokedSkill;
         if (source !== "claude") {
           addAttributionPoint(index, {
             source,
@@ -777,12 +786,15 @@ async function scanLocalSourceFile(
           object,
           sessionId,
           currentModel,
-          currentSkill,
-          currentSkill ? "explicit-skill-invocation" : "unknown",
+          pendingSkill,
+          pendingSkill ? "explicit-skill-invocation" : "unknown",
           usage,
           bucketsFor(usage),
         );
-        if (event) addEvent(events, event);
+        if (event) {
+          addEvent(events, event);
+          pendingSkill = null;
+        }
         continue;
       }
 
@@ -796,12 +808,15 @@ async function scanLocalSourceFile(
           object,
           sessionId,
           currentModel,
-          currentSkill,
-          currentSkill ? "explicit-skill-invocation" : "unknown",
+          pendingSkill,
+          pendingSkill ? "explicit-skill-invocation" : "unknown",
           usage,
           codexBucketsFor(usage),
         );
-        if (event) addEvent(events, event);
+        if (event) {
+          addEvent(events, event);
+          pendingSkill = null;
+        }
       }
     }
   } catch (error: unknown) {
@@ -816,7 +831,7 @@ async function scanClaudeFile(
   events: Map<string, UsageEvent>,
   warnings: string[],
 ): Promise<void> {
-  const index: AttributionIndex = { exact: new Map(), timelines: new Map() };
+  const index: AttributionIndex = { exact: new Map(), timelines: new Map(), consumed: new Set() };
   await scanLocalSourceFile(path, "claude", index, events, warnings, true, { value: 0 });
 }
 
@@ -922,7 +937,6 @@ async function loadMemexEvents(
 
 function applyAttribution(event: MemexEventInput, index: AttributionIndex): UsageEvent {
   let info: AttributionInfo | undefined;
-  let latestTimestamp = -1;
   if (event.sourceRecordId) {
     info = index.exact.get(attributionKey(event.source, event.sourcePath, event.sourceRecordId));
   }
@@ -934,15 +948,33 @@ function applyAttribution(event: MemexEventInput, index: AttributionIndex): Usag
     for (const key of keys) {
       const points = index.timelines.get(key);
       if (!points) continue;
+
+      let selected: AttributionPoint | undefined;
       for (const point of points) {
-        if (event.timestampMs === 0 || point.timestampMs <= event.timestampMs) {
-          if (point.timestampMs > latestTimestamp) {
-            latestTimestamp = point.timestampMs;
-            info = point;
-          }
+        if (index.consumed.has(point)) continue;
+        if (event.timestampMs !== 0 && point.timestampMs > event.timestampMs) continue;
+        if (
+          !selected
+          || point.timestampMs > selected.timestampMs
+          || (point.timestampMs === selected.timestampMs && point.order > selected.order)
+        ) {
+          selected = point;
         }
       }
-      if (info) break;
+      if (!selected) continue;
+
+      for (const point of points) {
+        if (index.consumed.has(point)) continue;
+        if (event.timestampMs !== 0 && point.timestampMs > event.timestampMs) continue;
+        if (
+          point.timestampMs < selected.timestampMs
+          || (point.timestampMs === selected.timestampMs && point.order <= selected.order)
+        ) {
+          index.consumed.add(point);
+        }
+      }
+      info = selected;
+      break;
     }
   }
   const skill = info?.skill ?? null;
@@ -986,7 +1018,7 @@ export async function scanAllSources(options: AllSourceScanOptions = {}): Promis
   const selectedMemexEvents = memexEvents.filter((event) => sources.includes(event.source));
   const memexSources = new Set(selectedMemexEvents.map((event) => event.source));
   const sourceRoots = rootsForSources(options, sources);
-  const attribution: AttributionIndex = { exact: new Map(), timelines: new Map() };
+  const attribution: AttributionIndex = { exact: new Map(), timelines: new Map(), consumed: new Set() };
   const localEvents = new Map<string, UsageEvent>();
 
   for (const source of sources) {
