@@ -151,3 +151,22 @@ Consequences: Direct-start commands without a policy use `block-new`; explicit o
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## D16 - 2026-08-13 - Clear temporary fast lanes after terminal settlement
+
+Decision: The native do-it-now and wrap-it-up guards stop automatically only
+after the host reports a terminal agent run. Pi uses `agent_settled`; OMP uses
+the terminal `agent_end` event. An expired guard remains active through
+post-run continuations so late work cannot bypass the deadline.
+Why: A fast lane belongs to one explicit request and should not require a
+manual `/wallclock stop` after the request ends, but expiry must remain
+enforced until the host has no continuation left to run.
+Alternatives: Stop on every `agent_end` (rejected because Pi can still retry,
+compact, or continue); keep an expired lane until manual stop (rejected because
+it leaks the temporary guard into the next normal request).
+Consequences: Terminal settlement persists a stopped fast-lane state and clears
+its deadline and status-refresh timers. Ordinary `/wallclock` contracts remain
+session-scoped and still require explicit stop.
+Status: active
+Scope: v0
+Load-bearing: no

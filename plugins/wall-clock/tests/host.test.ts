@@ -403,7 +403,8 @@ test("wrap-it-up arms a two-minute fast lane and permits bounded delegation", as
   }, ctx), undefined);
   await host.emit("tool_result", { toolCallId: "wrap-up-delegated", toolName: "task", isError: false }, ctx);
 });
-test("expired wrap-it-up guard remains enforced after agent end", async () => {
+
+test("expired wrap-it-up guard stays enforced through continuation and clears at settlement", async () => {
   let now = 1_000;
   const controller = new WallClockController({ now: () => now }, new MemoryStore());
   const host = new FakeHost();
@@ -431,7 +432,7 @@ test("expired wrap-it-up guard remains enforced after agent end", async () => {
 
   now += 120_001;
   assert.equal(controller.status("main").phase, "expired");
-  await host.emit("agent_end", {}, ctx);
+  await host.emit("agent_end", { willContinue: true }, ctx);
 
   const blocked = await host.emit("tool_call", {
     toolCallId: "after-wrap-up-expiry",
@@ -440,6 +441,39 @@ test("expired wrap-it-up guard remains enforced after agent end", async () => {
   }, ctx) as { block: boolean; reason: string };
   assert.equal(blocked.block, true);
   assert.match(blocked.reason, /deadline has expired/);
+
+  await host.emit("agent_settled", {}, ctx);
+  assert.equal(controller.status("main").active, false);
+  assert.equal(await host.emit("tool_call", { toolCallId: "after-settlement", toolName: "read", input: {} }, ctx), undefined);
+});
+
+test("terminal OMP agent end clears a fast lane", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.emit("message_start", {
+    type: "message_start",
+    message: {
+      role: "custom",
+      details: { name: "do-it-now", args: "finish the active task" },
+      content: "skill body",
+    },
+  }, ctx);
+
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  assert.equal(controller.status("main").active, false);
 });
 
 test("Pi-shaped host injects measured context and blocks expired work before execution", async () => {

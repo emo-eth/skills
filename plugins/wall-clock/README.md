@@ -25,10 +25,10 @@ with this plugin loaded activates a fixed fast lane:
 - bounded delegation through one active, unbound wall-clock assignment before wrap-up;
 - at most 12 ordinary tool calls.
 
-The lane ends when the agent run ends. This is a host guard, not a semantic
-scope parser. It cannot decide whether an arbitrary read or write is related
-to the request, so the bundled skill remains responsible for narrowing model
-behavior. Without a native adapter, the skill is guidance only.
+The lane clears when the host reports that the agent run has fully settled. If
+the deadline expires first, the guard stays active through any post-run
+continuation so blocked work cannot bypass expiry. Without a native adapter, the
+skill is guidance only.
 
 ## Wrap-it-up lane
 
@@ -39,6 +39,10 @@ plugin loaded activates a fixed fast lane:
 - `abort-running` for supported native actions;
 - bounded delegation through one active, unbound wall-clock assignment while the phase is active;
 - at most 12 ordinary tool calls.
+
+The lane clears after the host reports that the agent run has fully settled. If
+the deadline expires first, the guard stays active through any post-run
+continuation so blocked work cannot bypass expiry.
 
 The bundled skill remains responsible for closing the active task. Without a
 native adapter, the skill is guidance only.
