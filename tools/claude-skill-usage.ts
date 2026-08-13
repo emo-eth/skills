@@ -103,10 +103,10 @@ function formatPercent(value: number): string {
 function printHelp(): void {
   console.log(`Usage: claude-skill-usage [options]
 
-Report local Claude, Codex, Pi, and OMP token usage grouped by skill and source.
 Memex supplies normalized Claude and Codex events when available. Pi and OMP use
-local session parsers. Claude uses native attributionSkill; other sources use
-explicit /skill:<name> or skill://<name> records, otherwise (none).
+local session parsers. Claude uses native attributionSkill. Other sources use an
+explicit /skill:<name> or skill://<name> invocation for one following usage
+event; ordinary user messages reset it. Later events are grouped under (none).
 
 Options:
   --root DIR       Claude projects directory or JSONL file (repeatable)
@@ -122,9 +122,10 @@ Defaults:
   Memex usage --json --events, then ~/.claude/projects, ~/.codex/sessions,
   ~/.pi/agent/sessions, and ~/.omp/agent/sessions for local attribution/parsing.
 
-Token total = input + cache reads + cache creation + output.
 Attribution is observed only when a native Claude field or explicit skill
-invocation record supports it. Unknown events are grouped under (none).
+invocation record supports it. Non-Claude attribution is one-shot: one
+invocation can label one following usage event. Unknown events are grouped
+under (none).
 `);
 }
 
