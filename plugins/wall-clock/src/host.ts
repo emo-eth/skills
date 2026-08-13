@@ -97,6 +97,7 @@ export type HostCoordination = {
   persistenceOwners: Map<string, () => void>;
   timers: Map<string, { handle: unknown; cancel: (handle: unknown) => void }>;
   processedLifecycleEvents: Set<string>;
+  settledSessions: Set<string>;
 };
 
 export function createHostCoordination(controller = new WallClockController()): HostCoordination {
@@ -108,6 +109,7 @@ export function createHostCoordination(controller = new WallClockController()): 
     persistenceOwners: new Map(),
     timers: new Map(),
     processedLifecycleEvents: new Set(),
+    settledSessions: new Set(),
   };
 }
 
@@ -321,15 +323,48 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return status;
   };
 
-  const stopSession = (ctx: RuntimeContext | undefined) => {
-    const sessionId = requireOwnerSession(ctx);
+  const stopSessionById = (sessionId: string, ctx?: RuntimeContext) => {
+    const status = controller.status(sessionId);
+    if (!status.active) {
+      coordination.settledSessions.delete(sessionId);
+      fastLanes.delete(sessionId);
+      clearSessionDeadlines(sessionId);
+      return status;
+    }
     controller.stop(sessionId);
+    coordination.settledSessions.delete(sessionId);
     fastLanes.delete(sessionId);
     clearSessionDeadlines(sessionId);
     clearStatusRefresh();
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
     return controller.status(sessionId);
+  };
+
+  const stopSession = (ctx: RuntimeContext | undefined) => {
+    const sessionId = requireOwnerSession(ctx);
+    return stopSessionById(sessionId, ctx);
+  };
+
+  const tryStopSettledSession = (sessionId: string, ctx?: RuntimeContext): void => {
+    if (!coordination.settledSessions.has(sessionId)) return;
+    const status = controller.status(sessionId);
+    if (!status.active) {
+      coordination.settledSessions.delete(sessionId);
+      return;
+    }
+    if (controller.runningActions(sessionId).length > 0) return;
+    for (const binding of coordination.childBindings.values()) {
+      if (binding.parentSessionId === sessionId) return;
+    }
+    stopSessionById(sessionId, ctx);
+  };
+
+  const markSessionSettled = (ctx?: RuntimeContext): void => {
+    const scope = rememberContext(ctx);
+    if (!scope || scope.assignmentId !== undefined) return;
+    coordination.settledSessions.add(scope.sessionId);
+    tryStopSettledSession(scope.sessionId, ctx);
   };
 
   const startFastLane = (ctx: RuntimeContext | undefined, invocation: FastLaneInvocation) => {
@@ -356,12 +391,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   const stopFastLane = (sessionId: string, ctx?: RuntimeContext): void => {
     if (!fastLanes.delete(sessionId)) return;
-    if (!controller.status(sessionId).active) return;
-    controller.stop(sessionId);
-    clearSessionDeadlines(sessionId);
-    clearStatusRefresh();
-    persist(sessionId);
-    updateStatus(host, controller, sessionId, ctx);
+    stopSessionById(sessionId, ctx);
   };
 
 
@@ -506,16 +536,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   // Pi emits agent_settled after retries and continuations; OMP marks a
   // terminal agent_end with willContinue omitted or false.
   host.on("agent_end", async (event, ctx) => {
-    const scope = rememberContext(ctx);
-    if (scope && scope.assignmentId === undefined && isTerminalAgentEnd(event)) {
-      stopFastLane(scope.sessionId, ctx);
-    }
+    if (isTerminalAgentEnd(event)) markSessionSettled(ctx);
     return undefined;
   });
 
   host.on("agent_settled", async (_event, ctx) => {
-    const scope = rememberContext(ctx);
-    if (scope && scope.assignmentId === undefined) stopFastLane(scope.sessionId, ctx);
+    markSessionSettled(ctx);
     return undefined;
   });
 
@@ -665,6 +691,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       coordination.persistenceOwners.delete(direct);
     }
     clearStatusRefresh();
+    if (direct) coordination.settledSessions.delete(direct);
     if (direct === currentDirectSessionId) currentDirectSessionId = undefined;
   });
 
@@ -816,7 +843,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     });
   }
 
-  function finishAction(event: any, ctx?: RuntimeContext): void {
+  function finishAction(event: unknown, ctx?: RuntimeContext): void {
     const scope = rememberContext(ctx, event);
     if (!scope) return;
     const rawActionId = existingActionId(event);
@@ -834,6 +861,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       if (linkedEntry) coordination.actionAssignments.delete(linkedEntry[0]);
       coordination.actionContexts.delete(actionId);
     }
+    tryStopSettledSession(linked?.sessionId ?? scope.sessionId);
   }
 
   function registerChildLifecycleListeners(): void {
@@ -897,6 +925,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
             coordination.childBindings.delete(childId);
           }
         }
+        tryStopSettledSession(parentSessionId);
       }
     };
 

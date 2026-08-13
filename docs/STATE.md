@@ -10,10 +10,11 @@ Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 l
 
 The package is installed and enabled in the normal local OMP profile from the wall-clock plugin checkout. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
-Temporary do-it-now and wrap-it-up guards clear only after terminal agent
-settlement: Pi's `agent_settled` event or OMP's terminal `agent_end` event.
-An expired guard remains active through post-run continuations, then stops so
-the next normal request does not need `/wallclock stop`. Evidence is in
+Native wall-clock contracts started by an explicit `/wallclock` command or
+`wallclock_start` clear after terminal agent settlement: Pi's
+`agent_settled` or OMP's terminal `agent_end`. Expired contracts remain active
+through continuations, and cleanup waits for active child work before stopping.
+A normal follow-up does not need `/wallclock stop`. Evidence is in
 `docs/log/2026-08-13-wall-clock-self-clear.md`.
 
 The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement. Nested assignment limits are specified but not implemented in `proposals/wall-clock/nested-assignment-limits.md`; the proposed version 4 data shape requires user sign-off before implementation.
@@ -53,7 +54,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Understanding before delegation | `skills/understand/SKILL.md` | `skills/understand/SKILL.md` | skill contract inspection and fresh-eyes review | documented |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
-| Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | two-minute native host guard, expiry enforcement through continuation, terminal-settlement cleanup, and skill contract inspection | documented |
+| Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md` | raw snapshot and answers doc | verified-live |
