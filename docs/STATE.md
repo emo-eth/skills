@@ -10,6 +10,12 @@ Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 l
 
 The package is installed and enabled in the normal local OMP profile from the wall-clock plugin checkout. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
+Temporary do-it-now and wrap-it-up guards clear only after terminal agent
+settlement: Pi's `agent_settled` event or OMP's terminal `agent_end` event.
+An expired guard remains active through post-run continuations, then stops so
+the next normal request does not need `/wallclock stop`. Evidence is in
+`docs/log/2026-08-13-wall-clock-self-clear.md`.
+
 The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement. Nested assignment limits are specified but not implemented in `proposals/wall-clock/nested-assignment-limits.md`; the proposed version 4 data shape requires user sign-off before implementation.
 
 Known child-test boundary: the native OMP `TaskTool` tests set `async.enabled` to false, while OMP 17.2.15 defaults it to true. The nested-assignment proposal makes a one-level background-child characterization test its first gate. Current synchronous child evidence must not be presented as proof of normal background-task behavior.
@@ -45,7 +51,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex session inventory and transcript retrieval, with optional Herdr navigation | `memex index --include-agents` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
-| Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | two-minute native host guard, post-expiry `agent_end` regression, and skill contract inspection | documented |
+| Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | two-minute native host guard, expiry enforcement through continuation, terminal-settlement cleanup, and skill contract inspection | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md` | raw snapshot and answers doc | verified-live |

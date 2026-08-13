@@ -26,13 +26,18 @@ Use wall-clock control only when the user gives a deadline, gives a duration, or
 The explicit `/do-it-now` skill is the exception: on a supported native Pi or
 OMP host, its invocation starts a fixed 2-minute host guard with
 `abort-running`, bounded delegation encouraged, and a 12-call ordinary-tool
-limit. Do not call portable wall-clock tools to start that lane.
+limit. Do not call portable wall-clock tools to start that lane. The guard
+clears after the host reports that the agent run has fully settled. If the
+deadline expires first, it stays active through any post-run continuation so
+blocked work cannot bypass expiry.
 
 The explicit `/wrap-it-up` skill is the second fixed lane: on a supported
 native Pi or OMP host, its invocation starts a two-minute host guard with
 `abort-running`, bounded delegation encouraged while the phase is active, and
 a 12-call ordinary-tool limit. Do not call portable wall-clock tools to start
-that lane.
+that lane. The guard clears after the host reports that the agent run has fully
+settled. If the deadline expires first, it stays active through any post-run
+continuation so blocked work cannot bypass expiry.
 
 When the phase is active, first consider whether one bounded child assignment
 can make the result faster or safer. Create the assignment before calling the

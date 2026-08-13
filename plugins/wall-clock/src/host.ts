@@ -503,13 +503,19 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return undefined;
   });
 
-  host.on("agent_end", async (_event, ctx) => {
+  // Pi emits agent_settled after retries and continuations; OMP marks a
+  // terminal agent_end with willContinue omitted or false.
+  host.on("agent_end", async (event, ctx) => {
     const scope = rememberContext(ctx);
-    if (scope && scope.assignmentId === undefined) {
-      const status = controller.status(scope.sessionId);
-      // Keep an expired fast lane active so post-run work cannot bypass its gate.
-      if (status.phase !== "expired") stopFastLane(scope.sessionId, ctx);
+    if (scope && scope.assignmentId === undefined && isTerminalAgentEnd(event)) {
+      stopFastLane(scope.sessionId, ctx);
     }
+    return undefined;
+  });
+
+  host.on("agent_settled", async (_event, ctx) => {
+    const scope = rememberContext(ctx);
+    if (scope && scope.assignmentId === undefined) stopFastLane(scope.sessionId, ctx);
     return undefined;
   });
 
@@ -1010,6 +1016,11 @@ function parseFastLaneRequest(message: unknown): FastLaneInvocation | null {
   if (!match) return null;
   const kind = match[1]?.toLowerCase();
   return kind && isFastLaneKind(kind) ? { kind, request: (match[2] ?? "").trim() } : null;
+}
+
+function isTerminalAgentEnd(event: unknown): boolean {
+  if (!event || typeof event !== "object" || !("willContinue" in event)) return false;
+  return event.willContinue !== true;
 }
 
 function messageText(message: unknown): string {
