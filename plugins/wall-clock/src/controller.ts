@@ -427,7 +427,7 @@ export class WallClockController {
       `Phase: ${context.phase}. Mode: ${context.mode}. Expiry policy: ${context.expiryPolicy}.`,
       `Assignment elapsed: ${formatDurationMs(context.assignmentElapsedMs)} (${context.assignmentElapsedMs}ms).`,
       context.mode === "turn-limit"
-        ? `The timer resets after each terminal agent turn. Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
+        ? `The next timer starts when the next normal user turn begins. Steer messages keep the current deadline. Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
         : undefined,
       "The budget is a ceiling, not a target. Finish as soon as the acceptance target is met.",
       "If you reduce scope or validation, keep the result working and report the shortcut, tradeoff, and skipped work.",

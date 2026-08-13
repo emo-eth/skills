@@ -264,3 +264,28 @@ version 3 state fails closed and is not migrated.
 Status: active
 Scope: v1
 Load-bearing: yes
+
+## D38 - 2026-08-13 - Start turn-limit windows at user-turn start
+
+Decision: A `turn-limit` owner window ends at terminal agent settlement and
+remains armed without a running owner deadline until the next normal user
+message begins. That message starts a fresh configured-duration window.
+Steering messages do not reset or extend the current deadline. Child assignment
+deadlines remain independent.
+
+Why: Resetting at terminal settlement starts the next budget before the user
+has sent the next request. It spends idle time and lets a later steer message
+inherit an incorrectly refreshed deadline.
+
+Alternatives: Reset at terminal settlement (rejected because it starts the
+clock too early); reset on every user message (rejected because steering
+messages would extend a running turn); reset at every internal `turn_end`
+(rejected because retries and continuations are not terminal owner turns).
+
+Consequences: The host clears the owner deadline timer at settlement and
+rearms it on the next normal owner message. Status can remain active while the
+owner contract is armed; the next user message restores the full duration.
+
+Status: active
+Scope: v1
+Load-bearing: yes

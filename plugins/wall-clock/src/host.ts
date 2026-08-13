@@ -411,12 +411,25 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     for (const binding of coordination.childBindings.values()) {
       if (binding.parentSessionId === sessionId) return;
     }
-    coordination.settledSessions.delete(sessionId);
     if (status.mode === "turn-limit") {
-      resetSessionTurnById(sessionId, ctx);
+      clearDeadline(sessionId);
+      clearStatusRefresh();
+      persist(sessionId);
       return;
     }
+    coordination.settledSessions.delete(sessionId);
     stopSessionById(sessionId, ctx);
+  };
+
+  const beginSessionTurn = (sessionId: string, ctx?: RuntimeContext): void => {
+    if (!coordination.settledSessions.has(sessionId)) return;
+    const status = controller.status(sessionId);
+    if (!status.active || status.mode !== "turn-limit") {
+      coordination.settledSessions.delete(sessionId);
+      return;
+    }
+    resetSessionTurnById(sessionId, ctx);
+    coordination.settledSessions.delete(sessionId);
   };
 
   const markSessionSettled = (ctx?: RuntimeContext): void => {
@@ -595,6 +608,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("message_start", async (event, ctx) => {
     await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx, event);
+    const role = event?.message?.role ?? event?.role;
+    if (scope && scope.assignmentId === undefined && role === "user") beginSessionTurn(scope.sessionId, ctx);
     const invocation = parseFastLaneRequest(event?.message ?? event);
     if (scope?.assignmentId === undefined && invocation !== null) startFastLane(ctx, invocation);
     return undefined;

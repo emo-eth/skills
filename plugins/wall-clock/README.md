@@ -14,7 +14,7 @@ Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects me
 - **Fast lane**: A short host-enforced execution window for one bounded request.
 - **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
 - **Wrap-it-up lane**: A two-minute host-enforced execution window for finishing the active request.
-- **Turn-limit mode**: A persistent duration that starts a fresh window after each terminal agent turn.
+- **Turn-limit mode**: A persistent duration that starts a fresh window when the next normal user turn begins.
 - **Terminal agent turn**: A Pi `agent_settled` event or an OMP `agent_end` event with `willContinue` false.
 - **Inline batch delegation**: One parent `task` call carrying several child tasks, with one `wallClock` assignment contract for each item.
 
@@ -62,13 +62,14 @@ Activation accepts a positive duration such as `30m` or a future local time such
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
 The normal deadline mode clears after terminal agent settlement. The `turn-limit`
-mode is started with `/wallclock turn-limit 2m [policy] [prompt]`; it stays
-active and resets its hard deadline to two minutes after every terminal agent
-turn. An expired turn remains enforced until it settles, then the next turn
-gets a fresh window. Use `/wallclock set 3m` or `wallclock_set` to change the
-active duration in either mode without discarding the plan, assignments, or
-reports. Use `/wallclock stop` or `wallclock_stop` to clear the contract.
-If a child action is still running, cleanup waits for that child to finish.
+mode stays active after terminal settlement but does not reset its deadline there.
+The next normal user message starts a fresh configured-duration window. Steering
+messages keep the current deadline and never extend it. An expired turn remains
+enforced until it settles; a later normal user message starts the next window.
+Use `/wallclock set 3m` or `wallclock_set` to change the active duration in either
+mode without discarding the plan, assignments, or reports. Use `/wallclock stop`
+or `wallclock_stop` to clear the contract. If a child action is still running,
+cleanup waits for that child to finish.
 
 Before each model turn, the native adapter injects current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, phase, mode, policy, and current assignment elapsed time. These values come from the host clock. The model is not asked to estimate task duration.
 
@@ -126,7 +127,8 @@ Start a session, optionally submit the first prompt, and inspect it:
 defaults to `block-new`. When the command includes a prompt, an idle host
 starts a new turn and a running host delivers it as normal steering input.
 Normal wall-clock contracts stop after terminal settlement. A `turn-limit`
-contract remains active and resets its deadline after each terminal agent turn.
+contract remains active after settlement and starts its next deadline when the
+next normal user message begins. Steering messages keep the current deadline.
 `set` changes the active duration in either mode without discarding state.
 
 The native status display refreshes once per second from the current host clock. A delayed refresh recalculates the remaining time instead of decrementing a cached value, so display delays do not accumulate drift.

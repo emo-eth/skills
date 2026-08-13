@@ -178,11 +178,11 @@ test("wallclock honors explicit start and block-new before forwarding a prompt",
   assert.equal(controller.status("main").expiryPolicy, "block-new");
   assert.deepEqual(host.userMessages, ["inspect the failing tests"]);
 });
-test("turn-limit keeps the contract active and resets after terminal settlement", async () => {
+test("turn-limit starts the next window at a normal user message", async () => {
   let now = 1_000;
   const controller = new WallClockController({ now: () => now }, new MemoryStore());
   const host = new FakeHost();
-  installHostExtension(host as any, {
+  installHostExtension(host as unknown as RuntimeHost, {
     controller,
     clock: { now: () => now },
     enforcement: { name: "fake-omp", canBlockNew: true },
@@ -194,14 +194,24 @@ test("turn-limit keeps the contract active and resets after terminal settlement"
   await host.commands.get("wallclock").handler("turn-limit 2m block-new", ctx);
   assert.equal(controller.status("main").mode, "turn-limit");
   assert.equal(controller.status("main").durationMs, 120_000);
-  now += 120_001;
-  assert.equal(controller.status("main").phase, "expired");
 
+  now += 1_000;
   await host.emit("agent_end", { willContinue: false }, ctx);
-  const reset = controller.status("main");
-  assert.equal(reset.active, true);
-  assert.equal(reset.phase, "active");
-  assert.equal(reset.remainingMs, 120_000);
+  const settled = controller.status("main");
+  assert.equal(settled.active, true);
+  assert.equal(settled.phase, "active");
+  assert.equal(settled.deadlineMs, 121_000);
+  assert.equal(settled.remainingMs, 119_000);
+
+  now += 8_000;
+  await host.emit("message_start", { message: { role: "user" } }, ctx);
+  const started = controller.status("main");
+  assert.equal(started.deadlineMs, 130_000);
+  assert.equal(started.remainingMs, 120_000);
+
+  now += 1_000;
+  await host.emit("message_start", { message: { role: "user" } }, ctx);
+  assert.equal(controller.status("main").deadlineMs, 130_000);
 
   await host.commands.get("wallclock").handler("set 3m", ctx);
   assert.equal(controller.status("main").durationMs, 180_000);

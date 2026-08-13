@@ -17,7 +17,7 @@ compatibility: The optional MCP tools require a client that loads mcp.json and N
 - **Inline batch delegation**: One parent task call that carries several child tasks, with one bounded assignment contract per item.
 - **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
 - **Wrap-it-up lane**: A fixed two-minute host-enforced execution window for finishing the active task.
-- **Turn-limit mode**: A persistent host-enforced duration that starts a fresh window after each terminal agent turn.
+- **Turn-limit mode**: A persistent host-enforced duration that starts a fresh window when the next normal user turn begins.
 - **Terminal agent turn**: A Pi `agent_settled` event or an OMP `agent_end` event with `willContinue` false.
 - **Host guard**: Native plugin enforcement that limits time, delegation, and ordinary tool calls.
 
@@ -56,14 +56,15 @@ report the smallest current acceptance target.
 
 An explicit `/wallclock` activation and the native `wallclock_start` tool use
 the same terminal-settlement cleanup. The default deadline mode stops after
-terminal settlement. The `turn-limit` mode keeps the contract active and
-resets its hard deadline to the configured duration after each terminal agent
-turn. If the current turn expires first, the host still enforces that expiry;
-the next terminal turn starts a new window. Use `/wallclock set 3m` or
-`wallclock_set` to change the duration without discarding the plan,
-assignments, or reports. Use `/wallclock stop` or `wallclock_stop` to clear the
-contract. If a child action is still running, cleanup waits for that child to
-finish before stopping or resetting the owner contract.
+terminal settlement. The `turn-limit` mode keeps the contract active but does
+not reset its deadline at terminal settlement. The next normal user message
+starts a fresh configured-duration window. Steering messages keep the current
+deadline and never extend it. If the current turn expires first, the host still
+enforces that expiry. Use `/wallclock set 3m` or `wallclock_set` to change the
+duration without discarding the plan, assignments, or reports. Use
+`/wallclock stop` or `wallclock_stop` to clear the contract. If a child action
+is still running, cleanup waits for that child to finish before stopping or
+resetting the owner contract.
 
 The budget is a ceiling, not a target. Finish when the acceptance target is met. Do not spend unused time on extra scope.
 
@@ -78,10 +79,11 @@ When the user gives a duration such as `30m` or a local time such as `5pm`:
 3. Read the returned phase and remaining time. State the hard deadline and the wrap-up point in the working plan.
 4. If activation is unavailable or rejected, do not create a guidance-only wall-clock session. Tell the user that this host cannot enforce the requested policy.
 
-Use the native command `/wallclock turn-limit 2m` when every terminal
-agent turn must fit inside a fresh two-minute window. The command accepts the
-same optional expiry policy and trailing prompt as the normal start form. Use
-`/wallclock set 3m` to change the active duration in either mode.
+Use the native command `/wallclock turn-limit 2m` when every normal user turn
+must fit inside a fresh two-minute window. Steering messages do not start a new
+window. The command accepts the same optional expiry policy and trailing prompt
+as the normal start form. Use `/wallclock set 3m` to change the active duration
+in either mode.
 
 A local-time deadline uses the host's local timezone. If the user names another timezone, convert it before starting or mark the conversion as unresolved.
 
@@ -124,6 +126,6 @@ Keep partial output usable. Never report cancellation unless the host executor c
 
 ## Native host adapters
 
-The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter restores version 4 session state, injects measured time, observes tool and child results, resets `turn-limit` contracts at terminal agent turns, and enforces its pre-tool decision.
+The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter restores version 4 session state, injects measured time, observes tool and child results, arms `turn-limit` contracts after terminal settlement, starts the next owner window at a normal user message, and enforces its pre-tool decision.
 
 Under `abort-running`, the adapter rejects unknown or unabortable executors before they start. It records cancellation only after a correlated native result reports an abort. Native support does not imply that another Agent Plugins client has the same enforcement boundary.
