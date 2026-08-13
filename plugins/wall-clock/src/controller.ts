@@ -143,46 +143,57 @@ export class WallClockController {
   }
 
   assign(sessionId: string, input: AssignmentInput): Assignment {
+    return this.assignBatch(sessionId, [input])[0]!;
+  }
+
+  assignBatch(sessionId: string, inputs: AssignmentInput[]): Assignment[] {
     const state = this.requireState(sessionId);
     const parentStatus = this.status(sessionId);
     if (!parentStatus.active || parentStatus.phase !== "active") {
       throw new Error("Cannot create an assignment outside the active wall-clock phase");
     }
-    if (!Number.isFinite(input.budgetMs) || input.budgetMs <= 0) throw new Error("Assignment budget must be positive");
-    if (!input.objective.trim()) throw new Error("Assignment objective is required");
-    if (!input.parentPlanItemId.trim()) throw new Error("A parent plan item identifier is required");
-    if (state.plan.length > 0 && !state.plan.some((item) => item.id === input.parentPlanItemId)) {
-      throw new Error(`Parent plan item ${input.parentPlanItemId} does not exist in the current plan`);
-    }
-    requireNonEmptyStringArray(input.scope, "Assignment scope");
-    requireNonEmptyStringArray(input.acceptance, "Assignment acceptance target");
-    if (input.id !== undefined && !input.id.trim()) throw new Error("Assignment identifier must not be empty");
-    const assignmentId = input.id ?? nextAssignmentId(state);
-    if (state.assignments.some((assignment) => assignment.id === assignmentId)) {
-      throw new Error(`Assignment ${assignmentId} already exists`);
-    }
+    if (inputs.length === 0) throw new Error("At least one assignment is required");
 
     const now = this.clock.now();
-    const hardDeadline = Math.min(state.hardDeadline, now + input.budgetMs);
-    const availableMs = hardDeadline - now;
-    const requestedWrapUpMs = input.wrapUpMs ?? Math.min(DEFAULT_WRAP_UP_MS, availableMs / 5);
-    if (!Number.isFinite(requestedWrapUpMs) || requestedWrapUpMs <= 0) {
-      throw new Error("Assignment wrap-up duration must be positive");
-    }
-    const wrapUpMs = Math.min(requestedWrapUpMs, availableMs);
-    const assignment: Assignment = {
-      ...structuredClone(input),
-      id: assignmentId,
-      parentSessionId: sessionId,
-      issuedAt: now,
-      hardDeadline,
-      wrapUpAt: hardDeadline - wrapUpMs,
-      status: "active",
-    };
-    state.assignments.push(assignment);
-    state.revision += 1;
+    const reservedIds = new Set(state.assignments.map((assignment) => assignment.id));
+    const assignments = inputs.map((input) => {
+      if (!Number.isFinite(input.budgetMs) || input.budgetMs <= 0) throw new Error("Assignment budget must be positive");
+      if (!input.objective.trim()) throw new Error("Assignment objective is required");
+      if (!input.parentPlanItemId.trim()) throw new Error("A parent plan item identifier is required");
+      if (state.plan.length > 0 && !state.plan.some((item) => item.id === input.parentPlanItemId)) {
+        throw new Error(`Parent plan item ${input.parentPlanItemId} does not exist in the current plan`);
+      }
+      requireNonEmptyStringArray(input.scope, "Assignment scope");
+      requireNonEmptyStringArray(input.acceptance, "Assignment acceptance target");
+      if (input.id !== undefined && !input.id.trim()) throw new Error("Assignment identifier must not be empty");
+      const assignmentId = input.id ?? nextAssignmentId(state, reservedIds);
+      if (reservedIds.has(assignmentId)) {
+        throw new Error(`Assignment ${assignmentId} already exists`);
+      }
+      reservedIds.add(assignmentId);
+
+      const hardDeadline = Math.min(state.hardDeadline, now + input.budgetMs);
+      const availableMs = hardDeadline - now;
+      const requestedWrapUpMs = input.wrapUpMs ?? Math.min(DEFAULT_WRAP_UP_MS, availableMs / 5);
+      if (!Number.isFinite(requestedWrapUpMs) || requestedWrapUpMs <= 0) {
+        throw new Error("Assignment wrap-up duration must be positive");
+      }
+      const wrapUpMs = Math.min(requestedWrapUpMs, availableMs);
+      return {
+        ...structuredClone(input),
+        id: assignmentId,
+        parentSessionId: sessionId,
+        issuedAt: now,
+        hardDeadline,
+        wrapUpAt: hardDeadline - wrapUpMs,
+        status: "active" as const,
+      };
+    });
+
+    state.assignments.push(...assignments);
+    state.revision += assignments.length;
     this.save(state);
-    return structuredClone(assignment);
+    return structuredClone(assignments);
   }
 
   attachChild(sessionId: string, assignmentId: string, childSessionId: string): Assignment {
@@ -544,9 +555,8 @@ function requireStringArray(values: string[], label: string): void {
   }
 }
 
-function nextAssignmentId(state: SessionState): string {
-  const ids = new Set(state.assignments.map((assignment) => assignment.id));
+function nextAssignmentId(state: SessionState, reservedIds = new Set(state.assignments.map((assignment) => assignment.id))): string {
   let sequence = 1;
-  while (ids.has(`assignment-${sequence}`)) sequence += 1;
+  while (reservedIds.has(`assignment-${sequence}`)) sequence += 1;
   return `assignment-${sequence}`;
 }

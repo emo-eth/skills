@@ -69,13 +69,18 @@ Every lower assignment has its own measured elapsed time and report. No lower as
 
 The current controller stores a flat `assignments` array. Each assignment points to the owner session and can bind one child session. A child binding resolves all controller access back to the owner state and the child's assignment.
 
-Recursion is stopped at three points:
+Recursion is stopped at two points:
 
 1. `wallclock_assign` rejects any caller that already has an assignment scope.
 2. Delegation rejects `task` from an assignment-scoped caller.
-3. Assignment selection searches for exactly one unbound assignment across the whole owner session instead of among the caller's direct children.
 
-Those guards are deliberate v0 restrictions. They are not evidence that the host cannot recurse.
+Batch delegation is supported at the parent level. Each inline batch item
+creates one bounded assignment and maps to one child session. The one-unbound
+assignment selection remains only for the legacy single-task path where the
+parent pre-created one assignment.
+
+Those two nested-delegation guards are deliberate v0 restrictions. They are
+not evidence that the host cannot recurse.
 
 The current OMP registry is already close to the required form. Each extension instance listens on its local event bus. When a child starts, its extension adopts the owner coordination object through a process-wide session-file registry. A nested child's local lifecycle listener can therefore publish a grandchild binding into the same registry. This must be proven in a real host test before relying on it.
 
@@ -130,11 +135,19 @@ Status and injected context show the current assignment's effective deadline, ef
 
 ### N5. Delegation correlation
 
-A `task` call can start only when the caller has exactly one active, unbound direct child assignment. Other branches do not participate in this selection.
+A single task call can start from one active, unbound parent assignment when
+the parent pre-created that assignment. An inline batch task call instead
+contains one assignment contract per item; the host validates the full batch,
+creates one assignment per item, and correlates each child by its batch index
+and native `parentToolCallId`.
 
-Batch delegation remains blocked. One native task call binds one assignment to one execution session.
+Each assignment binds to one child session. Batch delegation is therefore
+many independent assignment-to-child links, not one shared assignment.
 
-Lifecycle correlation must use the emitting execution session plus OMP's `parentToolCallId`. The adapter must not guess from a globally unique-looking tool-call identifier or from an unrelated unbound assignment.
+Lifecycle correlation must use the emitting execution session,
+`parentToolCallId`, and batch index. The adapter must not guess from a
+globally unique-looking tool-call identifier or from an unrelated unbound
+assignment.
 
 ### N6. Session access
 

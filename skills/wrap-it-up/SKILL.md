@@ -19,10 +19,10 @@ Use this skill only through an explicit `/wrap-it-up` invocation while a task is
 
 On a supported native Pi or OMP host with the wall-clock plugin loaded, this
 invocation also activates a two-minute host guard with `abort-running`,
-bounded delegation through one wall-clock assignment while the phase is active,
-and a 12-call ordinary-tool limit. During wrap-up, new delegation and
-destructive work remain blocked. Without that native adapter, these
-instructions still guide the agent but cannot force a timeout.
+bounded delegation through as many wall-clock assignments as useful while the
+phase is active, and a 12-call ordinary-tool limit. During wrap-up, new
+delegation and destructive work remain blocked. Without that native adapter,
+these instructions still guide the agent but cannot force a timeout.
 
 ## Core rule
 

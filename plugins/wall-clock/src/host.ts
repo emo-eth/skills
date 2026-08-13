@@ -83,6 +83,7 @@ type ChildBinding = {
 type ActionLink = {
   sessionId: string;
   assignmentId?: string;
+  assignmentIds?: string[];
   actionId: string;
   directSessionId: string;
   rawActionId: string;
@@ -130,6 +131,11 @@ export type HostExtensionOptions = {
 type Scope = {
   sessionId: string;
   assignmentId?: string;
+};
+type AssignmentResolution = {
+  assignment?: Assignment;
+  assignmentInputs?: AssignmentInput[];
+  reason?: string;
 };
 
 export function installHostExtension(host: RuntimeHost, options: HostExtensionOptions = {}): WallClockController {
@@ -483,7 +489,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const contextText = [
       controller.context(scope.sessionId, scope.assignmentId),
       fastLane
-        ? `${FAST_LANE_CONFIGS[fastLane.kind].displayName} host guard: execute only ${fastLane.request}; use one bounded wall-clock assignment for independent work before wrap-up; do not add adjacent non-delegated work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
+        ? `${FAST_LANE_CONFIGS[fastLane.kind].displayName} host guard: execute only ${fastLane.request}; use as many bounded wall-clock assignments as useful before wrap-up; do not add adjacent non-delegated work. ${Math.max(0, FAST_LANE_MAX_TOOL_CALLS - fastLane.toolCalls)} tool calls remain.`
         : undefined,
     ].filter((part): part is string => part !== undefined).join("\n");
     return {
@@ -584,11 +590,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const rawActionId = suppliedActionId ?? `wall-clock-action-${++actionSequence}`;
     const actionId = canonicalActionId(scope, rawActionId);
     if (!actionId) throw new Error("Wall-clock could not create an action identifier");
-    const assignmentResolution = nativeTool ? {} : resolveAssignment(controller, scope.sessionId, input, action, scope.assignmentId);
+    let assignmentResolution: AssignmentResolution;
+    try {
+      assignmentResolution = nativeTool
+        ? {}
+        : resolveAssignment(controller, scope.sessionId, input, action, scope.assignmentId);
+    } catch (error) {
+      return { block: true, reason: errorMessage(error) };
+    }
     if (assignmentResolution.reason) return { block: true, reason: assignmentResolution.reason };
     const assignment = assignmentResolution.assignment;
     const assignmentId = assignment?.id ?? scope.assignmentId;
-    controller.beginToolCall(scope.sessionId, actionId);
     const proposal: ToolProposal = {
       toolName,
       input,
@@ -598,13 +610,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       enforceable: true,
     };
     const decision = controller.decideTool(scope.sessionId, proposal);
-    if (!decision.allow) {
-      controller.endAction(scope.sessionId, actionId);
-      return { block: true, reason: decision.reason };
-    }
+    if (!decision.allow) return { block: true, reason: decision.reason };
     if (!nativeTool && controller.status(scope.sessionId, assignmentId).expiryPolicy === "abort-running") {
       if (!enforcement?.canAbortAction?.(proposal, ctx)) {
-        controller.endAction(scope.sessionId, actionId);
         return { block: true, reason: `Abort-running cannot admit ${toolName}: the ${enforcement?.name ?? "host"} cannot prove that this action can be aborted` };
       }
       const sameAbortDomainIsBusy = controller.runningActions(scope.sessionId).some((runningAction) => {
@@ -616,10 +624,19 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         return runningContext.abort === ctx?.abort;
       });
       if (sameAbortDomainIsBusy) {
-        controller.endAction(scope.sessionId, actionId);
         return { block: true, reason: "Abort-running allows only one admitted action at a time in each host session because its abort signal is session-wide" };
       }
     }
+    let assignments: Assignment[] | undefined;
+    if (assignmentResolution.assignmentInputs) {
+      try {
+        assignments = controller.assignBatch(scope.sessionId, assignmentResolution.assignmentInputs);
+      } catch (error) {
+        return { block: true, reason: errorMessage(error) };
+      }
+      for (const childAssignment of assignments) scheduleDeadline(scope.sessionId, childAssignment.id, ctx);
+    }
+    controller.beginToolCall(scope.sessionId, actionId);
     if (fastLane && !nativeTool) fastLane.toolCalls += 1;
     if (!nativeTool) {
       controller.startAction(scope.sessionId, actionId, toolName, action, assignmentId);
@@ -628,12 +645,16 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       coordination.actionAssignments.set(actionLinkKey(actionDirectSessionId, rawActionId), {
         sessionId: scope.sessionId,
         assignmentId,
+        assignmentIds: assignments?.map((childAssignment) => childAssignment.id),
         actionId,
         directSessionId: actionDirectSessionId,
         rawActionId,
         action,
       });
-      if (action === "delegate" && assignment) injectAssignmentContext(event, controller, scope.sessionId, assignment);
+      if (action === "delegate") {
+        if (assignments) injectBatchAssignmentContext(event, controller, scope.sessionId, assignments);
+        else if (assignment) injectAssignmentContext(event, controller, scope.sessionId, assignment);
+      }
     }
     updateStatus(host, controller, scope.sessionId, ctx, assignmentId);
     return undefined;
@@ -858,7 +879,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (observed) controller.markAbortObserved(linked?.sessionId ?? scope.sessionId, actionId);
     const finished = controller.endAction(linked?.sessionId ?? scope.sessionId, actionId, options.clock?.now() ?? Date.now(), observed);
     if (finished) {
-      if (linkedEntry) coordination.actionAssignments.delete(linkedEntry[0]);
+      if (linkedEntry && !linked?.assignmentIds) coordination.actionAssignments.delete(linkedEntry[0]);
       coordination.actionContexts.delete(actionId);
     }
     tryStopSettledSession(linked?.sessionId ?? scope.sessionId);
@@ -866,7 +887,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   function registerChildLifecycleListeners(): void {
     const lifecycle = (event: any) => {
-      const eventKey = [event?.id, event?.sessionFile, event?.status, event?.parentToolCallId].map(String).join(":");
+      const eventKey = [event?.id, event?.sessionFile, event?.status, event?.parentToolCallId, event?.index].map(String).join(":");
       if (coordination.processedLifecycleEvents.has(eventKey)) return;
       coordination.processedLifecycleEvents.add(eventKey);
       const parentToolCallId = typeof event?.parentToolCallId === "string" ? event.parentToolCallId : undefined;
@@ -877,10 +898,13 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         : undefined;
       const linked = linkedEntry?.[1];
       const parentSessionId = linked?.sessionId ?? knownBinding?.parentSessionId ?? currentDirectSessionId;
+      const assignmentIds = linked?.assignmentIds;
+      const eventIndex = typeof event?.index === "number" && Number.isInteger(event.index) ? event.index : undefined;
       const assignmentId = linked?.assignmentId
+        ?? (assignmentIds && eventIndex !== undefined ? assignmentIds[eventIndex] : undefined)
         ?? knownBinding?.assignmentId
         ?? (typeof event?.assignmentId === "string" ? event.assignmentId : undefined)
-        ?? (parentSessionId ? controller.assignmentForDelegation(parentSessionId)?.id : undefined);
+        ?? (parentSessionId && !assignmentIds ? controller.assignmentForDelegation(parentSessionId)?.id : undefined);
       if (!parentSessionId || !assignmentId || childIds.length === 0) return;
       const registeredChildIds = [
         ...childIds,
@@ -913,11 +937,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
           persist(parentSessionId);
         }
         if (linked) {
-          const running = controller.runningActions(parentSessionId).find((action) => action.actionId === linked.actionId);
-          const observed = event.status === "aborted" && running?.abortRequestedAt !== undefined;
-          controller.endAction(parentSessionId, linked.actionId, options.clock?.now() ?? Date.now(), observed);
-          coordination.actionContexts.delete(linked.actionId);
-          coordination.actionAssignments.delete(linkedEntry![0]);
+          const current = controller.snapshot(parentSessionId);
+          const allAssignmentsTerminal = linked.assignmentIds
+            ? linked.assignmentIds.every((id) => current?.assignments.find((assignment) => assignment.id === id)?.status !== "active")
+            : true;
+          if (allAssignmentsTerminal) {
+            const running = controller.runningActions(parentSessionId).find((action) => action.actionId === linked.actionId);
+            const observed = event.status === "aborted" && running?.abortRequestedAt !== undefined;
+            controller.endAction(parentSessionId, linked.actionId, options.clock?.now() ?? Date.now(), observed);
+            coordination.actionContexts.delete(linked.actionId);
+            coordination.actionAssignments.delete(linkedEntry![0]);
+          }
         }
         options.releaseChildCoordination?.(registeredChildIds);
         for (const [childId, binding] of coordination.childBindings) {
@@ -947,12 +977,13 @@ function resolveAssignment(
   input: unknown,
   action: ActionClass,
   scopedAssignmentId?: string,
-): { assignment?: Assignment; reason?: string } {
+): AssignmentResolution {
   if (action !== "delegate") return {};
   if (scopedAssignmentId) return { reason: "A child assignment cannot delegate more work" };
-  if (isBatchDelegation(input)) return { reason: "Wall-clock requires one bounded assignment per delegated child; batch delegation is blocked" };
+  const batch = parseBatchDelegation(input);
+  if (batch) return { assignmentInputs: batch.map((item) => item.assignment) };
   const assignment = controller.assignmentForDelegation(sessionId);
-  if (!assignment) return { reason: "Create exactly one active, unbound wall-clock assignment before delegation" };
+  if (!assignment) return { reason: "Create an active, unbound wall-clock assignment before delegation, or provide inline assignments for a batch" };
   return { assignment };
 }
 
@@ -973,8 +1004,77 @@ function injectAssignmentContext(event: any, controller: WallClockController, se
   }
 }
 
-function isBatchDelegation(input: unknown): boolean {
-  return Boolean(input && typeof input === "object" && !Array.isArray(input) && Array.isArray((input as Record<string, unknown>).tasks));
+function injectBatchAssignmentContext(event: any, controller: WallClockController, sessionId: string, assignments: Assignment[]): void {
+  const input = event?.input;
+  if (!input || typeof input !== "object" || Array.isArray(input) || !Array.isArray(input.tasks)) return;
+  input.tasks = input.tasks.map((item: unknown, index: number) => {
+    if (!isRecord(item)) return item;
+    const assignment = assignments[index];
+    if (!assignment || typeof item.task !== "string") return item;
+    const cleaned = { ...item };
+    delete cleaned.wallClock;
+    delete cleaned.wallClockAssignment;
+    delete cleaned.id;
+    delete cleaned.parentPlanItemId;
+    delete cleaned.objective;
+    delete cleaned.scope;
+    delete cleaned.acceptance;
+    delete cleaned.budgetMs;
+    delete cleaned.wrapUpMs;
+    return { ...cleaned, task: `${controller.context(sessionId, assignment.id)}\n\n${item.task}` };
+  });
+}
+
+function parseBatchDelegation(input: unknown): Array<{ task: string; assignment: AssignmentInput }> | undefined {
+  if (!isRecord(input) || !Array.isArray(input.tasks)) return undefined;
+  if (input.tasks.length === 0) throw new Error("Batch delegation requires at least one task");
+  return input.tasks.map((item, index) => {
+    if (!isRecord(item) || typeof item.task !== "string" || !item.task.trim()) {
+      throw new Error(`Batch task ${index + 1} requires a non-empty task`);
+    }
+    const assignmentSource = isRecord(item.wallClock)
+      ? item.wallClock
+      : isRecord(item.wallClockAssignment)
+        ? item.wallClockAssignment
+        : item;
+    return { task: item.task, assignment: parseInlineAssignment(assignmentSource, index + 1) };
+  });
+}
+
+function parseInlineAssignment(input: Record<string, unknown>, index: number): AssignmentInput {
+  const parentPlanItemId = requiredString(input.parentPlanItemId, `Batch task ${index} parentPlanItemId`);
+  const objective = requiredString(input.objective, `Batch task ${index} objective`);
+  const scope = requiredStringArray(input.scope, `Batch task ${index} scope`);
+  const acceptance = requiredStringArray(input.acceptance, `Batch task ${index} acceptance`);
+  const budgetMs = input.budgetMs;
+  if (typeof budgetMs !== "number" || !Number.isFinite(budgetMs) || budgetMs <= 0) {
+    throw new Error(`Batch task ${index} budgetMs must be positive`);
+  }
+  const wrapUpMs = input.wrapUpMs;
+  if (wrapUpMs !== undefined && (typeof wrapUpMs !== "number" || !Number.isFinite(wrapUpMs) || wrapUpMs <= 0)) {
+    throw new Error(`Batch task ${index} wrapUpMs must be positive`);
+  }
+  const id = input.id;
+  if (id !== undefined && (typeof id !== "string" || !id.trim())) {
+    throw new Error(`Batch task ${index} id must not be empty`);
+  }
+  return { id, parentPlanItemId, objective, scope, acceptance, budgetMs, wrapUpMs };
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
+  return value;
+}
+
+function requiredStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`${label} must contain at least one non-empty string`);
+  }
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function deadlineKey(sessionId: string, assignmentId?: string): string {

@@ -12,9 +12,9 @@ compatibility: The optional MCP tools require a client that loads mcp.json and N
 - **Session key**: The stable identifier passed to the MCP tools for one conversation or work run.
 - **Hard deadline**: The time after which new work must not start.
 - **Wrap-up**: The period before the hard deadline when new delegation and destructive work stop.
-- **Delegation bias**: Prefer one bounded child assignment when it can reduce uncertainty or finish independent work faster; do not delegate merely to fill the budget.
+- **Delegation bias**: Prefer as many bounded child assignments as can reduce uncertainty or finish independent work faster; do not delegate merely to fill the budget.
 - **Assignment**: A bounded unit of work recorded under the main session.
-- **Acceptance target**: The smallest result that counts as complete for an assignment.
+- **Inline batch delegation**: One parent task call that carries several child tasks, with one bounded assignment contract per item.
 - **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
 - **Wrap-it-up lane**: A fixed two-minute host-enforced execution window for finishing the active task.
 - **Host guard**: Native plugin enforcement that limits time, delegation, and ordinary tool calls.
@@ -39,12 +39,13 @@ that lane. The guard clears after the host reports that the agent run has fully
 settled. If the deadline expires first, it stays active through any post-run
 continuation so blocked work cannot bypass expiry.
 
-When the phase is active, first consider whether one bounded child assignment
-can make the result faster or safer. Create the assignment before calling the
-child, give it one objective, narrow scope, an observable acceptance target,
-and a budget below the parent's measured remaining time. Do not use batch or
-nested delegation. During wrap-up, do not start new delegation or destructive
-work; finish and report the smallest current acceptance target.
+When the phase is active, decide how many bounded child assignments are useful.
+For each child, provide one objective, narrow scope, observable acceptance
+target, and a budget below the parent's measured remaining time. Use inline
+batch delegation when several independent children should start together.
+Nested delegation remains unavailable until its lifecycle contract is proven.
+During wrap-up, do not start new delegation or destructive work; finish and
+report the smallest current acceptance target.
 
 An explicit `/wallclock` activation and the native `wallclock_start` tool use
 the same terminal-settlement cleanup. The host keeps the contract through
@@ -75,7 +76,7 @@ Before an assignment, write, destructive action, or long operation:
 1. Call `wallclock_status` when the tool is available.
 2. Call `wallclock_check` with the proposed tool name, action class, input, and assignment key when an explicit decision is useful. Never estimate task duration.
 3. If the result denies the action, do not start it. Move to wrap-up, reporting, or a smaller safe action.
-4. Prefer one bounded delegated assignment for independent work while the phase is active. Do not start delegation during wrap-up.
+4. Prefer as many bounded delegated assignments as useful for independent work while the phase is active. Use one inline batch when several children should start together. Do not start delegation during wrap-up.
 5. After expiry, start no new tool work. Report the current state and any work that remains.
 
 The check is not a host gate. A supported Pi or OMP native adapter enforces the same decision at its pre-tool event. Portable MCP alone refuses activation.
