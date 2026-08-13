@@ -4,7 +4,7 @@ Date: 2026-08-12
 
 ## Symptom
 
-The OMP session at `/Users/emo-nm/.omp/agent/sessions/-.herdr-worktrees-skills-wallclock-default-block-new/2026-08-12T23-36-35-720Z_019ff855-ba88-7000-947c-6dc2b22c1cf1.jsonl` continued tool work after the two-minute wrap-it-up deadline.
+The OMP session in a local session log continued tool work after the two-minute wrap-it-up deadline.
 
 The transcript shows a bash call blocked at 23:39:29 after expiry. At 23:39:42 the persisted wall-clock state was stopped. A `todo` call then ran at 23:39:49, although the original guard had expired.
 

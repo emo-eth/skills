@@ -60,12 +60,12 @@ Small frictions agents hit while working in this repository. These are not full 
   - note: Launching the cold-reader validator -> the agent tool rejected a structured skill item combined with a plain message, even though both describe the same input; the call must use one input mode.
 - **2026-08-04T21:11:15Z** `codex`
   - cwd: `.`
-  - files: `/tmp/plannotator-wallclock-review.out`
+  - files: `<temporary-review-log>`
   - note: Launching a detached Plannotator review -> the expected session glob had no matches even though the process was running, so URL discovery needed a separate process/output check.
 - **2026-08-04T21:13:23Z** `codex`
   - cwd: `.`
-  - files: `/Users/emo-nm/wallclock-review/wall-clock-plugin-research-brief.md`
-  - note: Creating the durable annotation brief -> a relative apply_patch path placed the file under /Users/emo-nm/dev instead of /Users/emo-nm, and the first re-add patch had a malformed terminator; path targets should be checked before launch.
+  - files: `<temporary-review-brief>`
+  - note: Creating the durable annotation brief -> a relative apply patch path placed the file under the wrong workspace, and the first re-add patch had a malformed terminator; path targets should be checked before launch.
 - **2026-08-05T15:54:12Z** `codex`
   - cwd: `.`
   - files: `plugins/wall-clock/src/controller.ts`
@@ -88,13 +88,13 @@ Small frictions agents hit while working in this repository. These are not full 
   - note: Editing the new standup skill glossary -> an edit path accidentally used a tilde-prefixed Users path instead of the absolute Users path, so the tool treated the existing file as missing; the corrected target is the absolute path.
 - **2026-08-10T16:34:47Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
-  - note: Updating the standup iteration log -> an edit call again used a tilde-prefixed absolute path instead of the absolute path, so the existing log was reported missing; the corrected target is under /Users/emo-nm/conductor.
+  - note: Updating the standup iteration log -> an edit call again used a tilde-prefixed absolute path instead of the absolute workspace path, so the existing log was reported missing; use the exact checkout path for cross-workspace edits.
 - **2026-08-10T16:35:39Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
   - note: Updating the standup iteration log -> after removing the tilde, a relative path still resolved under the active worktree rather than the sibling workspace; use the full absolute path for cross-workspace edits.
 - **2026-08-10T16:37:43Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
-  - note: Launching the second standup cold-reader -> the task prompt omitted one skills directory segment in the ticket-contract path, so the validator had to glob and correct the path; prompts should use /Users/emo-nm/dev/skills/skills/standup/references/ticket-contract.md.
+  - note: Launching the second standup cold-reader -> the task prompt omitted one skills directory segment in the ticket-contract path, so the validator had to glob and correct the path; prompts should use the exact repository-relative path.
 - **2026-08-10T16:41:49Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
   - note: Installing the new standup skill globally -> npx skills reported universal installation complete but also failed the PromptScript adapter because it does not support global skill installation; the requested global targets were installed, but the mixed success output needs interpretation.
@@ -167,13 +167,13 @@ Small frictions agents hit while working in this repository. These are not full 
   - note: Preparing a session handoff -> the required session-handoff skill was listed but its installed SKILL.md path was missing, so I used the repo copy instead.
 - **2026-08-12T05:30:33.413Z** `gpt-5.6-sol`
   - cwd: `.`
-  - note: While loading the required paseo skill, the project instructions pointed to ~/dev/skills, but that path does not exist in this worktree environment. The installed copy under ~/.agents/skills is available; keep the documented source path aligned with the actual machine setup.
+  - note: While loading the required paseo skill, the project instructions pointed to a local development checkout that did not exist in this worktree environment. The installed copy under the installed-skills directory was available; keep documented source paths aligned with the actual machine setup.
 - **2026-08-12T05:33:24.330Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: Updating Pi to the npm-reported latest release -> the documented @mariozechner package installed successfully but is deprecated in favor of @earendil-works/pi-coding-agent. Current installation guidance should point at the active namespace so update checks do not stop on the old release line.
 - **2026-08-12T05:53:37.165Z** `gpt-5.6-sol`
   - cwd: `.`
-  - note: Running a live Pi RPC probe in a mktemp directory -> the command was rejected because its final cleanup used rm -rf, even though the target was a newly created explicit /tmp directory. Run probe cleanup as a separate recoverable operation or document the accepted temp cleanup pattern.
+  - note: Running a live Pi RPC probe in a temporary directory -> the command was rejected because its final cleanup used rm -rf, even though the target was a newly created explicit temporary directory. Run probe cleanup as a separate recoverable operation or document the accepted temporary cleanup pattern.
 - **2026-08-12T05:53:49.823Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: Running matching live RPC probes for Pi and OMP -> OMP accepts --cwd but current Pi does not, so a shared probe command failed before loading the extension. Host test helpers need separate CLI argument builders instead of assuming flag parity.
@@ -188,7 +188,7 @@ Small frictions agents hit while working in this repository. These are not full 
   - note: While checking the installed Pi package discovery contract, rg searched generated source-map files and produced hundreds of thousands of characters. The package has no source tree and the maps dominate search; exclude *.map or document the useful dist files for extension discovery.
 - **2026-08-12T06:10:14.505Z** `gpt-5.6-sol`
   - cwd: `.`
-  - note: While verifying the OMP package manifest in a temporary project, omp plugin link with project scope installed the link under ~/.omp/plugins instead of the temporary project, and omp plugin list showed it as a global npm plugin. The command's scope behavior is misleading; use an isolated profile or config root for tests and always audit and uninstall probe links.
+  - note: While verifying the OMP package manifest in a temporary project, omp plugin link with project scope installed the link under the global plugin directory instead of the temporary project, and omp plugin list showed it as a global npm plugin. The command's scope behavior is misleading; use an isolated profile or config root for tests and always audit and uninstall probe links.
 - **2026-08-12T06:11:17.974Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While pinning Pi and OMP as wall-clock host-test dependencies, npm installed 302 packages, reported five high-severity audit findings, and withheld six dependency install scripts. The host CLI packages are heavy test dependencies and need a documented audit and allow-scripts policy.
@@ -242,7 +242,7 @@ Small frictions agents hit while working in this repository. These are not full 
   - note: While testing an isolated OMP plugin install, 'omp plugin install <local-path> --scope user' warned that --scope is ignored for local paths even though plugin help presents scope as a general install flag. The package still installed under the selected profile; help should state the marketplace-only limit.
 - **2026-08-12T07:30:38.082Z** `gpt-5.6-sol`
   - cwd: `.`
-  - note: While isolating OMP plugin installation, combining PI_CODING_AGENT_DIR with temporary XDG directories made OMP treat the agent directory as non-default and write the plugin registry under the real ~/.omp/plugins. For isolated plugin tests, use a named profile with an isolated HOME/XDG roots and do not override PI_CODING_AGENT_DIR.
+  - note: While isolating OMP plugin installation, combining PI_CODING_AGENT_DIR with temporary XDG directories made OMP treat the agent directory as non-default and write the plugin registry under the global plugin directory. For isolated plugin tests, use a named profile with isolated HOME/XDG roots and do not override PI_CODING_AGENT_DIR.
 - **2026-08-12T07:33:55.964Z** `gpt-5.6-sol`
   - cwd: `plugins/wall-clock`
   - note: While probing OMP's exported mock-provider API, Node 26 followed the package export to TypeScript under node_modules and refused native type stripping there. OMP SDK probes that touch source exports must run with Bun, matching the native runner tests.
@@ -254,7 +254,7 @@ Small frictions agents hit while working in this repository. These are not full 
   - note: While proving OMP TaskTool child enforcement, OMP 17.2.15's executor comments and ExecutorOptions imply the parent EventBus is forwarded, but buildSubagentSessionOptions omits eventBus. Lifecycle events stay on the parent bus while the child extension gets a new bus, so bus-keyed adapter coordination silently fails.
 - **2026-08-12T07:49:49.412Z** `gpt-5.6-sol`
   - cwd: `.`
-  - note: While cleaning one explicit temporary OMP profile after its isolated install test, the command runner rejected even a validated /tmp rm -rf target. The guard does not distinguish owned temporary directories from broad destructive targets; use the system trash command or leave mkdtemp cleanup to the test.
+  - note: While cleaning one explicit temporary OMP profile after its isolated install test, the command runner rejected even a validated temporary-directory rm -rf target. The guard does not distinguish owned temporary directories from broad destructive targets; use the system trash command or leave temporary-directory cleanup to the test.
 - **2026-08-12T07:53:15.261Z** `gpt-5.6-sol`
   - cwd: `.`
   - note: While checking the final OMP and Pi versions, I assumed the repository root had package.json; this repo keeps the wall-clock package below plugins/wall-clock, so root-level Node package checks fail.
@@ -327,7 +327,7 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T19:15:48Z** `gpt-5.6-luna`
   - cwd: `.`
   - files: `PAPERCUTS.md`
-  - note: Checking the required main checkout before pushing -> the documented /Users/emo/dev/skills path does not exist on this machine, so the status check failed; the actual repository location must be resolved before fast-forwarding main.
+  - note: Checking the required main checkout before pushing -> the documented main-checkout path did not exist in this worktree environment, so the status check failed; resolve the actual checkout path before fast-forwarding main.
 - **2026-08-12T19:31:27Z** `gpt-5.6-luna`
   - cwd: `.`
   - files: `PAPERCUTS.md`
@@ -358,7 +358,7 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T20:33:47Z** `gpt-5.6-luna`
   - cwd: `.`
   - files: `PAPERCUTS.md`
-  - note: Checking the documented main checkout after publishing -> docs pointed to /Users/emo/dev/skills, but that path does not exist on this machine; verification stopped at the missing checkout rather than guessing another path.
+  - note: Checking the documented main checkout after publishing -> docs pointed to a local development path that did not exist in this worktree environment; verification stopped at the missing checkout rather than guessing another path.
 - **2026-08-12T22:09:37Z** `gpt-5.6-luna`
   - cwd: `.`
   - files: `PAPERCUTS.md`
