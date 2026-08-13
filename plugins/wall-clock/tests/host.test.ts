@@ -723,7 +723,13 @@ test("parent and child action identifiers are isolated by native session", async
   const childHost = new FakeHost(events);
   const options = {
     coordination,
-    enforcement: { name: "fake-omp", canBlockNew: true },
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
     schedule: () => "timer",
     cancelSchedule: () => undefined,
   } as const;
@@ -810,6 +816,118 @@ test("delegation supports atomic inline batch assignments", async () => {
   await host.emitBus("task:subagent:lifecycle", { id: "child-two", sessionFile: "child-two", status: "completed", parentToolCallId: "task-2", index: 1 });
   assert.equal(controller.runningActions("main").length, 0);
 });
+test("block-new child work stops at the parent deadline", async () => {
+  let now = 1_000;
+  const scheduled: Array<() => void> = [];
+  const abortRequests: any[] = [];
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: (request) => { abortRequests.push(request); },
+      abortObserved: () => true,
+    },
+    schedule: (callback) => { scheduled.push(callback); return callback; },
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as any, options);
+  installHostExtension(childHost as any, options);
+  const parentCtx = context("main", [], () => undefined);
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", parentCtx);
+
+  const taskEvent = {
+    toolCallId: "batch-call",
+    toolName: "task",
+    input: {
+      tasks: [{
+        task: "Inspect the module",
+        wallClock: {
+          parentPlanItemId: "inspect",
+          objective: "Inspect the module",
+          scope: ["src"],
+          acceptance: ["Return findings"],
+          budgetMs: 60_000,
+        },
+      }],
+    },
+  };
+  await parentHost.emit("tool_call", taskEvent, parentCtx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "child-agent",
+    sessionFile: "child-session",
+    status: "started",
+    parentToolCallId: "batch-call",
+    index: 0,
+  });
+
+  const childCtx = context("child-session", [], () => undefined);
+  await childHost.emit("session_start", {}, childCtx);
+  await childHost.emit("tool_call", { toolCallId: "child-read", toolName: "read", input: {} }, childCtx);
+
+  now = 61_000;
+  for (const callback of scheduled) callback();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(abortRequests.length, 1);
+  assert.equal(abortRequests[0].targets.length, 1);
+  assert.match(abortRequests[0].targets[0].actionId, /child-read/);
+  assert.equal(controller.status("main").phase, "expired");
+});
+
+test("child work is rejected when the host cannot enforce its inherited deadline", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: { name: "fake-host", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as any, options);
+  installHostExtension(childHost as any, options);
+  const parentCtx = context();
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", parentCtx);
+  await parentHost.emit("tool_call", {
+    toolCallId: "batch-call",
+    toolName: "task",
+    input: {
+      tasks: [{
+        task: "Inspect the module",
+        wallClock: {
+          parentPlanItemId: "inspect",
+          objective: "Inspect the module",
+          scope: ["src"],
+          acceptance: ["Return findings"],
+          budgetMs: 60_000,
+        },
+      }],
+    },
+  }, parentCtx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "child-agent",
+    sessionFile: "child-session",
+    status: "started",
+    parentToolCallId: "batch-call",
+    index: 0,
+  });
+  const blocked = await childHost.emit("tool_call", {
+    toolCallId: "child-read",
+    toolName: "read",
+    input: {},
+  }, context("child-session")) as any;
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /host abort seam/);
+});
+
 
 test("inference timing ends when the assistant message stream ends", async () => {
   let now = 1_000;
@@ -916,7 +1034,13 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
   const childHost = new FakeHost(events);
   const hostOptions = {
     coordination,
-    enforcement: { name: "fake-omp", canBlockNew: true },
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
     schedule: () => "timer",
     cancelSchedule: () => undefined,
   } as const;

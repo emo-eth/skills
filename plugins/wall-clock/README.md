@@ -75,8 +75,14 @@ The default wrap-up period is 20 percent of the available time, capped at five m
 | Host | Pre-action gate | Turn context | `block-new` | `abort-running` | Child behavior | Failure mode | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pi 0.84.1 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls` | Assignments are recorded; Pi has no native task child in this adapter | Activation or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-runners.test.ts` |
-| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each batch item receives its own inline assignment; batch delegation is supported and nested delegation is deferred | Missing event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
+| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each batch item receives its own inline assignment and hard deadline bounded by the parent; child work is aborted at expiry and nested delegation is deferred | Missing event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
 | Portable Agent Plugin or MCP only | None | None | Activation rejected | Activation rejected | No child creation | Reports that a native Pi or OMP adapter is required | `tests/plugin.test.ts`, `tests/mcp.test.ts`, `tests/real-hosts.test.ts` |
+
+Child assignments are strictly bounded by the parent contract. Each child deadline is
+the earlier of its requested budget and the parent's hard deadline. The host rejects
+child work unless it can identify and abort the running child action. When the parent
+deadline expires, the host aborts every running child action, even when the parent
+policy is `block-new`; `block-new` only controls work admitted directly in the parent.
 
 `abort-running` admits only one action at a time in each abort domain because Pi and OMP expose a session-wide abort function. An OMP parent task and its child session can both be active because they have separate abort domains. Unknown extension tools and direct `user_bash` actions are rejected under `abort-running` when cancellation cannot be observed.
 
@@ -186,7 +192,7 @@ The root `plugin.json`, bundled Agent Skill, and `mcp.json` follow Agent Plugins
 The standalone MCP server exposes the operation contracts but refuses `wallclock_start` because MCP has no native pre-action gate. It does not mirror native host session entries by itself. Package or MCP discovery is therefore not evidence of enforcement.
 
 The launcher needs Node.js 22.6 or newer because it uses native TypeScript type stripping.
-
+- OMP supports any number of bounded inline batch assignments before wrap-up. Each batch item uses `wallClock` assignment metadata, receives its own deadline bounded by the parent's hard deadline and report, and maps to one child session. Running child actions are aborted when their own deadline or the parent deadline expires, regardless of the parent's `block-new` versus `abort-running` policy. Nested delegation remains blocked until its lifecycle contract is implemented. Under `abort-running`, only one parent-session task action can be active because the abort function is session-wide.
 The Codex feasibility finding is in [CODEX-SUPPORT.md](CODEX-SUPPORT.md). It describes a possible `block-new`-only adapter; Codex activation is not implemented or supported in v0.
 
 ## Known boundaries

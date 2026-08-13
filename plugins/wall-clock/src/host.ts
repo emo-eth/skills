@@ -299,19 +299,26 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   const handleExpiry = async (sessionId: string, assignmentId?: string, fallbackContext?: RuntimeContext): Promise<void> => {
     const status = controller.status(sessionId, assignmentId);
-    if (!status.active || status.phase !== "expired" || status.expiryPolicy !== "abort-running") return;
-    const actions = controller.runningActions(sessionId).filter((action) =>
-      action.abortRequestedAt === undefined && (assignmentId === undefined || action.assignmentId === assignmentId));
+    const abortRunning = status.expiryPolicy === "abort-running";
+    if (!status.active || status.phase !== "expired") return;
+    const actions = controller.runningActions(sessionId).filter((action) => {
+      if (action.abortRequestedAt !== undefined) return false;
+      if (assignmentId !== undefined) return action.assignmentId === assignmentId;
+      return abortRunning || action.assignmentId !== undefined;
+    });
     if (actions.length === 0) return;
+    if (!enforcement?.abortRunning) {
+      throw new Error(`The ${enforcement?.name ?? "host"} cannot abort an expired child assignment`);
+    }
     const targets = actions.map((action) => ({
       actionId: action.actionId,
       context: coordination.actionContexts.get(action.actionId) ?? fallbackContext,
     }));
     if (targets.some((target) => !target.context)) {
-      throw new Error(`The ${enforcement?.name ?? "host"} lost an executor context for an admitted action`);
+      throw new Error(`The ${enforcement.name} lost an executor context for an admitted action`);
     }
     for (const action of actions) controller.requestAbort(sessionId, action.actionId);
-    await enforcement?.abortRunning?.({
+    await enforcement.abortRunning({
       sessionId,
       assignmentId,
       targets: targets as Array<{ actionId: string; context: RuntimeContext }>,
@@ -584,8 +591,15 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       }
     }
     const suppliedActionId = existingActionId(event);
-    if (!nativeTool && controller.status(scope.sessionId, scope.assignmentId).expiryPolicy === "abort-running" && !suppliedActionId) {
-      return { block: true, reason: "Abort-running requires a host action identifier before execution" };
+    const childActionRequiresAbort = scope.assignmentId !== undefined;
+    const scopeStatus = controller.status(scope.sessionId, scope.assignmentId);
+    if (!nativeTool && (scopeStatus.expiryPolicy === "abort-running" || childActionRequiresAbort) && !suppliedActionId) {
+      return {
+        block: true,
+        reason: childActionRequiresAbort
+          ? "Child assignments require a host action identifier before execution"
+          : "Abort-running requires a host action identifier before execution",
+      };
     }
     const rawActionId = suppliedActionId ?? `wall-clock-action-${++actionSequence}`;
     const actionId = canonicalActionId(scope, rawActionId);
@@ -611,20 +625,29 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     };
     const decision = controller.decideTool(scope.sessionId, proposal);
     if (!decision.allow) return { block: true, reason: decision.reason };
-    if (!nativeTool && controller.status(scope.sessionId, assignmentId).expiryPolicy === "abort-running") {
-      if (!enforcement?.canAbortAction?.(proposal, ctx)) {
-        return { block: true, reason: `Abort-running cannot admit ${toolName}: the ${enforcement?.name ?? "host"} cannot prove that this action can be aborted` };
+    const requiresAbort = assignmentId !== undefined || controller.status(scope.sessionId, assignmentId).expiryPolicy === "abort-running";
+    if (!nativeTool && requiresAbort) {
+      if (assignmentId !== undefined && (!enforcement?.abortRunning || !enforcement?.abortObserved)) {
+        return { block: true, reason: "Child assignments require a host abort seam before execution" };
       }
-      const sameAbortDomainIsBusy = controller.runningActions(scope.sessionId).some((runningAction) => {
-        const runningContext = coordination.actionContexts.get(runningAction.actionId);
-        if (!runningContext) return true;
-        const runningDirectSessionId = directSessionId(runningContext);
-        const proposedDirectSessionId = directSessionId(ctx);
-        if (runningDirectSessionId && proposedDirectSessionId) return runningDirectSessionId === proposedDirectSessionId;
-        return runningContext.abort === ctx?.abort;
-      });
-      if (sameAbortDomainIsBusy) {
-        return { block: true, reason: "Abort-running allows only one admitted action at a time in each host session because its abort signal is session-wide" };
+      if (!enforcement?.canAbortAction?.(proposal, ctx)) {
+        return {
+          block: true,
+          reason: `${assignmentId !== undefined ? "Child assignment" : "Abort-running"} cannot admit ${toolName}: the ${enforcement?.name ?? "host"} cannot prove that this action can be aborted`,
+        };
+      }
+      if (controller.status(scope.sessionId, assignmentId).expiryPolicy === "abort-running") {
+        const sameAbortDomainIsBusy = controller.runningActions(scope.sessionId).some((runningAction) => {
+          const runningContext = coordination.actionContexts.get(runningAction.actionId);
+          if (!runningContext) return true;
+          const runningDirectSessionId = directSessionId(runningContext);
+          const proposedDirectSessionId = directSessionId(ctx);
+          if (runningDirectSessionId && proposedDirectSessionId) return runningDirectSessionId === proposedDirectSessionId;
+          return runningContext.abort === ctx?.abort;
+        });
+        if (sameAbortDomainIsBusy) {
+          return { block: true, reason: "Abort-running allows only one admitted action at a time in each host session because its abort signal is session-wide" };
+        }
       }
     }
     let assignments: Assignment[] | undefined;
@@ -677,6 +700,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
     if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
+    if (scope.assignmentId !== undefined) {
+      return { result: { output: "Wall-clock blocked this child command: the host cannot prove that user_bash can be aborted at the child deadline", exitCode: 1, cancelled: true, truncated: false } };
+    }
     const actionId = `wall-clock-user-bash-${++actionSequence}`;
     const input = { command: event?.command, cwd: event?.cwd };
     controller.beginToolCall(scope.sessionId, actionId);

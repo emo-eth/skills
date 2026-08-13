@@ -41,9 +41,14 @@ continuation so blocked work cannot bypass expiry.
 
 When the phase is active, decide how many bounded child assignments are useful.
 For each child, provide one objective, narrow scope, observable acceptance
-target, and a budget below the parent's measured remaining time. Use inline
-batch delegation when several independent children should start together.
-Nested delegation remains unavailable until its lifecycle contract is proven.
+target, and a budget below the parent's measured remaining time. The host caps
+each child at the earlier of its requested budget and the parent's hard deadline.
+Every admitted child action must have a host action identifier and a tested abort
+seam. If the parent or child deadline expires, the host aborts running child
+actions; the parent's `block-new` policy does not let child work continue past
+that hard stop. Use inline batch delegation when several independent children
+should start together. Nested delegation remains unavailable until its lifecycle
+contract is proven.
 During wrap-up, do not start new delegation or destructive work; finish and
 report the smallest current acceptance target.
 
