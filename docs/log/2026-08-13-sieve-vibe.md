@@ -2,11 +2,12 @@
 
 Worktree: `sieve-vibe`. Branch: `sieve-vibe`.
 
-> Corrections from vibe.md review round 1 are applied in `docs/vibe.md` and
-> answered item-by-item in `docs/review/2026-08-13-vibe-round-1-answers.md`.
+> Corrections from vibe.md review rounds 1-3 are applied in `docs/vibe.md` and
+> answered item-by-item in `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md`.
 > Two proposals below changed shape there: P1 (no mandated implement/verify
-> split; decomposition instead [D23]) and P4 (the logger is not "yearn"; name
-> pending [D21]). This log otherwise stays as written.
+> split; decomposition instead [D28]) and P4 (the logger is not "yearn"; name
+> deferred until built [D21]). The user declined to review this log; it stands
+> as session minutes.
 
 The user dumped a word pile about how they think: knowledge, understanding,
 tasks, and prioritization as a sieve; tickets that hide their verify work;

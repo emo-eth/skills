@@ -332,3 +332,14 @@ Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: no
+
+## D32 - 2026-08-13 - Ticketize's refusal to ticket vibes stands provisionally
+
+Decision: lc-ticketize's hard rule against ticketing ununderstood work ("refuses to ticket vibes") stands for now on the grounds that it minimizes noise for coworkers. The user is not sure they agree; the rule is provisional and revisited when lc-ticketize is revised.
+Why: "not sure i agree. but good to minimize noise for coworkers, so can stand for now" - Plannotator annotation, vibe.md round 3 (item 1, anchored to the V4 example). Reading: the target is the ticketize line, since "minimize noise for coworkers" fits keeping half-baked work off a shared board; if the disagreement was with the symbiosis framing instead, the user can reopen V4.
+Consequences: No text change to docs/vibe.md (the annotation says the line can stand). The uncertainty is on the record so a future revision does not mistake the rule for settled.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active (provisional)
+Revisit: when lc-ticketize is revised under D28, or if the user reopens it
+Scope: v0
+Load-bearing: no
