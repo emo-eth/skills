@@ -165,8 +165,28 @@ Alternatives: Stop on every `agent_end` (rejected because Pi can still retry,
 compact, or continue); keep an expired lane until manual stop (rejected because
 it leaks the temporary guard into the next normal request).
 Consequences: Terminal settlement persists a stopped fast-lane state and clears
-its deadline and status-refresh timers. Ordinary `/wallclock` contracts remain
-session-scoped and still require explicit stop.
+its deadline and status-refresh timers. D17 extends the same cleanup to every
+explicit native wall-clock contract.
+Status: superseded-by D17
+Scope: v0
+Load-bearing: no
+
+## D17 - 2026-08-13 - Clear every explicit contract after terminal settlement
+
+Decision: Every native wall-clock contract started by an explicit
+`/wallclock` command or `wallclock_start` stops after terminal agent
+settlement. Pi uses `agent_settled`; OMP uses terminal `agent_end`. Expiry
+enforcement remains active through retries and continuations. If a child action
+is still running, cleanup waits for that child to finish.
+Why: A user may need to send a follow-up because the task is unfinished. A
+completed agent turn must not leave a stale contract that forces the user to
+type `/wallclock stop` before the follow-up.
+Alternatives: Keep ordinary contracts session-scoped (rejected because it
+leaks the time boundary into the next normal request); clear at every
+`agent_end` (rejected because Pi and OMP can still schedule continuation work).
+Consequences: Follow-ups run normally after settlement. A follow-up that needs
+its own time limit must start a new contract. Active child work retains its
+deadline until its terminal lifecycle event.
 Status: active
 Scope: v0
 Load-bearing: no

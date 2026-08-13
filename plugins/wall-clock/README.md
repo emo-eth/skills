@@ -58,6 +58,13 @@ Activation accepts a positive duration such as `30m` or a future local time such
 
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
+Every native contract started by an explicit `/wallclock` command or the
+`wallclock_start` tool clears after terminal agent settlement. Pi uses
+`agent_settled`; OMP uses terminal `agent_end`. If a child action is still
+running, cleanup waits for that child to finish so its deadline remains
+enforced. A normal follow-up does not require `/wallclock stop`; start a new
+contract when the follow-up itself needs a time limit.
+
 Before each model turn, the native adapter injects current time, total elapsed time, latest inference elapsed time, latest tool-call elapsed time, remaining time, phase, policy, and current assignment elapsed time. These values come from the host clock. The model is not asked to estimate task duration.
 
 The default wrap-up period is 20 percent of the available time, capped at five minutes. An explicit positive wrap-up value is capped at the hard deadline.
@@ -102,7 +109,7 @@ Start a session, optionally submit the first prompt, and inspect it:
 /wallclock stop
 ```
 
-`start` is optional. The policy is optional and defaults to `block-new`. When the command includes a prompt, an idle host starts a new turn and a running host delivers it as normal steering input. Wall-clock activates and persists before it submits the prompt.
+`start` is optional. The policy is optional and defaults to `block-new`. When the command includes a prompt, an idle host starts a new turn and a running host delivers it as normal steering input. Wall-clock activates and persists before it submits the prompt, then stops automatically after terminal settlement.
 
 The native status display refreshes once per second from the current host clock. A delayed refresh recalculates the remaining time instead of decrementing a cached value, so display delays do not accumulate drift.
 

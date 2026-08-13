@@ -476,6 +476,43 @@ test("terminal OMP agent end clears a fast lane", async () => {
   assert.equal(controller.status("main").active, false);
 });
 
+test("terminal OMP agent end clears an explicit wallclock contract", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  await host.emit("agent_end", { willContinue: true }, ctx);
+  assert.equal(controller.status("main").active, true);
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  assert.equal(controller.status("main").active, false);
+});
+
+test("terminal settlement clears an explicit wallclock contract for a normal follow-up", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-pi", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  assert.equal(controller.status("main").active, true);
+  await host.emit("agent_settled", {}, ctx);
+
+  assert.equal(controller.status("main").active, false);
+  assert.equal(await host.emit("tool_call", { toolCallId: "normal-follow-up", toolName: "read", input: {} }, ctx), undefined);
+});
+
 test("Pi-shaped host injects measured context and blocks expired work before execution", async () => {
   let now = 1_000;
   const controller = new WallClockController({ now: () => now }, new MemoryStore());
@@ -864,6 +901,9 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
 
   await events.emit("task:subagent:lifecycle", { id: "child-agent", sessionFile: "child-session", status: "started", parentToolCallId: "task-call" });
   assert.equal(controller.status("main", assignment.id).assignment?.childSessionId, "child-session");
+
+  await parentHost.emit("agent_end", { willContinue: false }, ctx);
+  assert.equal(controller.status("main").active, true);
   const childCtx = context("child-session");
   await childHost.emit("session_start", {}, childCtx);
   const childContext = await childHost.emit("context", { messages: [] }, childCtx) as any;
@@ -918,6 +958,8 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
     input: { result: { data: "reported" } },
   }, childCtx);
   assert.equal(allowedYield, undefined);
+  await events.emit("task:subagent:lifecycle", { id: "child-agent", sessionFile: "child-session", status: "completed", parentToolCallId: "task-call" });
+  assert.equal(controller.status("main").active, false);
 });
 
 test("a child lifecycle end without a report produces a blocked fallback report", async () => {

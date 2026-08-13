@@ -46,6 +46,13 @@ and a budget below the parent's measured remaining time. Do not use batch or
 nested delegation. During wrap-up, do not start new delegation or destructive
 work; finish and report the smallest current acceptance target.
 
+An explicit `/wallclock` activation and the native `wallclock_start` tool use
+the same terminal-settlement cleanup. The host keeps the contract through
+retries, continuations, expiry blocking, and abort handling. If a child action
+is still running, cleanup waits for that child to finish. After settlement, a
+normal follow-up needs no `/wallclock stop`; start a new contract if the
+follow-up needs its own time limit.
+
 The budget is a ceiling, not a target. Finish when the acceptance target is met. Do not spend unused time on extra scope.
 
 The portable Agent Plugins package can provide tools and instructions. It cannot, by itself, intercept every client tool call, cancel arbitrary work, or stop a remote action. Say when a result is model guidance only.
