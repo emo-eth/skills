@@ -153,4 +153,6 @@ This one is an agent-communication preference, not part of the sifting strategy.
 
 - Approved by: pending
 - Approved on: pending
+- Review status: three rounds applied (36 + 8 + 1 items); rounds closed at the user's direction under the two-round bound [D31]. No further re-review will be requested; the user edits directly when something is wrong.
+- Provisional: D32 (ticketize's refusal to ticket vibes) stands but the user is unsure; revisited when lc-ticketize is revised.
 - Amendment rule: this vibe changes only by explicit user request or direct user edit.
