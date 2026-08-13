@@ -17,6 +17,7 @@ const FAST_LANE_DURATION_MS = 120_000;
 const WRAP_IT_UP_DURATION_MS = 120_000;
 const FAST_LANE_WRAP_UP_MS = 15_000;
 const FAST_LANE_MAX_TOOL_CALLS = 12;
+const MAX_CORRELATION_ENTRIES = 4_096;
 
 type FastLaneKind = "do-it-now" | "wrap-it-up";
 
@@ -98,6 +99,7 @@ export type HostCoordination = {
   persistenceOwners: Map<string, () => void>;
   timers: Map<string, { handle: unknown; cancel: (handle: unknown) => void }>;
   processedLifecycleEvents: Set<string>;
+  blockedChildSessions: Set<string>;
   settledSessions: Set<string>;
 };
 
@@ -110,6 +112,7 @@ export function createHostCoordination(controller = new WallClockController()): 
     persistenceOwners: new Map(),
     timers: new Map(),
     processedLifecycleEvents: new Set(),
+    blockedChildSessions: new Set(),
     settledSessions: new Set(),
   };
 }
@@ -184,12 +187,20 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (assignmentId === undefined && currentBinding) return { sessionId: currentBinding.parentSessionId, assignmentId: currentBinding.assignmentId };
     return sessionId ? { sessionId, assignmentId } : undefined;
   };
-
-  const writeOwnedState = (sessionId: string): void => {
-    const state = controller.snapshot(sessionId);
-    if (state) host.appendEntry?.("wall-clock-state", state);
+  const actionScopeFor = (ctx?: RuntimeContext, event?: any): Scope | undefined => {
+    const direct = directSessionId(ctx) ?? (typeof event?.sessionId === "string" ? event.sessionId : undefined);
+    const child = direct ? coordination.childBindings.get(direct) : undefined;
+    if (child) return { sessionId: child.parentSessionId, assignmentId: child.assignmentId };
+    const assignmentId = typeof event?.assignmentId === "string"
+      ? event.assignmentId
+      : typeof ctx?.assignmentId === "string" ? ctx.assignmentId : undefined;
+    return direct ? { sessionId: direct, assignmentId } : undefined;
   };
 
+  const blockedChildSession = (ctx?: RuntimeContext, event?: any): boolean => {
+    const direct = directSessionId(ctx) ?? (typeof event?.sessionId === "string" ? event.sessionId : undefined);
+    return direct !== undefined && coordination.blockedChildSessions.has(direct);
+  };
   const rememberContext = (ctx?: RuntimeContext, event?: any): Scope | undefined => {
     const direct = directSessionId(ctx) ?? (typeof event?.sessionId === "string" ? event.sessionId : undefined);
     if (direct) currentDirectSessionId = direct;
@@ -198,14 +209,20 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return scope;
   };
 
+  const writeOwnedState = (sessionId: string): void => {
+    const state = controller.snapshot(sessionId);
+    if (state) host.appendEntry?.("wall-clock-state", state);
+  };
+
   const requireStableScope = (ctx?: RuntimeContext): Scope => {
-    const scope = rememberContext(ctx);
+    const scope = actionScopeFor(ctx);
     if (!scope) throw new Error("Wall-clock requires a stable host session identifier");
+    rememberContext(ctx);
     return scope;
   };
 
   const requireOwnerSession = (ctx?: RuntimeContext): string => {
-    const direct = directSessionId(ctx) ?? currentDirectSessionId;
+    const direct = directSessionId(ctx);
     if (!direct) throw new Error("Wall-clock activation requires a stable host session identifier");
     if (coordination.childBindings.has(direct)) {
       throw new Error("Wall-clock activation is owned by this child session's parent");
@@ -557,20 +574,29 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     markSessionSettled(ctx);
     return undefined;
   });
-
   host.on("tool_execution_start", async (event, ctx) => {
     await ensureChildCoordination(ctx);
-    const scope = rememberContext(ctx, event);
-    if (!scope) return undefined;
+    const scope = actionScopeFor(ctx, event);
+    if (!scope || blockedChildSession(ctx, event)) {
+      return { block: true, reason: "Wall-clock requires a stable and valid child lifecycle scope before tool execution" };
+    }
     const actionId = canonicalActionId(scope, existingActionId(event));
+    if (actionId && controller.runningActions(scope.sessionId).some((action) => action.actionId === actionId)) {
+      return { block: true, reason: "The host action identifier is already active" };
+    }
     if (actionId) controller.beginToolCall(scope.sessionId, actionId);
     return undefined;
   });
 
   host.on("tool_call", async (event, ctx) => {
     await ensureChildCoordination(ctx);
-    const scope = rememberContext(ctx, event);
-    if (!scope) return undefined;
+    if (blockedChildSession(ctx, event)) {
+      return { block: true, reason: "Wall-clock blocked this child: its lifecycle contract was invalid or incomplete" };
+    }
+    const scope = actionScopeFor(ctx, event);
+    if (!scope) {
+      return { block: true, reason: "Wall-clock requires a stable host session identifier before tool execution" };
+    }
     const toolName = String(event?.toolName ?? event?.name ?? "unknown");
     if (toolName.toLowerCase() === "yield" && scope.assignmentId) {
       const hasReport = controller.snapshot(scope.sessionId)?.reports.some((report) => report.assignmentId === scope.assignmentId) ?? false;
@@ -582,7 +608,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
     const input = event?.input;
     const action = (event?.action as ActionClass | undefined) ?? classifyAction(toolName, input);
-    const nativeTool = toolName.toLowerCase().startsWith("wallclock_");
+    const nativeTool = isWallClockControlTool(toolName);
     const fastLane = fastLanes.get(scope.sessionId);
     const fastLaneConfig = fastLane ? FAST_LANE_CONFIGS[fastLane.kind] : undefined;
     if (fastLane && fastLaneConfig && !nativeTool) {
@@ -604,6 +630,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const rawActionId = suppliedActionId ?? `wall-clock-action-${++actionSequence}`;
     const actionId = canonicalActionId(scope, rawActionId);
     if (!actionId) throw new Error("Wall-clock could not create an action identifier");
+    if (!nativeTool && controller.runningActions(scope.sessionId).some((runningAction) => runningAction.actionId === actionId)) {
+      return { block: true, reason: "The host action identifier is already active" };
+    }
     let assignmentResolution: AssignmentResolution;
     try {
       assignmentResolution = nativeTool
@@ -650,6 +679,11 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         }
       }
     }
+    const actionDirectSessionId = directSessionId(ctx) ?? scope.sessionId;
+    const actionLink = actionLinkKey(actionDirectSessionId, rawActionId);
+    if (!nativeTool && !coordination.actionAssignments.has(actionLink) && coordination.actionAssignments.size >= MAX_CORRELATION_ENTRIES) {
+      return { block: true, reason: "Wall-clock action correlation capacity is exhausted; finish or inspect existing actions before starting more work" };
+    }
     let assignments: Assignment[] | undefined;
     if (assignmentResolution.assignmentInputs) {
       try {
@@ -664,8 +698,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     if (!nativeTool) {
       controller.startAction(scope.sessionId, actionId, toolName, action, assignmentId);
       if (ctx) coordination.actionContexts.set(actionId, ctx);
-      const actionDirectSessionId = directSessionId(ctx) ?? currentDirectSessionId ?? scope.sessionId;
-      coordination.actionAssignments.set(actionLinkKey(actionDirectSessionId, rawActionId), {
+      coordination.actionAssignments.set(actionLink, {
         sessionId: scope.sessionId,
         assignmentId,
         assignmentIds: assignments?.map((childAssignment) => childAssignment.id),
@@ -682,7 +715,6 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     updateStatus(host, controller, scope.sessionId, ctx, assignmentId);
     return undefined;
   });
-
   host.on("tool_result", async (event, ctx) => {
     await ensureChildCoordination(ctx);
     finishAction(event, ctx);
@@ -697,8 +729,13 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   host.on("user_bash", async (event, ctx) => {
     await ensureChildCoordination(ctx);
-    const scope = rememberContext(ctx, event);
-    if (!scope) return undefined;
+    if (blockedChildSession(ctx, event)) {
+      return { result: { output: "Wall-clock blocked this child: its lifecycle contract was invalid or incomplete", exitCode: 1, cancelled: true, truncated: false } };
+    }
+    const scope = actionScopeFor(ctx, event);
+    if (!scope) {
+      return { result: { output: "Wall-clock blocked this command: a stable host session identifier is required", exitCode: 1, cancelled: true, truncated: false } };
+    }
     if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
     if (scope.assignmentId !== undefined) {
       return { result: { output: "Wall-clock blocked this child command: the host cannot prove that user_bash can be aborted at the child deadline", exitCode: 1, cancelled: true, truncated: false } };
@@ -891,11 +928,14 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   }
 
   function finishAction(event: unknown, ctx?: RuntimeContext): void {
-    const scope = rememberContext(ctx, event);
+    const scope = actionScopeFor(ctx, event);
     if (!scope) return;
     const rawActionId = existingActionId(event);
     if (!rawActionId) return;
-    const linkedEntry = findActionLink(coordination.actionAssignments, rawActionId, directSessionId(ctx) ?? currentDirectSessionId);
+    const eventSessionId = event && typeof event === "object" && "sessionId" in event && typeof event.sessionId === "string"
+      ? event.sessionId
+      : undefined;
+    const linkedEntry = findActionLink(coordination.actionAssignments, rawActionId, directSessionId(ctx) ?? eventSessionId);
     const linked = linkedEntry?.[1];
     const actionId = linked?.actionId ?? canonicalActionId(scope, rawActionId);
     if (!actionId) return;
@@ -913,29 +953,102 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   function registerChildLifecycleListeners(): void {
     const lifecycle = (event: any) => {
-      const eventKey = [event?.id, event?.sessionFile, event?.status, event?.parentToolCallId, event?.index].map(String).join(":");
+      const eventKey = JSON.stringify([
+        event?.parentSessionId ?? event?.sessionId ?? currentDirectSessionId ?? null,
+        event?.id,
+        event?.sessionFile,
+        event?.status,
+        event?.parentToolCallId,
+        event?.index,
+      ]);
       if (coordination.processedLifecycleEvents.has(eventKey)) return;
       coordination.processedLifecycleEvents.add(eventKey);
+      if (coordination.processedLifecycleEvents.size > 4_096) {
+        const oldest = coordination.processedLifecycleEvents.values().next().value;
+        if (typeof oldest === "string") coordination.processedLifecycleEvents.delete(oldest);
+      }
+
       const parentToolCallId = typeof event?.parentToolCallId === "string" ? event.parentToolCallId : undefined;
       const childIds = [event?.id, event?.sessionFile].filter((id): id is string => typeof id === "string" && id.length > 0);
+      const registeredChildIds = [
+        ...childIds,
+        ...(typeof event?.sessionFile === "string" ? [sessionArtifactPrefix(event.sessionFile)] : []),
+      ];
       const knownBinding = childIds.map((childId) => coordination.childBindings.get(childId)).find((binding) => binding !== undefined);
       const linkedEntry = parentToolCallId
-        ? findActionLink(coordination.actionAssignments, parentToolCallId, currentDirectSessionId, true)
+        ? findActionLink(
+          coordination.actionAssignments,
+          parentToolCallId,
+          typeof event?.parentSessionId === "string" ? event.parentSessionId : currentDirectSessionId,
+          true,
+        )
         : undefined;
       const linked = linkedEntry?.[1];
-      const parentSessionId = linked?.sessionId ?? knownBinding?.parentSessionId ?? currentDirectSessionId;
+      if (parentToolCallId && !linked && !knownBinding) {
+        for (const childId of registeredChildIds) coordination.blockedChildSessions.add(childId);
+        options.publishChildCoordination?.(registeredChildIds, coordination);
+        if (event.status === "aborted" || event.status === "failed" || event.status === "completed") {
+          options.releaseChildCoordination?.(registeredChildIds);
+          for (const childId of registeredChildIds) {
+            coordination.blockedChildSessions.delete(childId);
+            coordination.childBindings.delete(childId);
+          }
+        }
+        return;
+      }
+      const parentSessionId = linked?.sessionId ?? knownBinding?.parentSessionId
+        ?? (typeof event?.parentSessionId === "string" ? event.parentSessionId : undefined)
+        ?? currentDirectSessionId;
       const assignmentIds = linked?.assignmentIds;
       const eventIndex = typeof event?.index === "number" && Number.isInteger(event.index) ? event.index : undefined;
+
+      if (assignmentIds !== undefined && (eventIndex === undefined || eventIndex < 0 || eventIndex >= assignmentIds.length)) {
+        for (const childId of registeredChildIds) coordination.blockedChildSessions.add(childId);
+        options.publishChildCoordination?.(registeredChildIds, coordination);
+        if (parentSessionId && linked) {
+          const snapshot = controller.snapshot(parentSessionId);
+          for (const assignmentId of assignmentIds) {
+            const assignment = snapshot?.assignments.find((item) => item.id === assignmentId);
+            if (!assignment || assignment.status !== "active") continue;
+            controller.report(parentSessionId, {
+              assignmentId,
+              status: "blocked",
+              completed: [],
+              evidence: [],
+              partial: [],
+              skipped: ["The child lifecycle event did not identify its batch assignment"],
+              validation: [],
+              shortcuts: [],
+              risks: ["The host could not correlate the child to exactly one assignment"],
+              unknowns: ["The child session outcome is unknown"],
+              recommendedParentAction: "Inspect the child transcript and decide whether to retry the blocked assignments",
+            });
+            clearDeadline(parentSessionId, assignmentId);
+          }
+          persist(parentSessionId);
+          const running = controller.runningActions(parentSessionId).find((action) => action.actionId === linked.actionId);
+          if (running) {
+            controller.endAction(parentSessionId, linked.actionId, options.clock?.now() ?? Date.now());
+            coordination.actionContexts.delete(linked.actionId);
+            coordination.actionAssignments.delete(linkedEntry![0]);
+          }
+        }
+        if (event.status === "aborted" || event.status === "failed" || event.status === "completed") {
+          options.releaseChildCoordination?.(registeredChildIds);
+          for (const childId of registeredChildIds) {
+            coordination.blockedChildSessions.delete(childId);
+            coordination.childBindings.delete(childId);
+          }
+        }
+        return;
+      }
+
       const assignmentId = linked?.assignmentId
         ?? (assignmentIds && eventIndex !== undefined ? assignmentIds[eventIndex] : undefined)
         ?? knownBinding?.assignmentId
         ?? (typeof event?.assignmentId === "string" ? event.assignmentId : undefined)
         ?? (parentSessionId && !assignmentIds ? controller.assignmentForDelegation(parentSessionId)?.id : undefined);
       if (!parentSessionId || !assignmentId || childIds.length === 0) return;
-      const registeredChildIds = [
-        ...childIds,
-        ...(typeof event?.sessionFile === "string" ? [sessionArtifactPrefix(event.sessionFile)] : []),
-      ];
       if (event.status === "started") {
         controller.attachChild(parentSessionId, assignmentId, childIds.at(-1)!);
         for (const childId of registeredChildIds) coordination.childBindings.set(childId, { parentSessionId, assignmentId });
@@ -981,6 +1094,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
             coordination.childBindings.delete(childId);
           }
         }
+        for (const childId of registeredChildIds) coordination.blockedChildSessions.delete(childId);
         tryStopSettledSession(parentSessionId);
       }
     };

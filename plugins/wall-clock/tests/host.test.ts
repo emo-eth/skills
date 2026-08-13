@@ -1132,7 +1132,13 @@ test("a child lifecycle end without a report produces a blocked fallback report"
   const host = new FakeHost(events);
   installHostExtension(host as any, {
     coordination,
-    enforcement: { name: "fake-omp", canBlockNew: true },
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
     schedule: () => "timer",
     cancelSchedule: () => undefined,
   });
@@ -1150,11 +1156,164 @@ test("a child lifecycle end without a report produces a blocked fallback report"
   await host.emit("tool_result", { toolCallId: "task-call", toolName: "task", isError: false }, ctx);
   now = 2_000;
   await events.emit("task:subagent:lifecycle", { id: "child", sessionFile: "child-session", status: "completed", parentToolCallId: "task-call" });
-
   const snapshot = controller.snapshot("main");
   assert.equal(snapshot?.assignments[0]?.status, "blocked");
   assert.equal(snapshot?.reports[0]?.status, "blocked");
   assert.match(snapshot?.reports[0]?.skipped[0] ?? "", /ended without wallclock_report/);
   assert.equal(coordination.childBindings.has("child"), false);
   assert.equal(coordination.childBindings.has("child-session"), false);
+});
+
+test("arbitrary wallclock-prefixed tools use normal abort enforcement", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => false,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("start 60s abort-running", ctx);
+  const blocked = await host.emit("tool_call", {
+    toolCallId: "custom",
+    toolName: "wallclock_custom",
+    input: {},
+  }, ctx) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /cannot prove that this action can be aborted/);
+  assert.equal(controller.runningActions("main").length, 0);
+});
+
+test("tool calls without a stable scope fail closed", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  await host.commands.get("wallclock").handler("start 60s block-new", context());
+  const blocked = await host.emit("tool_call", { toolCallId: "missing-scope", toolName: "read", input: {} }, undefined) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /stable host session identifier/);
+});
+
+test("duplicate active host action identifiers are rejected", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  assert.equal(await host.emit("tool_call", { toolCallId: "duplicate", toolName: "read", input: {} }, ctx), undefined);
+  const blocked = await host.emit("tool_call", { toolCallId: "duplicate", toolName: "read", input: {} }, ctx) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /already active/);
+});
+
+test("batch lifecycle events without an index block the child", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as any, options);
+  installHostExtension(childHost as any, options);
+  const ctx = context();
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", ctx);
+  const task = {
+    tasks: [
+      { task: "One", wallClock: { parentPlanItemId: "one", objective: "One", scope: ["one"], acceptance: ["done"], budgetMs: 5_000 } },
+      { task: "Two", wallClock: { parentPlanItemId: "one", objective: "Two", scope: ["two"], acceptance: ["done"], budgetMs: 5_000 } },
+    ],
+  };
+  await parentHost.emit("tool_call", { toolCallId: "batch", toolName: "task", input: task }, ctx);
+  await events.emit("task:subagent:lifecycle", { id: "child", sessionFile: "child-session", status: "started", parentToolCallId: "batch" });
+  const blocked = await childHost.emit("tool_call", { toolCallId: "child-read", toolName: "read", input: {} }, context("child-session")) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /lifecycle contract/);
+  assert.equal(controller.runningActions("main").length, 0);
+  assert.deepEqual(controller.snapshot("main")?.assignments.map((assignment) => assignment.status), ["blocked", "blocked"]);
+});
+
+test("unknown child lifecycle links fail closed", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as any, options);
+  installHostExtension(childHost as any, options);
+  const ctx = context();
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", ctx);
+  controller.assign("main", {
+    parentPlanItemId: "one",
+    objective: "One child",
+    scope: ["one"],
+    acceptance: ["done"],
+    budgetMs: 5_000,
+  });
+  await parentHost.emit("tool_call", { toolCallId: "known-task", toolName: "task", input: { task: "Do work" } }, ctx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "orphan-child",
+    sessionFile: "orphan-session",
+    status: "started",
+    parentToolCallId: "unknown-task",
+  });
+  const blocked = await childHost.emit("tool_call", { toolCallId: "child-read", toolName: "read", input: {} }, context("orphan-session")) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /lifecycle contract/);
+  assert.equal(controller.snapshot("main")?.assignments[0]?.status, "active");
+});
+
+test("action correlation refuses new work at its bounded capacity", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    coordination,
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  for (let index = 0; index < 4_096; index += 1) {
+    coordination.actionAssignments.set(`stale-${index}`, {
+      sessionId: "main",
+      actionId: `stale-${index}`,
+      directSessionId: "main",
+      rawActionId: `stale-${index}`,
+      action: "read",
+    });
+  }
+  const blocked = await host.emit("tool_call", { toolCallId: "new-action", toolName: "read", input: {} }, ctx) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+  assert.match(blocked.reason, /correlation capacity/);
+  assert.equal(controller.runningActions("main").length, 0);
 });

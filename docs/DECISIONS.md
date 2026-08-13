@@ -219,3 +219,17 @@ Consequences: Batch delegation is supported in the parent session. Nested delega
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## D20 - 2026-08-13 - Fail closed on ambiguous host correlations
+
+Decision: Native wall-clock enforcement uses an explicit allowlist for control tools. It rejects pre-action events without a stable session scope, duplicate active action identifiers, unknown child lifecycle links, and batch child lifecycle events without a valid index. Lifecycle and action correlation state is bounded.
+
+Why: A stale session fallback, broad tool prefix, or ambiguous child event can attach enforcement to the wrong action or let work escape its deadline. Failing closed preserves the contract even when host metadata is incomplete or malformed.
+
+Alternatives: Keep the prior fallback behavior (rejected because it can enforce another session's state); accept arbitrary wall-clock-prefixed tools as control tools (rejected because extensions can bypass expiry checks); retain unbounded correlation maps (rejected because long-lived sessions can accumulate stale host identifiers).
+
+Consequences: Unsupported or malformed host events are blocked and reported through the existing host boundary. Valid child lifecycle events continue to correlate by parent action and batch index. The bounded map capacity blocks new admitted work until stale actions finish.
+
+Status: active
+Scope: v0
+Load-bearing: yes
