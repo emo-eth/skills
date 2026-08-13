@@ -1,4 +1,6 @@
-# Wall Clock Plugin Decisions
+# Decisions
+
+One append-only log for the whole repo. D1-D16 are wall-clock scoped; D20 onward include the repo-philosophy (sieve vibe) round.
 
 ## Glossary
 
@@ -220,7 +222,7 @@ Status: active
 Scope: v0
 Load-bearing: yes
 
-## D20 - 2026-08-13 - Fail closed on ambiguous host correlations
+## D36 - 2026-08-13 - Fail closed on ambiguous host correlations
 
 Decision: Native wall-clock enforcement uses an explicit allowlist for control tools. It rejects pre-action events without a stable session scope, duplicate active action identifiers, unknown child lifecycle links, and batch child lifecycle events without a valid index. Lifecycle and action correlation state is bounded.
 

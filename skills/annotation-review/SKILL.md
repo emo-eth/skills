@@ -32,6 +32,14 @@ Two load-bearing facts, learned the hard way:
    keyed by review target.** They SURVIVE the process dying; what
    destroys them is launching a NEW session over the same target, which
    resets the draft to a `{"draftGeneration":N}` tombstone.
+3. **An annotate session EXITS after the human submits its round.**
+   Observed 3/3 times on 2026-08-13: each folder session died right after
+   collecting its submission. A dead session after a submitted round is
+   the normal lifecycle, not a crash or a reaper - the feedback is in the
+   stdout file; retrieve it, don't panic-relaunch. Relaunch only when the
+   human is owed another round. (One unsubmitted single-file session was
+   also seen dying unexplained; drafts survived. Snapshot drafts before
+   any relaunch regardless.)
 
 ## THE PRIME RULE: never destroy unsubmitted human work
 
