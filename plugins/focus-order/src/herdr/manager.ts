@@ -47,6 +47,7 @@ async function main(): Promise<void> {
   let agents = await listAgents();
   let selection: Selection = { section: "agents" };
   let status = "Ready";
+  selection = preserveSelection(state, agents, selection);
 
   const render = (): void => {
     process.stdout.write(CLEAR + renderScreen(state, agents, selection, status));
@@ -91,7 +92,7 @@ async function main(): Promise<void> {
       return true;
     }
     if (input === "?" || input === "h" || input === "H") {
-      status = "Tab lists; arrows select; u/d rank; r add; x unset; s snooze; f focus; m mode; e guard; q close";
+      status = "Tab lists; arrows select; u/d rank; r add; x unset; s snooze; f focus; m mode; e guard; q close. Worktrees give unranked agents a fallback rank; ranked agents always win.";
       render();
       return true;
     }
@@ -236,42 +237,101 @@ function renderScreen(
   agents: AgentSnapshot[],
   selection: Selection,
   status: string,
+  height?: number,
 ): string {
+  const total = height ?? process.stdout.rows ?? 24;
+  const chrome = 8; // title, subtitle, blank, agents hdr, blank, worktrees hdr, status, help
+  const available = Math.max(4, total - chrome);
+  const agentsActive = selection.section === "agents";
+  const agentBudget = agentsActive ? Math.ceil(available * 0.55) : Math.floor(available * 0.45);
+  const wtBudget = Math.max(2, available - agentBudget);
+
   const rows: string[] = [];
   rows.push(`${BOLD}Focus Order${RESET}  guard=${state.enabled ? `${GREEN}on${RESET}` : `${RED}off${RESET}`} mode=${state.mode}`);
-  rows.push(`${DIM}Flat agent order. Unranked agents inherit their worktree rank. Tab switches lists.${RESET}`);
+  rows.push(`${DIM}Order: rank first, then scheduler order. Worktrees = fallback rank for unranked agents.${RESET}`);
   rows.push("");
-  rows.push(`${BOLD}Agents${RESET}${selection.section === "agents" ? " [active]" : ""}`);
+
+  rows.push(`${BOLD}Agents${RESET}${agentsActive ? " [active]" : ""}`);
   const ordered = orderedAgents(state, agents);
+  const agentKeys = ordered.map((agent) => identityKey(identityFor(agent)));
+  const agentSel = agentsActive ? selection.key ?? agentKeys[0] : undefined;
   if (ordered.length === 0) rows.push("  (none reported by Herdr)");
-  for (const agent of ordered) {
-    const selected = selection.section === "agents"
-      && selection.key === identityKey(identityFor(agent));
-    const rank = rankOf(state, agent);
-    const worktreeRank = worktreeRankOf(state, agent);
-    const effective = rank === undefined && worktreeRank !== undefined
-      ? `wt:${worktreeRank}`
-      : rank === undefined ? "-" : String(rank);
-    const urgent = agent.agent_status === "idle"
-      || agent.agent_status === "blocked"
-      || agent.agent_status === "done";
-    rows.push(`${selected ? ">" : " "} ${effective.padStart(4, " ")} ${urgent ? "!" : " "} ${agentLabel(agent)} [${agent.agent_status}] ${agent.workspace_id}`);
-  }
+  else rows.push(...windowRows(
+    ordered.map((agent) => agentRow(state, agent)),
+    agentKeys,
+    agentSel,
+    agentBudget,
+  ));
+
   rows.push("");
-  rows.push(`${BOLD}Worktrees${RESET}${selection.section === "worktrees" ? " [active]" : ""}`);
+  rows.push(`${BOLD}Worktrees${RESET}${agentsActive ? "" : " [active]"}`);
   const worktrees = worktreeRows(state, agents);
+  const wtKeys = worktrees.map((row) => worktreeKey(row.identity));
+  const wtSel = !agentsActive ? selection.key ?? wtKeys[0] : undefined;
   if (worktrees.length === 0) rows.push("  (none reported by Herdr)");
-  for (const row of worktrees) {
-    const selected = selection.section === "worktrees" && selection.key === worktreeKey(row.identity);
-    const rank = state.ordered_worktrees.findIndex(
-      (stored) => worktreeKey(stored.identity) === worktreeKey(row.identity),
-    );
-    rows.push(`${selected ? ">" : " "} ${(rank === -1 ? "-" : String(rank + 1)).padStart(4, " ")} ${row.label}`);
-  }
+  else rows.push(...windowRows(
+    worktrees.map((row) => worktreeRow(state, row)),
+    wtKeys,
+    wtSel,
+    wtBudget,
+  ));
+
   rows.push("");
   rows.push(`${DIM}${status}${RESET}`);
   rows.push(`${DIM}q close  ? help${RESET}`);
   return `${rows.join("\n")}\n`;
+}
+
+/** Keep the selected row visible inside a fixed-height window; report overflow. */
+function windowRows(
+  lines: string[],
+  keys: string[],
+  selected: string | undefined,
+  viewport: number,
+): string[] {
+  const selIdx = selected !== undefined && keys.includes(selected)
+    ? keys.indexOf(selected)
+    : 0;
+  const start = Math.max(0, Math.min(selIdx - Math.floor(viewport / 2), Math.max(0, lines.length - viewport)));
+  const end = Math.min(lines.length, start + viewport);
+  const out: string[] = [];
+  if (start > 0) out.push(`${DIM}  (${start} more above)${RESET}`);
+  for (let i = start; i < end; i += 1) {
+    const selectedRow = i === selIdx;
+    out.push(selectedRow ? `\u001b[7m> ${lines[i]}\u001b[0m` : `  ${lines[i]}`);
+  }
+  if (end < lines.length) out.push(`${DIM}  (${lines.length - end} more below)${RESET}`);
+  return out;
+}
+
+/** Least->most granular: agent, status, workspace, worktree, tab, pane. */
+function agentRow(state: FocusOrderState, agent: AgentSnapshot): string {
+  const rank = rankOf(state, agent);
+  const worktreeRank = worktreeRankOf(state, agent);
+  const effective = rank === undefined && worktreeRank !== undefined
+    ? `wt:${worktreeRank}`
+    : rank === undefined ? "-" : String(rank);
+  const urgent = agent.agent_status === "idle"
+    || agent.agent_status === "blocked"
+    || agent.agent_status === "done";
+  const place = agent.workspace_label ?? agent.workspace_id;
+  const wt = agent.worktree_label ?? agent.worktree_path;
+  const pane = agent.pane_id;
+  const parts = [place];
+  if (wt && wt !== place) parts.push(wt);
+  parts.push(pane);
+  return `${effective.padStart(4, " ")} ${urgent ? "!" : " "} ${agentLabel(agent)} [${agent.agent_status}] ${parts.join(" \u00b7 ")}`;
+}
+
+/** Least->most granular: label, path, owning agent status. */
+function worktreeRow(state: FocusOrderState, row: WorktreeRow): string {
+  const rank = state.ordered_worktrees.findIndex(
+    (stored) => worktreeKey(stored.identity) === worktreeKey(row.identity),
+  );
+  const label = row.label;
+  const path = row.identity.value.startsWith("workspace:") ? "" : row.identity.value;
+  const status = row.agent ? ` [${row.agent.agent_status}]` : "";
+  return `${(rank === -1 ? "-" : String(rank + 1)).padStart(4, " ")} ${label}${path && path !== label ? ` \u00b7 ${path}` : ""}${status}`;
 }
 
 function worktreeRows(state: FocusOrderState, agents: AgentSnapshot[]): WorktreeRow[] {
