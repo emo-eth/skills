@@ -28,7 +28,10 @@ in `plugins/wall-clock/src/pulse.ts` and removable by deleting that file plus
 the `statusPulse` option wiring in `host.ts` and `pi.ts`. OMP does not get the
 pulse: its footer strips VT escapes from hook status text
 (`sanitizeStatusText` in OMP `src/modes/shared.ts`), so color cannot render
-there until upstream preserves SGR sequences.
+there through the status channel. The planned fix is to move the pulse to the
+`ctx.ui.setWidget` component seam, which both hosts render without
+sanitizing — see `docs/log/2026-08-14-pulse-widget-plan.md` (proposed, not
+implemented).
 
 The current package includes the current persisted-state validation with mode
 and configured-duration fields, assignment and report contracts, report-linked

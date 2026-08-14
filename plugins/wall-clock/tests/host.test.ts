@@ -237,6 +237,31 @@ test("turn-limit starts the next window at a normal user message", async () => {
   assert.equal(controller.status("main").active, false);
 });
 
+test("an armed turn-limit injects no wall-clock context block", async () => {
+  let now = 1_000;
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    clock: { now: () => now },
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+
+  await host.commands.get("wallclock").handler("turn-limit 2m block-new", ctx);
+  now += 1_000;
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  assert.equal(controller.status("main").phase, "armed");
+  assert.equal(await host.emit("context", { messages: [] }, ctx), undefined);
+
+  now += 1_000;
+  await host.emit("message_start", { message: { role: "user" } }, ctx);
+  const running = await host.emit("context", { messages: [] }, ctx) as any;
+  assert.match(running.messages[0].content[0].text, /<wallclock>/);
+});
+
 test("/wallclock turn-limit defaults to block-new without a policy token", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
