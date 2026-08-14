@@ -67,6 +67,19 @@ test("turn-limit requires a duration and resets its deadline after a turn", () =
   );
 });
 
+test("shortening the duration rescales wrap-up so the next turn starts active", () => {
+  const { controller, advance } = setup();
+  controller.activate("main", { durationMs: 60_000, wrapUpMs: 12_000, mode: "turn-limit", expiryPolicy: "block-new" });
+  advance(5_000);
+  const updated = controller.setDuration("main", 5_000);
+  assert.equal(updated.phase, "active", "a shorter duration must not start the turn inside wrap-up");
+  assert.equal(updated.durationMs, 5_000);
+  const reset = controller.resetTurn("main");
+  assert.equal(reset.phase, "active");
+  assert.equal(reset.remainingMs, 5_000);
+  assert.equal(reset.wrapUpAt, 10_000, "wrap-up rescales with the duration instead of clamping to the old band");
+});
+
 test("set duration re-arms either wall-clock mode without discarding state", () => {
   const { controller, advance } = setup();
   controller.activate("main", { durationMs: 60_000, expiryPolicy: "block-new" });

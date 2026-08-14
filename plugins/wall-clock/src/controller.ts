@@ -119,7 +119,7 @@ export class WallClockController {
     if (assignment) {
       throw new Error(`Duration cannot end before assignment ${assignment.id}`);
     }
-    const wrapUpMs = Math.min(Math.max(1, state.hardDeadline - state.wrapUpAt), durationMs);
+    const wrapUpMs = resizeWrapUp(state, durationMs);
     state.durationMs = durationMs;
     state.hardDeadline = hardDeadline;
     state.wrapUpAt = hardDeadline - wrapUpMs;
@@ -135,7 +135,7 @@ export class WallClockController {
     if (state.durationMs === undefined) throw new Error("The turn-limit mode has no configured duration");
     if (!Number.isFinite(at)) throw new Error("A finite turn reset time is required");
     const hardDeadline = at + state.durationMs;
-    const wrapUpMs = Math.min(Math.max(1, state.hardDeadline - state.wrapUpAt), state.durationMs);
+    const wrapUpMs = resizeWrapUp(state, state.durationMs);
     state.turnState = "active";
     state.hardDeadline = hardDeadline;
     state.wrapUpAt = hardDeadline - wrapUpMs;
@@ -613,6 +613,24 @@ function requireDuration(durationMs: number): void {
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
     throw new Error("Duration must be positive");
   }
+}
+
+/**
+ * Scale the current wrap-up band to a new duration so a shorter
+ * configured turn never starts already inside wrap-up. The band is
+ * preserved as a fraction of the old duration; states without a
+ * known duration keep the absolute band, clamped to the new duration.
+ */
+function resizeWrapUp(state: SessionState, newDurationMs: number): number {
+  const oldBand = (state.hardDeadline ?? 0) - (state.wrapUpAt ?? 0);
+  const oldDuration = state.durationMs;
+  let wrapUpMs: number;
+  if (oldDuration !== undefined && oldDuration > 0 && Number.isFinite(oldBand) && oldBand >= 0) {
+    wrapUpMs = Math.round((oldBand / oldDuration) * newDurationMs);
+  } else {
+    wrapUpMs = oldBand;
+  }
+  return Math.min(Math.max(1, wrapUpMs), newDurationMs);
 }
 
 function requireValidReport(input: ChildReportInput): void {
