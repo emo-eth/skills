@@ -9,6 +9,7 @@ import {
   request,
   subscribe,
 } from "../src/herdr/transport.ts";
+import { openPopup } from "../src/herdr/client.ts";
 import type { HerdrEvent } from "../src/shared/types.ts";
 
 type JsonMessage = Record<string, unknown>;
@@ -167,6 +168,27 @@ describe("transport", () => {
         assert.equal(err.message, "X: Herdr request failed");
         return true;
       });
+    });
+  });
+
+  it("opens popup panes against the active pane without a workspace target", async () => {
+    await withServer(async (srv) => {
+      const pending = openPopup({
+        entrypoint: "attention",
+        width: "90%",
+        height: 20,
+      });
+      const msg = await srv.waitFor((m) => m.method === "plugin.pane.open");
+      assert.deepEqual(msg.params, {
+        plugin_id: "focus-order",
+        entrypoint: "attention",
+        placement: "popup",
+        width: "90%",
+        height: 20,
+        focus: true,
+      });
+      srv.write({ id: msg.id, result: {} });
+      await pending;
     });
   });
 

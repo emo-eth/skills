@@ -38,7 +38,7 @@ export async function enforce(state: FocusOrderState, agents: AgentSnapshot[]): 
   }
 
   if (state.enabled && state.mode === "modal" && urgent.length > 0 && !attentionOpen) {
-    await openModal(urgent[0].workspace_id);
+    await openModal();
     return;
   }
 
@@ -52,13 +52,12 @@ export async function enforce(state: FocusOrderState, agents: AgentSnapshot[]): 
   }
 }
 
-async function openModal(workspaceId: string): Promise<void> {
+async function openModal(): Promise<void> {
   try {
     await openPopup({
       entrypoint: "attention",
       width: MODAL_WIDTH,
       height: MODAL_HEIGHT,
-      workspaceId,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

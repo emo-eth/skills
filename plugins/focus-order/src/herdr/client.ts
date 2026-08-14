@@ -55,7 +55,6 @@ export async function openPopup(options: {
   entrypoint: "manager" | "attention";
   width: string;
   height: number;
-  workspaceId?: string;
 }): Promise<void> {
   await call("plugin.pane.open", {
     plugin_id: "focus-order",
@@ -63,7 +62,6 @@ export async function openPopup(options: {
     placement: "popup",
     width: options.width,
     height: options.height,
-    workspace_id: options.workspaceId,
     focus: true,
   });
 }
