@@ -448,20 +448,18 @@ export class WallClockController {
     const context = status.context;
     const armed = status.phase === "armed";
     const lines = [
-      "Wall-clock context (measured by the host):",
-      `Current time: ${new Date(context.currentTimeMs).toISOString()} (${context.currentTimeMs}ms).`,
-      `Total elapsed: ${formatDurationMs(context.totalElapsedMs)} (${context.totalElapsedMs}ms).`,
-      `Latest inference elapsed: ${formatDurationMs(context.latestInferenceElapsedMs)} (${context.latestInferenceElapsedMs}ms).`,
-      `Latest tool-call elapsed: ${formatDurationMs(context.latestToolCallElapsedMs)} (${context.latestToolCallElapsedMs}ms).`,
-      armed ? "The timer is armed; it starts at the next normal user turn, so no remaining time is claimed." : `Remaining time: ${formatDurationMs(context.remainingMs)} (${context.remainingMs}ms).`,
-      `Phase: ${context.phase}. Mode: ${context.mode}. Expiry policy: ${context.expiryPolicy}.`,
-      `Assignment elapsed: ${formatDurationMs(context.assignmentElapsedMs)} (${context.assignmentElapsedMs}ms).`,
+      "<wallclock>",
+      "This block is injected by the host, not written by the user.",
+      armed
+        ? "Timer armed: no timer runs until the next normal user turn."
+        : `${formatDurationMs(context.remainingMs)} remaining · phase ${context.phase} · mode ${context.mode} · policy ${context.expiryPolicy}`,
       context.mode === "turn-limit"
         ? armed
-          ? `Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}. The next timer starts when the next normal user turn begins.`
-          : `The next timer starts when the next normal user turn begins. Steer messages keep the current deadline. Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
+          ? `Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
+          : "The next timer starts at the next normal user turn. Steer messages keep the current deadline. "
+            + `Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
         : undefined,
-      "The budget is a ceiling, not a target. Finish as soon as the acceptance target is met.",
+      "Budget is a ceiling: finish as soon as the acceptance target is met.",
       "If you reduce scope or validation, keep the result working and report the shortcut, tradeoff, and skipped work.",
     ].filter((line): line is string => line !== undefined);
     if (status.assignment) {
@@ -474,6 +472,7 @@ export class WallClockController {
       if (context.expiryPolicy === "block-new") lines.push("Already-admitted work may finish; do not claim it was cancelled.");
       else lines.push("The host is aborting already-admitted wall-clock-owned work and must observe the result.");
     }
+    lines.push("</wallclock>");
     return lines.join("\n");
   }
 

@@ -1455,12 +1455,20 @@ function notify(ctx: RuntimeContext | undefined, message: string, level = "info"
 
 function updateStatus(host: RuntimeHost, controller: WallClockController, sessionId: string, ctx?: RuntimeContext, assignmentId?: string): void {
   const status = controller.status(sessionId, assignmentId);
-  const mode = status.mode === "turn-limit" ? `, ${status.mode}` : "";
+  const mode = status.mode === "turn-limit" ? ` · ${status.mode}` : "";
   const value = status.active && status.expiryPolicy
-    ? `${status.phase} ${Math.ceil(status.remainingMs / 1_000)}s (${status.expiryPolicy}${mode})`
+    ? `⏱ ${formatStatusTime(status.remainingMs)} left · ${status.phase} · ${status.expiryPolicy}${mode}`
     : undefined;
   if (ctx?.ui?.setStatus) ctx.ui.setStatus("wall-clock", value);
   else host.setStatus?.("wall-clock", value);
+}
+
+function formatStatusTime(ms: number): string {
+  const seconds = Math.ceil(ms / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
 }
 
 function formatStatus(status: { phase: string; remainingMs: number; expiryPolicy?: string; mode?: WallClockMode }): string {
