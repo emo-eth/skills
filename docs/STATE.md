@@ -20,6 +20,16 @@ through the current turn, and active child work retains its own deadline.
 Evidence is in the focused controller and host tests plus the Pi and OMP
 native runner tests.
 
+The status line breathes in the host theme's colors on pi: the whole line
+pulses from near-gray to the theme accent (warning during wrap-up) at full
+in-gamut saturation by animating OKLCH chroma at constant lightness, with a
+four-second period and 100ms frames while animating. The feature is isolated
+in `plugins/wall-clock/src/pulse.ts` and removable by deleting that file plus
+the `statusPulse` option wiring in `host.ts` and `pi.ts`. OMP does not get the
+pulse: its footer strips VT escapes from hook status text
+(`sanitizeStatusText` in OMP `src/modes/shared.ts`), so color cannot render
+there until upstream preserves SGR sequences.
+
 The current package includes the current persisted-state validation with mode
 and configured-duration fields, assignment and report contracts, report-linked
 plan revisions, Agent Plugin discovery, and optional MCP operations.

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { WallClockController } from "../src/controller.ts";
 import { createHostCoordination, installHostExtension, type RuntimeHost } from "../src/host.ts";
+import { createStatusPulse } from "../src/pulse.ts";
 import { MemoryStore } from "../src/store.ts";
 
 class FakeEventBus {
@@ -366,6 +367,48 @@ test("active wallclock status refreshes from the host clock", async () => {
   scheduledStatus[1]?.();
   assert.equal(displayedStatuses.get("wall-clock"), "⏱ 0s left · expired · block-new");
   assert.equal(scheduledStatus.length, 2);
+});
+
+test("status pulse colors the whole line and refreshes at the pulse frame rate", async () => {
+  let now = 1_000;
+  const scheduled: Array<{ callback: () => void; delayMs: number }> = [];
+  const displayedStatuses = new Map<string, string | undefined>();
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-pi", canBlockNew: true },
+    clock: { now: () => now },
+    schedule: () => "deadline",
+    cancelSchedule: () => undefined,
+    scheduleStatus: (callback, delayMs) => {
+      scheduled.push({ callback, delayMs });
+      return callback;
+    },
+    cancelStatusSchedule: () => undefined,
+    statusPulse: createStatusPulse({ now: () => now }),
+  });
+  const ctx = {
+    ...context(),
+    ui: {
+      notify: () => undefined,
+      setStatus: (key: string, value: string | undefined) => { displayedStatuses.set(key, value); },
+      theme: {
+        getFgAnsi: () => "\u001b[38;2;97;175;239m",
+        getColorMode: () => "truecolor",
+      },
+    },
+  };
+
+  await host.commands.get("wallclock").handler("60s block-new", ctx);
+  const initial = displayedStatuses.get("wall-clock");
+  assert.ok(initial?.startsWith("\u001b[38;2;"), "status line is wrapped in a truecolor SGR prefix");
+  assert.ok(initial?.endsWith("left · active · block-new\u001b[39m"), "status line ends with a foreground reset");
+
+  now = 1_100;
+  scheduled[0]?.callback();
+  assert.equal(scheduled[1]?.delayMs, 100, "animated refresh ticks at the pulse frame rate");
+  assert.notEqual(displayedStatuses.get("wall-clock"), initial, "breathing changes the color between frames");
 });
 
 test("inactive host sessions do not change delegation or ordinary tool calls", async () => {

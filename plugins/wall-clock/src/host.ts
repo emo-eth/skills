@@ -1,6 +1,7 @@
 import { parseDeadlineSpec } from "./time.ts";
 import { stateFromEntries } from "./store.ts";
 import { classifyAction, isWallClockControlTool, WallClockController } from "./controller.ts";
+import type { PulseUi, StatusPulse } from "./pulse.ts";
 import type {
   ActionClass,
   ActivationInput,
@@ -46,7 +47,7 @@ export type RuntimeContext = {
   sessionId?: string;
   assignmentId?: string;
   sessionManager?: { getSessionFile?: () => string | undefined; getEntries?: () => unknown[]; getBranch?: () => unknown[] };
-  ui?: { notify?: (message: string, level?: string) => void; setStatus?: (key: string, value: string | undefined) => void };
+  ui?: PulseUi & { notify?: (message: string, level?: string) => void; setStatus?: (key: string, value: string | undefined) => void };
   signal?: AbortSignal;
   abort?: () => void | Promise<void>;
   isIdle?: () => boolean;
@@ -131,6 +132,7 @@ export type HostExtensionOptions = {
   cancelSchedule?: (handle: unknown) => void;
   scheduleStatus?: (callback: () => void, delayMs: number) => unknown;
   cancelStatusSchedule?: (handle: unknown) => void;
+  statusPulse?: StatusPulse;
   publishChildCoordination?: (childSessionIds: string[], coordination: HostCoordination) => void;
   resolveChildCoordination?: (childSessionId: string) => HostCoordination | undefined;
   releaseChildCoordination?: (childSessionIds: string[]) => void;
@@ -162,6 +164,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     return handle;
   });
   const cancelStatusSchedule = options.cancelStatusSchedule ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  const statusPulse = options.statusPulse;
   let currentDirectSessionId: string | undefined;
   let actionSequence = 0;
   const fastLanes = new Map<string, FastLaneState>();
@@ -273,19 +276,20 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const generation = statusRefreshGeneration;
     const tick = (): void => {
       if (generation !== statusRefreshGeneration) return;
-      updateStatus(host, controller, sessionId, ctx, assignmentId);
-      scheduleNext();
+      const animated = updateStatus(host, controller, sessionId, ctx, assignmentId, statusPulse);
+      scheduleNext(animated);
     };
-    const scheduleNext = (): void => {
+    const scheduleNext = (animated: boolean): void => {
       const status = controller.status(sessionId, assignmentId);
       if (status.phase !== "active" && status.phase !== "wrap-up") {
         statusRefresh = undefined;
         return;
       }
-      const handle = scheduleStatus(tick, Math.min(1_000, Math.max(1, status.remainingMs)));
+      const cadence = animated && statusPulse ? statusPulse.frameMs : 1_000;
+      const handle = scheduleStatus(tick, Math.min(cadence, Math.max(1, status.remainingMs)));
       statusRefresh = { handle, generation };
     };
-    scheduleNext();
+    scheduleNext(statusPulse !== undefined);
   };
 
   const ensureActivationSupport = (expiryPolicy: ExpiryPolicy, mode?: WallClockMode): void => {
@@ -369,7 +373,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const status = controller.activate(sessionId, input, plan);
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
-    updateStatus(host, controller, sessionId, ctx);
+    updateStatus(host, controller, sessionId, ctx, undefined, statusPulse);
     scheduleStatusRefresh(sessionId, ctx);
     return status;
   };
@@ -381,7 +385,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const updated = controller.setDuration(sessionId, durationMs);
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
-    updateStatus(host, controller, sessionId, ctx);
+    updateStatus(host, controller, sessionId, ctx, undefined, statusPulse);
     scheduleStatusRefresh(sessionId, ctx);
     return updated;
   };
@@ -393,7 +397,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     coordination.providerContexts.delete(sessionId);
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
-    updateStatus(host, controller, sessionId, ctx);
+    updateStatus(host, controller, sessionId, ctx, undefined, statusPulse);
     scheduleStatusRefresh(sessionId, ctx);
     return reset;
   };
@@ -414,7 +418,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     clearSessionDeadlines(sessionId);
     clearStatusRefresh();
     persist(sessionId);
-    updateStatus(host, controller, sessionId, ctx);
+    updateStatus(host, controller, sessionId, ctx, undefined, statusPulse);
     return controller.status(sessionId);
   };
 
@@ -512,7 +516,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     currentDirectSessionId = direct;
     const child = coordination.childBindings.get(direct);
     if (child) {
-      updateStatus(host, controller, child.parentSessionId, ctx, child.assignmentId);
+      updateStatus(host, controller, child.parentSessionId, ctx, child.assignmentId, statusPulse);
       scheduleStatusRefresh(child.parentSessionId, ctx, child.assignmentId);
       return;
     }
@@ -523,7 +527,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       controller.discard(direct);
       clearSessionDeadlines(direct);
       notify(ctx, "Wall-clock state is malformed or belongs to another session; control is inactive", "error");
-      updateStatus(host, controller, direct, ctx);
+      updateStatus(host, controller, direct, ctx, undefined, statusPulse);
       return;
     }
     if (restored) controller.restoreFromState(restored, direct);
@@ -535,7 +539,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         if (assignment.status === "active") scheduleDeadline(direct, assignment.id, ctx);
       }
     }
-    updateStatus(host, controller, direct, ctx);
+    updateStatus(host, controller, direct, ctx, undefined, statusPulse);
     scheduleStatusRefresh(direct, ctx);
   };
 
@@ -819,7 +823,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         else if (assignment) injectAssignmentContext(event, controller, scope.sessionId, assignment);
       }
     }
-    updateStatus(host, controller, scope.sessionId, ctx, assignmentId);
+    updateStatus(host, controller, scope.sessionId, ctx, assignmentId, statusPulse);
     return undefined;
   });
   host.on("tool_result", async (event, ctx) => {
@@ -1459,14 +1463,17 @@ function notify(ctx: RuntimeContext | undefined, message: string, level = "info"
   ctx?.ui?.notify?.(message, level);
 }
 
-function updateStatus(host: RuntimeHost, controller: WallClockController, sessionId: string, ctx?: RuntimeContext, assignmentId?: string): void {
+function updateStatus(host: RuntimeHost, controller: WallClockController, sessionId: string, ctx?: RuntimeContext, assignmentId?: string, pulse?: StatusPulse): boolean {
   const status = controller.status(sessionId, assignmentId);
   const mode = status.mode === "turn-limit" ? ` · ${status.mode}` : "";
-  const value = status.active && status.expiryPolicy
+  const plain = status.active && status.expiryPolicy
     ? `⏱ ${formatStatusTime(status.remainingMs)} left · ${status.phase} · ${status.expiryPolicy}${mode}`
     : undefined;
+  const pulsed = plain !== undefined && pulse ? pulse.colorize(ctx?.ui, plain, status.phase) : undefined;
+  const value = pulsed ? pulsed.text : plain;
   if (ctx?.ui?.setStatus) ctx.ui.setStatus("wall-clock", value);
   else host.setStatus?.("wall-clock", value);
+  return pulsed?.animated ?? false;
 }
 
 function formatStatusTime(ms: number): string {

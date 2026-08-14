@@ -1,12 +1,16 @@
 import { installHostExtension } from "./host.ts";
 import type { RuntimeContext } from "./host.ts";
 import { isObservedNativeAbort } from "./native-abort.ts";
+import { createStatusPulse } from "./pulse.ts";
 import type { ToolProposal } from "./types.ts";
 
 const ABORTABLE_PI_TOOLS = new Set(["bash", "read", "write", "edit", "grep", "find", "ls"]);
 
 export default function wallClockPiExtension(pi: any) {
   return installHostExtension(pi, {
+    // OMP does not get this: its footer strips VT escapes from hook status
+    // text (sanitizeStatusText), so a color pulse cannot render there.
+    statusPulse: createStatusPulse(),
     enforcement: {
       name: "Pi",
       canBlockNew: true,

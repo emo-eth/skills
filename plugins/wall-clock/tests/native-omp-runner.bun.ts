@@ -173,10 +173,10 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
     await command!.handler("stop", runner.createCommandContext());
     await command!.handler("turn-limit 1s block-new", runner.createCommandContext());
     const turnContext = await runner.emitContext([]);
-    expect(messageText(turnContext.at(-1))).toMatch(/Mode: turn-limit/);
+    expect(messageText(turnContext.at(-1))).toMatch(/mode turn-limit/);
     await runner.emit({ type: "agent_end", willContinue: false });
     const resetContext = await runner.emitContext([]);
-    expect(messageText(resetContext.at(-1))).toMatch(/Mode: turn-limit/);
+    expect(resetContext.at(-1)).toBeUndefined();
     await command!.handler("set 2s", runner.createCommandContext());
     await command!.handler("stop", runner.createCommandContext());
 
@@ -222,7 +222,7 @@ test("OMP native wallclock command starts the trailing prompt after activation",
 
     expect(created.mock.calls).toHaveLength(1);
     expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("fix merge conflicts in all open PRs");
-    expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("Expiry policy: block-new");
+    expect(JSON.stringify(created.mock.calls[0]?.context)).toContain("policy block-new");
   } finally {
     await created.session.dispose();
     created.authStorage.close();
