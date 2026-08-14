@@ -89,7 +89,7 @@ test("OMP and Pi accept an abortable provider request and fail closed without on
     const host = new Host();
     install(host as any);
     const ctx = context();
-    await host.commands.get("wallclock").handler("turn-limit 2m", ctx);
+    await host.commands.get("wallclock").handler("turn-limit 2m abort-running", ctx);
 
     const abortable = { ...ctx, signal: new AbortController().signal, abort: () => undefined };
     assert.equal(await host.emit("before_provider_request", {}, abortable), undefined);
@@ -114,7 +114,7 @@ test("OMP and Pi abort the active provider request once at expiry", async () => 
     let aborted = 0;
     const ctx = context("main");
     ctx.abort = () => { aborted += 1; };
-    await host.commands.get("wallclock").handler("turn-limit 30ms", ctx);
+    await host.commands.get("wallclock").handler("turn-limit 30ms abort-running", ctx);
     await host.emit("before_provider_request", {}, ctx);
     const deadline = Date.now() + 2_000;
     while (aborted === 0 && Date.now() < deadline) {

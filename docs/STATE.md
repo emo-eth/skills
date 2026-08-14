@@ -53,7 +53,7 @@ The repository now also contains `plugins/focus-order/`, a Herdr plugin that sto
 - Parent and child agents receive measured elapsed-time context at every turn; agents do not estimate task duration. [D5]
 - Pi and OMP are the first enforcement targets; Codex and Claude are package targets only until tested seams exist. [D6]
 - Every activation carries `block-new` or `abort-running`; the native slash command defaults an omitted choice to `block-new`. [D7, D15]
-- `turn-limit` is the persistent per-turn mode; terminal settlement arms the owner contract as explicit persisted `turnState: "armed"`, and the next normal user message starts its window. Steering messages keep the current deadline; child deadlines remain fixed. The `/wallclock turn-limit` command defaults to `abort-running`, and abort-running activation fails closed unless the host proves a provider-abort seam. [D37, D38, D39]
+- `turn-limit` is the persistent per-turn mode; terminal settlement arms the owner contract as explicit persisted `turnState: "armed"`, and the next normal user message starts its window. Steering messages keep the current deadline; child deadlines remain fixed. The `/wallclock turn-limit` command defaults to `block-new`; `abort-running` is explicit and fails closed unless the host proves a provider-abort seam. [D37, D38, D39]
 - `standup` is ticket-centered; `initiative-standup` is the separate path for cross-project work, must start with a Memex session ledger, and must not require or mutate Linear tickets. [documented]
 
 - Compression preserves a working vertical slice and reports gaps honestly. [D8]

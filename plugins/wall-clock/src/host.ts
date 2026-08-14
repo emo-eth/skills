@@ -554,7 +554,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         if (!duration) throw new Error("Usage: /wallclock turn-limit 2m [block-new|abort-running|abort] [prompt...]");
         const parsed = parseDeadlineSpec(duration, options.clock?.now() ?? Date.now());
         if (parsed.durationMs === undefined) throw new Error("The turn-limit command requires a positive duration, not a local-time deadline");
-        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "abort-running";
+        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "block-new";
         const prompt = parts.join(" ");
         if (prompt && !host.sendUserMessage) throw new Error("This host cannot submit the wall-clock prompt");
         const status = activateSession(ctx, { durationMs: parsed.durationMs, mode: "turn-limit", expiryPolicy }, []);

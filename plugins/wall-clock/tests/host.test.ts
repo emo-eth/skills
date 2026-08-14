@@ -163,6 +163,21 @@ test("wallclock accepts abort as the short expiry policy", async () => {
   assert.equal(controller.status("main").expiryPolicy, "abort-running");
 });
 
+test("turn-limit defaults to block-new when policy is omitted", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as any, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  await host.commands.get("wallclock").handler("turn-limit 5m", context());
+
+  assert.equal(controller.status("main").expiryPolicy, "block-new");
+});
+
 test("wallclock honors explicit start and block-new before forwarding a prompt", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
@@ -221,7 +236,7 @@ test("turn-limit starts the next window at a normal user message", async () => {
   assert.equal(controller.status("main").active, false);
 });
 
-test("/wallclock turn-limit defaults to abort-running without a policy token", async () => {
+test("/wallclock turn-limit defaults to block-new without a policy token", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as any, {
@@ -242,7 +257,7 @@ test("/wallclock turn-limit defaults to abort-running without a policy token", a
   await host.commands.get("wallclock").handler("turn-limit 2m", context());
 
   assert.equal(controller.status("main").mode, "turn-limit");
-  assert.equal(controller.status("main").expiryPolicy, "abort-running");
+  assert.equal(controller.status("main").expiryPolicy, "block-new");
 });
 
 test("turn-limit abort-running activation fails closed without provider abort support", async () => {
@@ -262,7 +277,7 @@ test("turn-limit abort-running activation fails closed without provider abort su
   });
 
   await assert.rejects(
-    host.commands.get("wallclock").handler("turn-limit 2m", context()),
+    host.commands.get("wallclock").handler("turn-limit 2m abort-running", context()),
     /cannot prove abort-running provider enforcement/,
   );
   assert.equal(controller.status("main").active, false);
@@ -301,7 +316,7 @@ test("abort-running turn-limit aborts the active provider request exactly once a
   const abortSpy = () => { providerAborted += 1; };
   const ctx = { ...context("main", [], abortSpy), signal: new AbortController().signal };
 
-  await host.commands.get("wallclock").handler("turn-limit 2m", ctx);
+  await host.commands.get("wallclock").handler("turn-limit 2m abort-running", ctx);
   assert.equal(controller.status("main").expiryPolicy, "abort-running");
   assert.equal(controller.status("main").deadlineMs, 121_000);
 
