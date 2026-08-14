@@ -1,5 +1,5 @@
-import { installBugExtension, type RuntimeHost } from "./host.ts";
+import { installNoteCommands, type RuntimeHost } from "./host.ts";
 
-export default function bugPiExtension(host: RuntimeHost): void {
-  installBugExtension(host, "Pi", "pi");
+export default function notePiExtension(host: RuntimeHost): void {
+  installNoteCommands(host, "Pi", "pi");
 }

@@ -1,7 +1,10 @@
 import {
-  appendBugRecord,
+  appendNoteRecord,
   parseCommandArgs,
+  usage,
   normalizeNote,
+  NOTE_COMMANDS,
+  NOTE_KINDS,
   type BugHost,
 } from "./record.ts";
 
@@ -66,11 +69,10 @@ const TRACKED_EVENTS = [
   "user_bash",
   "agent_end",
 ];
-const USAGE = "Usage: /bug [--plugin <name>] [--skill <name>] <bug description>";
 
-export function installBugExtension(host: RuntimeHost, agent: string, runtime: BugHost): void {
+export function installNoteCommands(host: RuntimeHost, agent: string, runtime: BugHost): void {
   if (typeof host.registerCommand !== "function") {
-    throw new Error(`${runtime.toUpperCase()} bug command requires the host registerCommand hook`);
+    throw new Error(`${runtime.toUpperCase()} note commands require the host registerCommand hook`);
   }
 
   const activityBySession = new Map<string, ActivityState>();
@@ -88,46 +90,50 @@ export function installBugExtension(host: RuntimeHost, agent: string, runtime: B
     });
   }
 
-  host.registerCommand("bug", {
-    description: "Log a bug with the current agent, session, turn, and activity context",
-    handler: async (args, context) => {
-      const parsed = parseCommandArgs(args);
-      const currentContext = context ?? {};
-      const key = sessionKey(currentContext);
-      const state = activityBySession.get(key);
-      const session = readSessionMetadata(currentContext);
-      try {
-        const record = await appendBugRecord({
-          note: parsed.note,
-          host: runtime,
-          agent,
-          cwd: currentContext.cwd,
-          model: currentContext.model,
-          plugin: parsed.plugin ?? state?.plugin,
-          skill: parsed.skill ?? state?.skill,
-          sessionId: session.sessionId,
-          sessionName: session.sessionName,
-          sessionFile: session.sessionFile,
-          turn: state?.turn ?? session.turn,
-          turnStartedAt: state?.turnStartedAt,
-          lastEvent: state?.lastEvent,
-          lastEventAt: state?.lastEventAt,
-          lastCommand: state?.lastCommand,
-          lastTool: state?.lastTool,
-          sessionEntryCount: session.sessionEntryCount,
-          branchEntryCount: session.branchEntryCount,
-        });
-        const label = record.plugin ? ` for ${record.plugin}` : record.skill ? ` for ${record.skill}` : "";
-        notify(currentContext, `Bug logged${label}`, "info");
-        return record;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message === USAGE) throw error;
-        notify(currentContext, `Bug could not be logged: ${message}`, "error");
-        return undefined;
-      }
-    },
-  });
+  for (const kind of NOTE_KINDS) {
+    const spec = NOTE_COMMANDS[kind];
+    host.registerCommand(kind, {
+      description: spec.description,
+      handler: async (args, context) => {
+        const parsed = parseCommandArgs(kind, args);
+        const currentContext = context ?? {};
+        const key = sessionKey(currentContext);
+        const state = activityBySession.get(key);
+        const session = readSessionMetadata(currentContext);
+        try {
+          const record = await appendNoteRecord({
+            kind,
+            note: parsed.note,
+            host: runtime,
+            agent,
+            cwd: currentContext.cwd,
+            model: currentContext.model,
+            plugin: parsed.plugin ?? state?.plugin,
+            skill: parsed.skill ?? state?.skill,
+            sessionId: session.sessionId,
+            sessionName: session.sessionName,
+            sessionFile: session.sessionFile,
+            turn: state?.turn ?? session.turn,
+            turnStartedAt: state?.turnStartedAt,
+            lastEvent: state?.lastEvent,
+            lastEventAt: state?.lastEventAt,
+            lastCommand: state?.lastCommand,
+            lastTool: state?.lastTool,
+            sessionEntryCount: session.sessionEntryCount,
+            branchEntryCount: session.branchEntryCount,
+          });
+          const label = record.plugin ? ` for ${record.plugin}` : record.skill ? ` for ${record.skill}` : "";
+          notify(currentContext, `${spec.label} logged${label}`, "info");
+          return record;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message === usage(kind)) throw error;
+          notify(currentContext, `${spec.label} could not be logged: ${message}`, "error");
+          return undefined;
+        }
+      },
+    });
+  }
 }
 
 function safeOn(

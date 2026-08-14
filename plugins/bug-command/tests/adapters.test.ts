@@ -48,14 +48,14 @@ function context(sessionId: string, notices: FakeHost["notices"]): RuntimeContex
   };
 }
 
-async function withOutputPath<T>(path: string, action: () => Promise<T>): Promise<T> {
-  const previous = process.env.BUGS_PATH;
-  process.env.BUGS_PATH = path;
+async function withEnvPath<T>(envVar: string, path: string, action: () => Promise<T>): Promise<T> {
+  const previous = process.env[envVar];
+  process.env[envVar] = path;
   try {
     return await action();
   } finally {
-    if (previous === undefined) delete process.env.BUGS_PATH;
-    else process.env.BUGS_PATH = previous;
+    if (previous === undefined) delete process.env[envVar];
+    else process.env[envVar] = previous;
   }
 }
 
@@ -65,12 +65,14 @@ const adapters = [
 ] as const;
 
 for (const [agent, adapter, host] of adapters) {
-  test(`${agent} registers /bug and captures recent session activity`, async () => {
+  test(`${agent} registers the note commands and captures recent session activity`, async () => {
     const root = await mkdtemp(join(tmpdir(), `bug-command-${host}-`));
     try {
       const fake = new FakeHost();
       adapter(fake);
-      assert.ok(fake.commands.has("bug"));
+      for (const name of ["bug", "fear", "journal", "grasp", "do"]) {
+        assert.ok(fake.commands.has(name), `missing /${name}`);
+      }
       assert.equal(
         fake.commands.get("bug")?.handler instanceof Function,
         true,
@@ -85,7 +87,7 @@ for (const [agent, adapter, host] of adapters) {
       }, current);
       await fake.emit("tool_call", { toolName: "read" }, current);
 
-      await withOutputPath(join(root, "BUGS.md"), async () => {
+      await withEnvPath("BUGS_PATH", join(root, "BUGS.md"), async () => {
         await fake.commands.get("bug")!.handler("the command lost its session context", current);
       });
 
@@ -113,6 +115,28 @@ for (const [agent, adapter, host] of adapters) {
   });
 }
 
+test("each personal command writes to its own file with its own notice", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bug-command-journal-"));
+  try {
+    const fake = new FakeHost();
+    bugPiExtension(fake);
+    const current = context("journal-session", fake.notices);
+    const destination = join(root, "JOURNAL.md");
+
+    await withEnvPath("JOURNAL_PATH", destination, async () => {
+      await fake.commands.get("journal")!.handler("today went sideways but the plugin shipped", current);
+    });
+
+    const line = (await readFile(destination, "utf8")).trim();
+    const record = JSON.parse(line.slice(2)) as Record<string, unknown>;
+    assert.equal(record.schema, "journal.v1");
+    assert.equal(record.note, "today went sideways but the plugin shipped");
+    assert.deepEqual(fake.notices, [{ message: "Journal note logged", level: "info" }]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("explicit plugin and skill flags override automatic context", async () => {
   const root = await mkdtemp(join(tmpdir(), "bug-command-explicit-"));
   try {
@@ -123,7 +147,7 @@ test("explicit plugin and skill flags override automatic context", async () => {
       message: { customType: "skill-prompt", details: { name: "old-skill" } },
     }, current);
 
-    await withOutputPath(join(root, "BUGS.md"), async () => {
+    await withEnvPath("BUGS_PATH", join(root, "BUGS.md"), async () => {
       await fake.commands.get("bug")!.handler(
         "--plugin focus-order --skill understand the explicit context wins",
         current,
@@ -149,7 +173,7 @@ test("lifecycle order supplies a turn hint when the host omits turn metadata", a
       prompt: "ordinary prompt without an explicit turn field",
     }, current);
 
-    await withOutputPath(join(root, "BUGS.md"), async () => {
+    await withEnvPath("BUGS_PATH", join(root, "BUGS.md"), async () => {
       await fake.commands.get("bug")!.handler("capture the fallback turn", current);
     });
 
@@ -169,7 +193,7 @@ test("the command works when lifecycle hooks are unavailable", async () => {
     bugOmpExtension({
       registerCommand: fake.registerCommand.bind(fake),
     });
-    await withOutputPath(join(root, "BUGS.md"), async () => {
+    await withEnvPath("BUGS_PATH", join(root, "BUGS.md"), async () => {
       await fake.commands.get("bug")!.handler("a command-only bug", {});
     });
     const line = (await readFile(join(root, "BUGS.md"), "utf8")).trim();

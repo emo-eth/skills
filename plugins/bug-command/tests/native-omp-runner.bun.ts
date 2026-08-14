@@ -78,8 +78,10 @@ test("OMP ExtensionRunner loads /bug and writes a contextual record", async () =
       },
     );
     await runner.emit({ type: "session_start" });
+    for (const name of ["bug", "fear", "journal", "grasp", "do"]) {
+      expect(runner.getCommand(name)).toBeDefined();
+    }
     const command = runner.getCommand("bug");
-    expect(command).toBeDefined();
     await command!.handler("native OMP bug", runner.createCommandContext());
 
     const line = readFileSync(destination, "utf8").trim();

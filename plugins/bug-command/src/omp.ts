@@ -1,5 +1,5 @@
-import { installBugExtension, type RuntimeHost } from "./host.ts";
+import { installNoteCommands, type RuntimeHost } from "./host.ts";
 
-export default function bugOmpExtension(host: RuntimeHost): void {
-  installBugExtension(host, "OMP", "omp");
+export default function noteOmpExtension(host: RuntimeHost): void {
+  installNoteCommands(host, "OMP", "omp");
 }

@@ -6,14 +6,68 @@ import { dirname } from "node:path";
 
 export type BugHost = "omp" | "pi";
 
+export type NoteKind = "bug" | "fear" | "journal" | "grasp" | "do";
+
+export type NoteCommand = {
+  description: string;
+  noun: string;
+  label: string;
+  fileName: string;
+  envVar: string;
+};
+
+export const NOTE_COMMANDS: Record<NoteKind, NoteCommand> = {
+  bug: {
+    description: "Log a bug with the current agent, session, turn, and activity context",
+    noun: "bug description",
+    label: "Bug",
+    fileName: "BUGS.md",
+    envVar: "BUGS_PATH",
+  },
+  fear: {
+    description: "Log a personal fear",
+    noun: "fear",
+    label: "Fear",
+    fileName: "FEARS.md",
+    envVar: "FEARS_PATH",
+  },
+  journal: {
+    description: "Log a journal note",
+    noun: "journal note",
+    label: "Journal note",
+    fileName: "JOURNAL.md",
+    envVar: "JOURNAL_PATH",
+  },
+  grasp: {
+    description: "Log a concept to understand later",
+    noun: "concept to understand",
+    label: "Concept",
+    fileName: "GRASP.md",
+    envVar: "GRASP_PATH",
+  },
+  do: {
+    description: "Log a small personal task",
+    noun: "task",
+    label: "Task",
+    fileName: "DO.md",
+    envVar: "DO_PATH",
+  },
+};
+
+export const NOTE_KINDS = Object.keys(NOTE_COMMANDS) as NoteKind[];
+
+export function usage(kind: NoteKind): string {
+  return `Usage: /${kind} [--plugin <name>] [--skill <name>] <${NOTE_COMMANDS[kind].noun}>`;
+}
+
 export type GitMetadata = {
   repo: string;
   worktree: string;
   branch: string;
 };
 
-export type BugRecord = {
-  schema: "bug.v1";
+export type NoteRecord = {
+  schema: `${NoteKind}.v1`;
   id: string;
   datetime: string;
   host: BugHost;
@@ -41,7 +95,8 @@ export type BugRecord = {
 
 export type GitRunner = (args: string[], cwd: string) => Promise<string | undefined>;
 
-export type AppendBugInput = {
+export type AppendNoteInput = {
+  kind: NoteKind;
   note: string;
   host: BugHost;
   agent: string;
@@ -74,27 +129,26 @@ export type ParsedCommand = {
 };
 
 const OPTION = /^--(plugin|skill)(?:=([^\s]+)|\s+([^\s]+))(?:\s+([\s\S]*))?$/;
-const USAGE = "Usage: /bug [--plugin <name>] [--skill <name>] <bug description>";
 
-export function parseCommandArgs(args: string): ParsedCommand {
+export function parseCommandArgs(kind: NoteKind, args: string): ParsedCommand {
   let input = typeof args === "string" ? args.trim() : "";
-  if (!input) throw new Error(USAGE);
+  if (!input) throw new Error(usage(kind));
 
   let plugin: string | undefined;
   let skill: string | undefined;
   while (input.startsWith("--")) {
     const match = OPTION.exec(input);
-    if (!match) throw new Error(USAGE);
+    if (!match) throw new Error(usage(kind));
     const name = normalizeValue(match[2] ?? match[3]);
-    if (!name) throw new Error(USAGE);
+    if (!name) throw new Error(usage(kind));
     if (match[1] === "plugin") plugin = name;
     else skill = name;
     input = (match[4] ?? "").trim();
-    if (!input) throw new Error(USAGE);
+    if (!input) throw new Error(usage(kind));
   }
 
   const note = normalizeNote(input);
-  if (!note) throw new Error(USAGE);
+  if (!note) throw new Error(usage(kind));
   return {
     note,
     ...(plugin ? { plugin } : {}),
@@ -102,19 +156,20 @@ export function parseCommandArgs(args: string): ParsedCommand {
   };
 }
 
-export function outputPath(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env.BUGS_PATH?.trim();
-  return configured || `${homedir()}/BUGS.md`;
+export function outputPath(kind: NoteKind, env: NodeJS.ProcessEnv = process.env): string {
+  const spec = NOTE_COMMANDS[kind];
+  const configured = env[spec.envVar]?.trim();
+  return configured || `${homedir()}/${spec.fileName}`;
 }
 
-export async function appendBugRecord(input: AppendBugInput): Promise<BugRecord> {
+export async function appendNoteRecord(input: AppendNoteInput): Promise<NoteRecord> {
   const note = normalizeNote(input.note);
-  if (!note) throw new Error(USAGE);
+  if (!note) throw new Error(usage(input.kind));
 
   const cwd = normalizeValue(input.cwd) || process.cwd();
   const git = input.git ?? await collectGitMetadata(cwd, input.runGit);
-  const record: BugRecord = {
-    schema: "bug.v1",
+  const record: NoteRecord = {
+    schema: `${input.kind}.v1`,
     id: randomUUID(),
     datetime: (input.now ?? new Date()).toISOString(),
     host: input.host,
@@ -139,7 +194,7 @@ export async function appendBugRecord(input: AppendBugInput): Promise<BugRecord>
     branchEntryCount: numberValue(input.branchEntryCount) ?? null,
     note,
   };
-  const destination = input.path ?? outputPath(input.env);
+  const destination = input.path ?? outputPath(input.kind, input.env);
   mkdirSync(dirname(destination), { recursive: true, mode: 0o700 });
   appendFileSync(destination, `- ${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
   return record;
