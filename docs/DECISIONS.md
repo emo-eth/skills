@@ -289,3 +289,16 @@ owner contract is armed; the next user message restores the full duration.
 Status: active
 Scope: v1
 Load-bearing: yes
+
+## D39 - 2026-08-13 - Turn summaries ship on main as a native plugin
+
+Decision: Ship the current turn-summary implementation on `main` as an Agent Plugins package. The native Pi and OMP adapters append a fixed end-of-turn summary reminder through the host `context` seam; `/summary on|off` toggles the reminder for the current process. The package makes no model call and has no UI or MCP surface.
+
+Why: The user asked to put the renamed turn-summary plugin in `main` after confirming that the prior branch was not merged.
+
+Consequences: New Pi and OMP processes can load `plugins/turn-summary/` from the canonical checkout. The reminder text currently says to keep the summary under 400 words; that limit is prompt guidance, not a runtime-enforced or user-configurable setting.
+
+Source: user chat message, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
