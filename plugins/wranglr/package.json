@@ -1,0 +1,40 @@
+{
+  "name": "@emo-eth/wranglr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": [
+    "herdr",
+    "focus",
+    "agents",
+    "priority",
+    "pi-package",
+    "omp-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/agents/pi.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./src/agents/omp.ts"
+    ]
+  },
+  "exports": {
+    ".": "./src/shared/types.ts",
+    "./pi": "./src/agents/pi.ts",
+    "./omp": "./src/agents/omp.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}
