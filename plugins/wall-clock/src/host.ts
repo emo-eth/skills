@@ -75,6 +75,8 @@ export type HostEnforcement = {
   canAbortAction?: (proposal: ToolProposal, context: RuntimeContext | undefined) => boolean;
   abortRunning?: (request: AbortRequest) => void | Promise<void>;
   abortObserved?: (event: unknown, context: RuntimeContext | undefined) => boolean;
+  canAbortProvider?: (context?: RuntimeContext) => boolean;
+  abortProvider?: (request: { sessionId: string; context: RuntimeContext }) => void | Promise<void>;
 };
 
 type ChildBinding = {
@@ -97,6 +99,7 @@ export type HostCoordination = {
   childBindings: Map<string, ChildBinding>;
   actionAssignments: Map<string, ActionLink>;
   actionContexts: Map<string, RuntimeContext>;
+  providerContexts: Map<string, RuntimeContext>;
   persistenceOwners: Map<string, () => void>;
   timers: Map<string, { handle: unknown; cancel: (handle: unknown) => void }>;
   processedLifecycleEvents: Set<string>;
@@ -110,6 +113,7 @@ export function createHostCoordination(controller = new WallClockController()): 
     childBindings: new Map(),
     actionAssignments: new Map(),
     actionContexts: new Map(),
+    providerContexts: new Map(),
     persistenceOwners: new Map(),
     timers: new Map(),
     processedLifecycleEvents: new Set(),
@@ -284,12 +288,17 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     scheduleNext();
   };
 
-  const ensureActivationSupport = (expiryPolicy: ExpiryPolicy): void => {
+  const ensureActivationSupport = (expiryPolicy: ExpiryPolicy, mode?: WallClockMode): void => {
     if (!enforcement?.canBlockNew) {
       throw new Error("Wall-clock activation rejected: this host has no tested pre-action blocking seam");
     }
-    if (expiryPolicy === "abort-running" && (!enforcement.abortRunning || !enforcement.abortObserved || !enforcement.canAbortAction)) {
-      throw new Error("Wall-clock activation rejected: this host cannot prove abort-running enforcement");
+    if (expiryPolicy === "abort-running") {
+      if (!enforcement.abortRunning || !enforcement.abortObserved || !enforcement.canAbortAction) {
+        throw new Error("Wall-clock activation rejected: this host cannot prove abort-running enforcement");
+      }
+      if (mode === "turn-limit" && (!enforcement.canAbortProvider || !enforcement.abortProvider)) {
+        throw new Error("Wall-clock activation rejected: this host cannot prove abort-running provider enforcement");
+      }
     }
   };
 
@@ -319,6 +328,16 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const status = controller.status(sessionId, assignmentId);
     const abortRunning = status.expiryPolicy === "abort-running";
     if (!status.active || status.phase !== "expired") return;
+    if (abortRunning && assignmentId === undefined) {
+      const providerContext = coordination.providerContexts.get(sessionId);
+      if (providerContext) {
+        coordination.providerContexts.delete(sessionId);
+        if (!enforcement?.abortProvider) {
+          throw new Error(`The ${enforcement?.name ?? "host"} cannot abort the active provider request`);
+        }
+        await enforcement.abortProvider({ sessionId, context: providerContext });
+      }
+    }
     const actions = controller.runningActions(sessionId).filter((action) => {
       if (action.abortRequestedAt !== undefined) return false;
       if (assignmentId !== undefined) return action.assignmentId === assignmentId;
@@ -345,7 +364,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
 
   const activateSession = (ctx: RuntimeContext | undefined, input: ActivationInput, plan: PlanItem[] = []) => {
     const sessionId = requireOwnerSession(ctx);
-    ensureActivationSupport(input.expiryPolicy);
+    ensureActivationSupport(input.expiryPolicy, input.mode);
     const status = controller.activate(sessionId, input, plan);
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
@@ -370,6 +389,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const status = controller.status(sessionId);
     if (!status.active || status.mode !== "turn-limit") return status;
     const reset = controller.resetTurn(sessionId);
+    coordination.providerContexts.delete(sessionId);
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
     updateStatus(host, controller, sessionId, ctx);
@@ -381,12 +401,14 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const status = controller.status(sessionId);
     if (!status.active) {
       coordination.settledSessions.delete(sessionId);
+      coordination.providerContexts.delete(sessionId);
       fastLanes.delete(sessionId);
       clearSessionDeadlines(sessionId);
       return status;
     }
     controller.stop(sessionId);
     coordination.settledSessions.delete(sessionId);
+    coordination.providerContexts.delete(sessionId);
     fastLanes.delete(sessionId);
     clearSessionDeadlines(sessionId);
     clearStatusRefresh();
@@ -412,6 +434,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       if (binding.parentSessionId === sessionId) return;
     }
     if (status.mode === "turn-limit") {
+      controller.armTurn(sessionId);
+      coordination.providerContexts.delete(sessionId);
       clearDeadline(sessionId);
       clearStatusRefresh();
       persist(sessionId);
@@ -530,7 +554,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         if (!duration) throw new Error("Usage: /wallclock turn-limit 2m [block-new|abort-running|abort] [prompt...]");
         const parsed = parseDeadlineSpec(duration, options.clock?.now() ?? Date.now());
         if (parsed.durationMs === undefined) throw new Error("The turn-limit command requires a positive duration, not a local-time deadline");
-        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "block-new";
+        const expiryPolicy = isExpiryPolicy(parts[0]) ? parseExpiryPolicy(parts.shift()!) : "abort-running";
         const prompt = parts.join(" ");
         if (prompt && !host.sendUserMessage) throw new Error("This host cannot submit the wall-clock prompt");
         const status = activateSession(ctx, { durationMs: parsed.durationMs, mode: "turn-limit", expiryPolicy }, []);
@@ -591,7 +615,18 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("before_provider_request", async (_event, ctx) => {
     await ensureChildCoordination(ctx);
     const scope = rememberContext(ctx);
-    if (scope) controller.beginInference(scope.sessionId);
+    if (scope) {
+      if (scope.assignmentId === undefined) {
+        const control = controller.status(scope.sessionId);
+        if (control.mode === "turn-limit" && control.expiryPolicy === "abort-running") {
+          if (!enforcement?.canAbortProvider?.(ctx)) {
+            throw new Error("Wall-clock cannot enforce abort-running turn-limit: the provider request is not abortable");
+          }
+          coordination.providerContexts.set(scope.sessionId, ctx);
+        }
+      }
+      controller.beginInference(scope.sessionId);
+    }
     return undefined;
   });
 
@@ -838,6 +873,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       for (const childSessionId of childSessionIds) coordination.childBindings.delete(childSessionId);
       persist(direct);
       clearSessionDeadlines(direct);
+      coordination.providerContexts.delete(direct);
       coordination.persistenceOwners.delete(direct);
     }
     clearStatusRefresh();

@@ -94,6 +94,24 @@ test("MCP set updates an active turn-limit duration", () => {
   assert.equal(updated.remainingMs, 3_000);
 });
 
+test("MCP status surfaces turnState when armed", () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const server = new WallClockMcpServer(controller);
+  initialize(server);
+  controller.activate("run-1", { durationMs: 60_000, mode: "turn-limit", turnState: "armed", expiryPolicy: "block-new" });
+
+  const status = readObject(callTool(server, 8, "wallclock_status", { sessionId: "run-1" }));
+  assert.equal(status.phase, "armed");
+  assert.equal(status.turnState, "armed");
+  assert.equal(status.remainingMs, 0);
+  assert.equal(status.deadlineMs, undefined);
+
+  const ctx = readObject(callTool(server, 9, "wallclock_context", { sessionId: "run-1" }));
+  assert.equal(readObject(ctx.status).turnState, "armed");
+  assert.equal(readObject(ctx.status).phase, "armed");
+  assert.match(String(ctx.context), /timer is armed/);
+});
+
 test("JSON MCP state survives a new server instance", () => {
   const directory = mkdtempSync(join(tmpdir(), "wall-clock-mcp-"));
   try {

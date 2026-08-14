@@ -85,6 +85,63 @@ test("set duration re-arms either wall-clock mode without discarding state", () 
   assert.equal(turnUpdated.remainingMs, 3_000);
 });
 
+test("turn-limit activation with armed turn state reports an armed phase and blocks assignment", () => {
+  const { controller } = setup();
+  controller.activate("main", { durationMs: 60_000, mode: "turn-limit", turnState: "armed", expiryPolicy: "block-new" });
+  const status = controller.status("main");
+  assert.equal(status.phase, "armed");
+  assert.equal(status.turnState, "armed");
+  assert.equal(status.remainingMs, 0);
+  assert.equal(status.deadlineMs, undefined);
+  assert.equal(status.wrapUpAt, undefined);
+  assert.equal(controller.decideTool("main", { toolName: "read", action: "read" }).allow, true);
+  assert.equal(controller.decideTool("main", { toolName: "task", action: "delegate" }).allow, true);
+  assert.equal(controller.decideTool("main", { toolName: "bash", action: "destructive" }).allow, true);
+  assert.throws(() => controller.assign("main", assignmentInput()), /Cannot create an assignment outside the active wall-clock phase/);
+  assert.match(controller.context("main"), /the next normal user turn/);
+});
+
+test("armed turn state has no remaining-time claims in its context text", () => {
+  const { controller } = setup();
+  controller.activate("main", { durationMs: 60_000, mode: "turn-limit", turnState: "armed", expiryPolicy: "block-new" });
+  const text = controller.context("main");
+  assert.match(text, /timer is armed/);
+  assert.doesNotMatch(text, /Remaining time:/);
+});
+
+test("armTurn and resetTurn round-trip a fresh active window", () => {
+  const { controller, advance } = setup();
+  controller.activate("main", { durationMs: 60_000, wrapUpMs: 10_000, mode: "turn-limit", expiryPolicy: "block-new" });
+  advance(5_000);
+  const armed = controller.armTurn("main");
+  assert.equal(armed.phase, "armed");
+  assert.equal(armed.turnState, "armed");
+  assert.equal(armed.remainingMs, 0);
+  const reset = controller.resetTurn("main");
+  assert.equal(reset.phase, "active");
+  assert.equal(reset.turnState, "active");
+  assert.equal(reset.remainingMs, 60_000);
+  assert.equal(reset.durationMs, 60_000);
+});
+
+test("armTurn requires turn-limit mode", () => {
+  const { controller } = setup();
+  activate(controller, 60_000);
+  assert.throws(() => controller.armTurn("main"), /turn-limit/);
+});
+
+test("setDuration while armed keeps the phase armed", () => {
+  const { controller } = setup();
+  controller.activate("main", { durationMs: 60_000, mode: "turn-limit", turnState: "armed", expiryPolicy: "block-new" });
+  const updated = controller.setDuration("main", 30_000);
+  assert.equal(updated.phase, "armed");
+  assert.equal(updated.turnState, "armed");
+  assert.equal(updated.durationMs, 30_000);
+  assert.equal(updated.remainingMs, 0);
+  const reset = controller.resetTurn("main");
+  assert.equal(reset.remainingMs, 30_000);
+});
+
 test("hard expiry blocks new work but permits final reporting", () => {
   const { controller, advance } = setup();
   activate(controller);

@@ -13,6 +13,11 @@ export default function wallClockPiExtension(pi: any) {
       canAbortAction: (proposal, context) => canAbort(proposal, context, ABORTABLE_PI_TOOLS),
       abortRunning: abortContexts,
       abortObserved: isObservedNativeAbort,
+      canAbortProvider: (context) => typeof context?.abort === "function" && Boolean(context?.signal),
+      abortProvider: async ({ context }) => {
+        if (typeof context.abort !== "function") throw new Error("Pi lost the abort function for the active provider request");
+        await context.abort();
+      },
     },
   });
 }

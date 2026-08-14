@@ -48,6 +48,13 @@ export class WallClockController {
     requireExpiryPolicy(input.expiryPolicy);
     const mode = input.mode ?? "deadline";
     requireMode(mode);
+    const turnState = input.turnState ?? "active";
+    if (turnState !== "armed" && turnState !== "active") {
+      throw new Error("turnState must be armed or active");
+    }
+    if (turnState === "armed" && mode !== "turn-limit") {
+      throw new Error("Armed turn state requires turn-limit mode");
+    }
     if (mode === "turn-limit" && input.durationMs === undefined) {
       throw new Error("The turn-limit mode requires a positive duration");
     }
@@ -79,6 +86,7 @@ export class WallClockController {
       hardDeadline,
       wrapUpAt: hardDeadline - wrapUpMs,
       mode,
+      turnState,
       durationMs: input.durationMs,
       expiryPolicy: input.expiryPolicy,
       plan: structuredClone(plan),
@@ -99,6 +107,13 @@ export class WallClockController {
     if (state.stopped) throw new Error("Wall-clock is not active for this session");
     requireDuration(durationMs);
     if (!Number.isFinite(at)) throw new Error("A finite update time is required");
+    if (state.turnState === "armed") {
+      // While armed, only the configured duration changes; deadlines are recomputed when a turn starts.
+      state.durationMs = durationMs;
+      state.revision += 1;
+      this.save(state);
+      return this.status(sessionId);
+    }
     const hardDeadline = at + durationMs;
     const assignment = state.assignments.find((item) => item.hardDeadline > hardDeadline);
     if (assignment) {
@@ -121,8 +136,20 @@ export class WallClockController {
     if (!Number.isFinite(at)) throw new Error("A finite turn reset time is required");
     const hardDeadline = at + state.durationMs;
     const wrapUpMs = Math.min(Math.max(1, state.hardDeadline - state.wrapUpAt), state.durationMs);
+    state.turnState = "active";
     state.hardDeadline = hardDeadline;
     state.wrapUpAt = hardDeadline - wrapUpMs;
+    state.revision += 1;
+    this.save(state);
+    return this.status(sessionId);
+  }
+
+  armTurn(sessionId: string, at = this.clock.now()): Status {
+    const state = this.requireState(sessionId);
+    if (state.stopped) throw new Error("Wall-clock is not active for this session");
+    if (state.mode !== "turn-limit") throw new Error("armTurn is only valid in turn-limit mode");
+    if (!Number.isFinite(at)) throw new Error("A finite arm time is required");
+    state.turnState = "armed";
     state.revision += 1;
     this.save(state);
     return this.status(sessionId);
@@ -305,17 +332,18 @@ export class WallClockController {
     const hardDeadline = assignment?.hardDeadline ?? state.hardDeadline;
     const wrapUpAt = assignment?.wrapUpAt ?? state.wrapUpAt;
     const complete = state.stopped || (assignment !== undefined && assignment.status !== "active");
-    const phase = state.stopped ? "complete" : phaseAt(now, hardDeadline, wrapUpAt, complete);
+    const phase: Status["phase"] = state.stopped ? "complete" : (state.turnState === "armed" ? "armed" : phaseAt(now, hardDeadline, wrapUpAt, complete));
     const active = !state.stopped;
+    const armed = phase === "armed";
     const context = active ? this.elapsedContext(state, assignment, phase, now) : undefined;
     return {
       sessionId,
       active,
       phase,
-      remainingMs: Math.max(0, hardDeadline - now),
-      deadlineMs: hardDeadline,
-      wrapUpAt,
+      remainingMs: armed ? 0 : Math.max(0, hardDeadline - now),
+      ...(armed ? {} : { deadlineMs: hardDeadline, wrapUpAt }),
       mode: state.mode,
+      turnState: state.turnState,
       durationMs: state.durationMs,
       expiryPolicy: state.expiryPolicy,
       revision: state.revision,
@@ -330,6 +358,7 @@ export class WallClockController {
     const action = proposal.action ?? classifyAction(proposal.toolName, proposal.input);
     const controlAction = isWallClockControlTool(proposal.toolName);
     if (!status.active) return { allow: true, phase: status.phase, remainingMs: status.remainingMs };
+    if (status.phase === "armed") return { allow: true, phase: status.phase, remainingMs: status.remainingMs };
     if (status.phase === "expired" && !controlAction) {
       return this.block(status, "The wall-clock deadline has expired; no new work may start");
     }
@@ -417,17 +446,20 @@ export class WallClockController {
     const status = this.status(sessionId, assignmentId);
     if (!status.active || !status.context) return "Wall-clock control is inactive for this session.";
     const context = status.context;
+    const armed = status.phase === "armed";
     const lines = [
       "Wall-clock context (measured by the host):",
       `Current time: ${new Date(context.currentTimeMs).toISOString()} (${context.currentTimeMs}ms).`,
       `Total elapsed: ${formatDurationMs(context.totalElapsedMs)} (${context.totalElapsedMs}ms).`,
       `Latest inference elapsed: ${formatDurationMs(context.latestInferenceElapsedMs)} (${context.latestInferenceElapsedMs}ms).`,
       `Latest tool-call elapsed: ${formatDurationMs(context.latestToolCallElapsedMs)} (${context.latestToolCallElapsedMs}ms).`,
-      `Remaining time: ${formatDurationMs(context.remainingMs)} (${context.remainingMs}ms).`,
+      armed ? "The timer is armed; it starts at the next normal user turn, so no remaining time is claimed." : `Remaining time: ${formatDurationMs(context.remainingMs)} (${context.remainingMs}ms).`,
       `Phase: ${context.phase}. Mode: ${context.mode}. Expiry policy: ${context.expiryPolicy}.`,
       `Assignment elapsed: ${formatDurationMs(context.assignmentElapsedMs)} (${context.assignmentElapsedMs}ms).`,
       context.mode === "turn-limit"
-        ? `The next timer starts when the next normal user turn begins. Steer messages keep the current deadline. Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
+        ? armed
+          ? `Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}. The next timer starts when the next normal user turn begins.`
+          : `The next timer starts when the next normal user turn begins. Steer messages keep the current deadline. Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
         : undefined,
       "The budget is a ceiling, not a target. Finish as soon as the acceptance target is met.",
       "If you reduce scope or validation, keep the result working and report the shortcut, tradeoff, and skipped work.",
@@ -459,7 +491,7 @@ export class WallClockController {
       totalElapsedMs: Math.max(0, now - state.issuedAt),
       latestInferenceElapsedMs: timing.latestInferenceElapsedMs,
       latestToolCallElapsedMs: timing.latestToolCallElapsedMs,
-      remainingMs: Math.max(0, (assignment?.hardDeadline ?? state.hardDeadline) - now),
+      remainingMs: phase === "armed" ? 0 : Math.max(0, (assignment?.hardDeadline ?? state.hardDeadline) - now),
       phase,
       mode: state.mode,
       assignmentElapsedMs: assignment ? this.assignmentElapsedMs(assignment, now) : 0,

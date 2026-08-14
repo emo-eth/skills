@@ -40,6 +40,7 @@ export function isPersistedState(value: unknown): value is PersistedState {
     || state.wrapUpAt < state.issuedAt
     || state.wrapUpAt > state.hardDeadline
     || !wallClockMode(state.mode)
+    || !turnStateValid(state.turnState)
     || !optionalPositiveNumber(state.durationMs)
     || (state.mode === "turn-limit" && state.durationMs === undefined)
     || !expiryPolicy(state.expiryPolicy)
@@ -198,4 +199,8 @@ function expiryPolicy(value: unknown): boolean {
 
 function wallClockMode(value: unknown): boolean {
   return value === "deadline" || value === "turn-limit";
+}
+
+function turnStateValid(value: unknown): boolean {
+  return value === undefined || value === "armed" || value === "active";
 }

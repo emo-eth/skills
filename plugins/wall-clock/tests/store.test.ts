@@ -32,6 +32,14 @@ test("persisted-state validation requires a duration for turn-limit mode", () =>
   assert.equal(isPersistedState({ ...valid, mode: "unknown" }), false);
 });
 
+test("persisted-state validation accepts v4 states without turnState and validates armed/active", () => {
+  const valid = validState();
+  assert.equal(isPersistedState({ ...valid, turnState: undefined }), true);
+  assert.equal(isPersistedState({ ...valid, turnState: "active" }), true);
+  assert.equal(isPersistedState({ ...valid, mode: "turn-limit", turnState: "armed" }), true);
+  assert.equal(isPersistedState({ ...valid, mode: "turn-limit", turnState: "invented" }), false);
+});
+
 test("persisted-state validation checks parent-child timing and report links", () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   controller.activate("main", { durationMs: 60_000, expiryPolicy: "block-new" });

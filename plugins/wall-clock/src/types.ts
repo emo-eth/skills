@@ -1,4 +1,4 @@
-export type Phase = "inactive" | "active" | "wrap-up" | "expired" | "complete";
+export type Phase = "inactive" | "armed" | "active" | "wrap-up" | "expired" | "complete";
 
 export type WallClockMode = "deadline" | "turn-limit";
 
@@ -20,6 +20,7 @@ export type DeadlineInput = {
 
 export type ActivationInput = DeadlineInput & {
   mode?: WallClockMode;
+  turnState?: "armed" | "active";
   expiryPolicy: ExpiryPolicy;
 };
 
@@ -93,6 +94,7 @@ export type SessionState = {
   hardDeadline: number;
   wrapUpAt: number;
   mode: WallClockMode;
+  turnState?: "armed" | "active";
   durationMs?: number;
   expiryPolicy: ExpiryPolicy;
   plan: PlanItem[];
@@ -143,6 +145,7 @@ export type Status = {
   deadlineMs?: number;
   wrapUpAt?: number;
   mode?: WallClockMode;
+  turnState?: "armed" | "active";
   durationMs?: number;
   expiryPolicy?: ExpiryPolicy;
   revision?: number;
