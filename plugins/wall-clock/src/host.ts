@@ -595,7 +595,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const scope = rememberContext(ctx, event);
     if (!scope) return undefined;
     const status = controller.status(scope.sessionId, scope.assignmentId);
-    if (!status.active || !status.context) return undefined;
+    if (!status.active || !status.context || status.phase === "armed") return undefined;
     const messages = Array.isArray(event?.messages) ? event.messages : [];
     const fastLane = fastLanes.get(scope.sessionId);
     const contextText = [
