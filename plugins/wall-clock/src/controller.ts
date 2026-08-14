@@ -443,6 +443,15 @@ export class WallClockController {
     if (!status.active || !status.context) return "Wall-clock control is inactive for this session.";
     const context = status.context;
     const armed = status.phase === "armed";
+    const decision = armed
+      ? "Decision: no timed work is running; do not treat this turn as budgeted."
+      : status.phase === "expired"
+        ? "Decision: do not propose more work. Report the current result and stop."
+        : status.phase === "wrap-up"
+          ? "Decision: finish the current narrow task. Do not expand scope, delegate, or start destructive work."
+          : context.remainingMs <= 60_000
+            ? "Decision: stop starting new work. Finish the current narrow task or report what remains."
+            : "Decision: work only on the current acceptance target. Do not expand scope or delegate unless it clearly shortens that target.";
     const lines = [
       "<wallclock>",
       "This block is injected by the host, not written by the user.",
@@ -455,18 +464,16 @@ export class WallClockController {
           : "The next timer starts at the next normal user turn. Steer messages keep the current deadline. "
             + `Configured turn duration: ${formatDurationMs(status.durationMs ?? 0)}.`
         : undefined,
+      decision,
+      context.expiryPolicy === "block-new" && !armed
+        ? "At expiry, the host blocks new work; an active model request may continue."
+        : undefined,
       "Budget is a ceiling: finish as soon as the acceptance target is met.",
       "If you reduce scope or validation, keep the result working and report the shortcut, tradeoff, and skipped work.",
     ].filter((line): line is string => line !== undefined);
     if (status.assignment) {
       lines.push(`Assignment ${status.assignment.id}: ${status.assignment.objective}`);
       lines.push(`Acceptance: ${status.assignment.acceptance.join("; ")}`);
-    }
-    if (status.phase === "wrap-up") lines.push("Do not start delegation or destructive work. Prepare the result and report.");
-    if (status.phase === "expired") {
-      lines.push("Do not start new tool work. Report the current state.");
-      if (context.expiryPolicy === "block-new") lines.push("Already-admitted work may finish; do not claim it was cancelled.");
-      else lines.push("The host is aborting already-admitted wall-clock-owned work and must observe the result.");
     }
     lines.push("</wallclock>");
     return lines.join("\n");

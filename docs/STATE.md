@@ -6,22 +6,23 @@ Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enfor
 
 ## Where we are
 
-Current phase: v1 turn-limit mode implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, enforce the selected expiry policy, and support `/wallclock turn-limit <duration>` plus `/wallclock set <duration>`. Normal deadline contracts stop after terminal settlement; turn-limit contracts remain active, arm after terminal settlement, and reset the owner deadline at the next normal user message. Steering messages keep the current deadline; child deadlines are not extended by owner turn resets.
+Current phase: v1 turn-limit mode implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time plus phase-specific action guidance, enforce the selected expiry policy, and support `/wallclock turn-limit <duration>` plus `/wallclock set <duration>`. Normal deadline contracts remain active after terminal settlement, count down to zero, remain expired and enforced until `/wallclock stop`, and turn-limit contracts remain active, arm after terminal settlement, and reset the owner deadline at the next normal user message. Steering messages keep the current deadline; child deadlines are not extended by owner turn resets.
 
 The package is installed and enabled in the normal local OMP profile from the wall-clock plugin checkout. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
 Native wall-clock contracts started by an explicit `/wallclock` command or
-`wallclock_start` use terminal settlement for lifecycle handling. Default
-deadline contracts stop after terminal settlement. `turn-limit` contracts stay
-active after settlement and start their next owner window at the next normal
-user message; steering messages do not reset or extend that window. Expiry stays
-enforced through the current turn, and active child work retains its own
-deadline. Evidence is in the focused controller and host tests plus the Pi and
-OMP native runner tests.
+`wallclock_start` use terminal settlement for lifecycle handling. Normal
+deadline contracts remain active after settlement and stay visible after
+expiry until `/wallclock stop`. `turn-limit` contracts stay active after
+settlement and start their next owner window at the next normal user message;
+steering messages do not reset or extend that window. Expiry stays enforced
+through the current turn, and active child work retains its own deadline.
+Evidence is in the focused controller and host tests plus the Pi and OMP
+native runner tests.
 
-The current package includes version 4 state validation with mode and
-configured-duration fields, assignment and report contracts, report-linked
-plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone
+The current package includes the current persisted-state validation with mode
+and configured-duration fields, assignment and report contracts, report-linked
+plan revisions, Agent Plugin discovery, and optional MCP operations.
 MCP refuses activation and does not replace or mirror native host enforcement.
 Nested assignment limits are specified but not implemented in
 `proposals/wall-clock/nested-assignment-limits.md`; that future data shape is

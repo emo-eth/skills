@@ -121,6 +121,14 @@ test("armed turn state has no remaining-time claims in its context text", () => 
   assert.match(text, /Timer armed:/);
   assert.doesNotMatch(text, /Remaining time:/);
 });
+ 
+test("active context gives phase guidance and honest block-new limits", () => {
+  const { controller } = setup();
+  activate(controller, 120_000);
+  const text = controller.context("main");
+  assert.match(text, /Decision: work only on the current acceptance target/);
+  assert.match(text, /At expiry, the host blocks new work; an active model request may continue/);
+});
 
 test("armTurn and resetTurn round-trip a fresh active window", () => {
   const { controller, advance } = setup();

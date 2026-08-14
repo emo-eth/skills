@@ -12,7 +12,7 @@ compatibility: The optional MCP tools require a client that loads mcp.json and N
 - **Session key**: The stable identifier passed to the MCP tools for one conversation or work run.
 - **Hard deadline**: The time after which new work must not start.
 - **Wrap-up**: The period before the hard deadline when new delegation and destructive work stop.
-- **Delegation bias**: Prefer as many bounded child assignments as can reduce uncertainty or finish independent work faster; do not delegate merely to fill the budget.
+- **Delegation bias**: Delegate only when an independent child clearly reduces risk or finishes part of the acceptance target faster; never delegate to use remaining time.
 - **Assignment**: A bounded unit of work recorded under the main session.
 - **Inline batch delegation**: One parent task call that carries several child tasks, with one bounded assignment contract per item.
 - **Do-it-now lane**: A fixed host-enforced execution window for one explicit request.
@@ -55,16 +55,16 @@ During wrap-up, do not start new delegation or destructive work; finish and
 report the smallest current acceptance target.
 
 An explicit `/wallclock` activation and the native `wallclock_start` tool use
-the same terminal-settlement cleanup. The default deadline mode stops after
-terminal settlement. The `turn-limit` mode keeps the contract active but does
-not reset its deadline at terminal settlement. The next normal user message
-starts a fresh configured-duration window. Steering messages keep the current
-deadline and never extend it. If the current turn expires first, the host still
-enforces that expiry. Use `/wallclock set 3m` or `wallclock_set` to change the
-duration without discarding the plan, assignments, or reports. Use
-`/wallclock stop` or `wallclock_stop` to clear the contract. If a child action
-is still running, cleanup waits for that child to finish before stopping or
-resetting the owner contract.
+the same contract lifecycle. A normal deadline remains active after terminal
+settlement, continues counting down, becomes expired at zero, and remains
+visible and enforced until `/wallclock stop`. The `turn-limit` mode remains
+active after terminal settlement in an armed state and does not reset its
+deadline there. The next normal user message starts a fresh configured-duration
+window. Steering messages keep the current deadline and never extend it. Use
+`/wallclock set 3m` or `wallclock_set` to change the duration without
+discarding the plan, assignments, or reports. If a child action is still
+running, cleanup waits for that child to finish before stopping or resetting
+the owner contract.
 
 The budget is a ceiling, not a target. Finish when the acceptance target is met. Do not spend unused time on extra scope.
 
@@ -81,9 +81,9 @@ When the user gives a duration such as `30m` or a local time such as `5pm`:
 
 Use the native command `/wallclock turn-limit 2m` when every normal user turn
 must fit inside a fresh two-minute window. Steering messages do not start a new
-window. The command accepts the same optional expiry policy and trailing prompt
-as the normal start form. Use `/wallclock set 3m` to change the active duration
-in either mode.
+window. The command defaults to `block-new`; `abort-running` is rejected until
+the host proves that it can cancel the active provider request. Use
+`/wallclock set 3m` to change the active duration in either mode.
 
 A local-time deadline uses the host's local timezone. If the user names another timezone, convert it before starting or mark the conversion as unresolved.
 
@@ -94,7 +94,7 @@ Before an assignment, write, destructive action, or long operation:
 1. Call `wallclock_status` when the tool is available.
 2. Call `wallclock_check` with the proposed tool name, action class, input, and assignment key when an explicit decision is useful. Never estimate task duration.
 3. If the result denies the action, do not start it. Move to wrap-up, reporting, or a smaller safe action.
-4. Prefer as many bounded delegated assignments as useful for independent work while the phase is active. Use one inline batch when several children should start together. Do not start delegation during wrap-up.
+4. Delegate only when an independent child clearly reduces risk or finishes part of the acceptance target faster. Use one inline batch when several children should start together. Do not start delegation during wrap-up.
 5. After expiry, start no new tool work. Report the current state and any work that remains.
 
 The check is not a host gate. A supported Pi or OMP native adapter enforces the same decision at its pre-tool event. Portable MCP alone refuses activation.
@@ -126,6 +126,6 @@ Keep partial output usable. Never report cancellation unless the host executor c
 
 ## Native host adapters
 
-The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter restores version 4 session state, injects measured time, observes tool and child results, arms `turn-limit` contracts after terminal settlement, starts the next owner window at a normal user message, and enforces its pre-tool decision.
+The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter restores the current persisted state schema, injects measured time and phase-specific guidance, observes tool and child results, arms `turn-limit` contracts after terminal settlement, starts the next owner window at a normal user message, and enforces its pre-tool decision.
 
 Under `abort-running`, the adapter rejects unknown or unabortable executors before they start. It records cancellation only after a correlated native result reports an abort. Native support does not imply that another Agent Plugins client has the same enforcement boundary.
