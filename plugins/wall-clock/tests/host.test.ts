@@ -1229,7 +1229,7 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
   const childCtx = context("child-session");
   await childHost.emit("session_start", {}, childCtx);
   const childContext = await childHost.emit("context", { messages: [] }, childCtx) as any;
-  assert.match(childContext.messages[0].content[0].text, /Assignment elapsed/);
+  assert.match(childContext.messages[0].content[0].text, /Assignment assignment-1/);
   const prematureYield = await childHost.emit("tool_call", {
     toolCallId: "premature-yield",
     toolName: "yield",
