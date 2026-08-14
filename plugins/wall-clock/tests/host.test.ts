@@ -260,7 +260,7 @@ test("/wallclock turn-limit defaults to block-new without a policy token", async
   assert.equal(controller.status("main").expiryPolicy, "block-new");
 });
 
-test("turn-limit abort-running activation fails closed without provider abort support", async () => {
+test("turn-limit rejects abort-running instead of starting an incompatible contract", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as any, {
@@ -271,6 +271,8 @@ test("turn-limit abort-running activation fails closed without provider abort su
       canAbortAction: () => true,
       abortRunning: () => undefined,
       abortObserved: () => true,
+      canAbortProvider: () => true,
+      abortProvider: () => undefined,
     },
     schedule: () => "timer",
     cancelSchedule: () => undefined,
@@ -278,63 +280,11 @@ test("turn-limit abort-running activation fails closed without provider abort su
 
   await assert.rejects(
     host.commands.get("wallclock").handler("turn-limit 2m abort-running", context()),
-    /cannot prove abort-running provider enforcement/,
+    /abort-running is not compatible with turn-limit/,
   );
   assert.equal(controller.status("main").active, false);
 });
 
-test("abort-running turn-limit aborts the active provider request exactly once at expiry", async () => {
-  let now = 1_000;
-  let scheduled: (() => void) | undefined;
-  let providerAbortCalls = 0;
-  let abortedProviderContext: unknown;
-  const controller = new WallClockController({ now: () => now }, new MemoryStore());
-  const host = new FakeHost();
-  installHostExtension(host as any, {
-    controller,
-    clock: { now: () => now },
-    enforcement: {
-      name: "fake-omp",
-      canBlockNew: true,
-      canAbortAction: () => true,
-      abortRunning: () => undefined,
-      abortObserved: () => true,
-      canAbortProvider: () => true,
-      abortProvider: async ({ context }) => {
-        providerAbortCalls += 1;
-        abortedProviderContext = context;
-        await context.abort?.();
-      },
-    },
-    schedule: (callback) => {
-      scheduled = callback;
-      return callback;
-    },
-    cancelSchedule: () => undefined,
-  });
-  let providerAborted = 0;
-  const abortSpy = () => { providerAborted += 1; };
-  const ctx = { ...context("main", [], abortSpy), signal: new AbortController().signal };
-
-  await host.commands.get("wallclock").handler("turn-limit 2m abort-running", ctx);
-  assert.equal(controller.status("main").expiryPolicy, "abort-running");
-  assert.equal(controller.status("main").deadlineMs, 121_000);
-
-  await host.emit("before_provider_request", {}, ctx);
-  assert.equal(providerAborted, 0);
-
-  now += 120_000;
-  scheduled?.();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(providerAbortCalls, 1);
-  assert.equal(abortedProviderContext, ctx);
-  assert.equal(providerAborted, 1);
-
-  scheduled?.();
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(providerAbortCalls, 1);
-  assert.equal(providerAborted, 1);
-});
 
 test("set changes the duration of a normal deadline contract", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());

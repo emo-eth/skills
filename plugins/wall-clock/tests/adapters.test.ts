@@ -80,46 +80,17 @@ test("OMP abort-running admits the native task executor", async () => {
   assert.equal(task, undefined);
 });
 
-test("OMP and Pi accept an abortable provider request and fail closed without one", async () => {
-  const cases: Array<{ label: string; install: (host: Host) => unknown }> = [
-    { label: "OMP", install: (host) => wallClockOmpExtension(host as any) },
-    { label: "Pi", install: (host) => wallClockPiExtension(host as any) },
+test("OMP and Pi reject abort-running turn-limit contracts", async () => {
+  const cases: Array<{ install: (host: Host) => unknown }> = [
+    { install: (host) => wallClockOmpExtension(host as any) },
+    { install: (host) => wallClockPiExtension(host as any) },
   ];
-  for (const { label, install } of cases) {
+  for (const { install } of cases) {
     const host = new Host();
     install(host as any);
-    const ctx = context();
-    await host.commands.get("wallclock").handler("turn-limit 2m abort-running", ctx);
-
-    const abortable = { ...ctx, signal: new AbortController().signal, abort: () => undefined };
-    assert.equal(await host.emit("before_provider_request", {}, abortable), undefined);
-
-    const notAbortable = { ...ctx, signal: undefined };
-    await assert.rejects(host.emit("before_provider_request", {}, notAbortable), /not abortable/);
-    assert.ok(label.length > 0);
-  }
-});
-
-test("OMP and Pi abort the active provider request once at expiry", async () => {
-  // The adapter wrappers install the extension without a schedule/clock seam,
-  // so the abort must be exercised against the platform clock. Polling for the
-  // observable abort side-effect (not a fixed sleep) keeps it bounded.
-  const cases: Array<{ label: string; install: (host: Host) => unknown }> = [
-    { label: "OMP", install: (host) => wallClockOmpExtension(host as any) },
-    { label: "Pi", install: (host) => wallClockPiExtension(host as any) },
-  ];
-  for (const { label, install } of cases) {
-    const host = new Host();
-    install(host as any);
-    let aborted = 0;
-    const ctx = context("main");
-    ctx.abort = () => { aborted += 1; };
-    await host.commands.get("wallclock").handler("turn-limit 30ms abort-running", ctx);
-    await host.emit("before_provider_request", {}, ctx);
-    const deadline = Date.now() + 2_000;
-    while (aborted === 0 && Date.now() < deadline) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
-    assert.equal(aborted, 1, label);
+    await assert.rejects(
+      host.commands.get("wallclock").handler("turn-limit 2m abort-running", context()),
+      /abort-running is not compatible with turn-limit/,
+    );
   }
 });

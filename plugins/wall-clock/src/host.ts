@@ -289,15 +289,15 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   };
 
   const ensureActivationSupport = (expiryPolicy: ExpiryPolicy, mode?: WallClockMode): void => {
+    if (mode === "turn-limit" && expiryPolicy === "abort-running") {
+      throw new Error("Wall-clock activation rejected: abort-running is not compatible with turn-limit; use block-new");
+    }
     if (!enforcement?.canBlockNew) {
       throw new Error("Wall-clock activation rejected: this host has no tested pre-action blocking seam");
     }
     if (expiryPolicy === "abort-running") {
       if (!enforcement.abortRunning || !enforcement.abortObserved || !enforcement.canAbortAction) {
         throw new Error("Wall-clock activation rejected: this host cannot prove abort-running enforcement");
-      }
-      if (mode === "turn-limit" && (!enforcement.canAbortProvider || !enforcement.abortProvider)) {
-        throw new Error("Wall-clock activation rejected: this host cannot prove abort-running provider enforcement");
       }
     }
   };
