@@ -46,8 +46,16 @@ The direct local token report now lives in `tools/agent-skill-usage.ts` and supp
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 The repository now also contains `plugins/focus-order/`, a Herdr plugin that stores ranked agent and worktree identities, focuses the highest-ranked urgent target, or opens a separate attention popup. It uses one-shot startup and event hooks, an atomic attention-owner marker, and optional Pi and OMP companion adapters. The implementation is verified with TypeScript compilation, 98 Node tests, local Herdr manifest linking, action discovery, and an isolated live Herdr session covering startup, hooks, ranking, focus mode, and modal popup opening; the plugin is published on `main`.
+The repository now also contains `plugins/bug-command/`, a command-only native
+Pi and OMP plugin. `/bug [--plugin <name>] [--skill <name>] <bug description>`
+appends a context-rich record to `~/BUGS.md` or `BUGS_PATH`, including
+repository, worktree, branch, session, turn, recent activity, plugin, and
+skill metadata. The package checks and native OMP runner pass; Pi has package
+adapter proof. The contract and GAPs are in
+`docs/log/2026-08-14-bug-command.md` [verified-focused].
 
 ## Standing constraints
+
 
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
 - Parent and child agents receive measured elapsed-time context at every turn; agents do not estimate task duration. [D5]
@@ -74,6 +82,7 @@ The repository now also contains `plugins/focus-order/`, a Herdr plugin that sto
 | Repo philosophy (the sieve) | `docs/vibe.md`, `docs/log/2026-08-13-sieve-vibe.md`, `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md` | not implemented; proposals P1-P5 in the log, P1/P4 reshaped by D31/D24 | Plannotator rounds 1-3 applied (36 + 8 + 1 items, D20-D35); rounds closed at user direction; approval pending, edits direct | proposed |
 | Direct local token reporting | `tools/agent-skill-usage.ts`, `tools/agent-skill-usage-core.ts` | `fixtures/all-source-skill-usage/`, `tools/agent-skill-usage.test.ts` | focused direct-parser tests and live local Claude, Codex, Pi, and OMP smoke reports; Memex is not used for accounting | verified-focused |
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
+| Bug capture command | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md` | `plugins/bug-command/` | `npm run check`, 8 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
 | Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |

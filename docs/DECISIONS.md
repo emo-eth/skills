@@ -304,3 +304,32 @@ Scope: v0
 Load-bearing: no
 
 
+## D40 - 2026-08-14 - Ship a native bug capture command
+
+Decision: Add `plugins/bug-command/` as a command-only Agent Plugin for Pi and
+OMP. `/bug [--plugin <name>] [--skill <name>] <bug description>` appends one
+context-rich JSON record to `~/BUGS.md`, or to `BUGS_PATH` when configured.
+The record includes repository, worktree, branch, folder, host, model, session
+metadata, turn metadata, recent activity, and the note. It does not copy full
+prompts or event payloads.
+
+Why: The user wants a Yearn-shaped capture command for bugs, with the same
+low-ceremony native-command shape as `/skiterate`, but the output needs enough
+local session and turn context to debug plugins, skills, and applications
+after the original turn is gone.
+
+Alternatives: Make it a skill wrapper (rejected because the host command seam
+can capture session and lifecycle metadata that a later skill invocation
+cannot); reuse Yearn (rejected because wishes and bugs have different
+records); capture full prompts and events (rejected because it increases
+privacy risk and makes the log hard to scan).
+
+Consequences: Automatic plugin attribution is best effort and stays null when
+the host does not expose a plugin marker. The explicit `--plugin` and
+`--skill` flags remain available. Turn numbers are host-provided when
+available, otherwise lifecycle-order hints.
+
+Source: user chat message, 2026-08-14
+Status: active
+Scope: v0
+Load-bearing: no

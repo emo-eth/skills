@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "bug-command",
+  "version": "0.1.0",
+  "description": "Capture bugs with the agent, session, turn, and recent activity context.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "bugs",
+    "debugging",
+    "sessions",
+    "skills",
+    "plugins"
+  ]
+}
