@@ -43,12 +43,12 @@ test("activation requires an explicit expiry policy", () => {
   assert.throws(() => controller.activate("main", { durationMs: 10_000 } as never), /Expiry policy/);
 });
 
-test("an active contract must be stopped before it is replaced", () => {
+test("activation replaces an active contract", () => {
   const { controller } = setup();
   activate(controller);
-  assert.throws(() => activate(controller), /already active/);
-  controller.stop("main");
-  assert.equal(activate(controller).active, true);
+  const replacement = activate(controller, 20_000);
+  assert.equal(replacement.active, true);
+  assert.equal(replacement.durationMs, 20_000);
 });
 test("turn-limit requires a duration and resets its deadline after a turn", () => {
   const { controller, advance } = setup();

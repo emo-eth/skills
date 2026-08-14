@@ -529,7 +529,7 @@ test("wrap-it-up arms a two-minute fast lane and permits bounded delegation", as
   await host.emit("tool_result", { toolCallId: "wrap-up-delegated", toolName: "task", isError: false }, ctx);
 });
 
-test("expired wrap-it-up guard stays enforced through continuation and clears at settlement", async () => {
+test("expired deadline stays enforced after settlement until stopped", async () => {
   let now = 1_000;
   const controller = new WallClockController({ now: () => now }, new MemoryStore());
   const host = new FakeHost();
@@ -546,14 +546,7 @@ test("expired wrap-it-up guard stays enforced through continuation and clears at
     cancelSchedule: () => undefined,
   });
   const ctx = context();
-  await host.emit("message_start", {
-    type: "message_start",
-    message: {
-      role: "custom",
-      details: { name: "wrap-it-up", args: "finish the active task" },
-      content: "skill body",
-    },
-  }, ctx);
+  await host.commands.get("wallclock").handler("120s block-new", ctx);
 
   now += 120_001;
   assert.equal(controller.status("main").phase, "expired");
@@ -568,15 +561,17 @@ test("expired wrap-it-up guard stays enforced through continuation and clears at
   assert.match(blocked.reason, /deadline has expired/);
 
   await host.emit("agent_settled", {}, ctx);
+  assert.equal(controller.status("main").active, true);
+  assert.equal(controller.status("main").phase, "expired");
+  await host.commands.get("wallclock").handler("stop", ctx);
   assert.equal(controller.status("main").active, false);
-  assert.equal(await host.emit("tool_call", { toolCallId: "after-settlement", toolName: "read", input: {} }, ctx), undefined);
+  assert.equal(await host.emit("tool_call", { toolCallId: "after-stop", toolName: "read", input: {} }, ctx), undefined);
 });
 
 test("terminal OMP agent end clears a fast lane", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as unknown as RuntimeHost, {
-    controller,
     enforcement: {
       name: "fake-omp",
       canBlockNew: true,
@@ -601,7 +596,7 @@ test("terminal OMP agent end clears a fast lane", async () => {
   assert.equal(controller.status("main").active, false);
 });
 
-test("terminal OMP agent end clears an explicit wallclock contract", async () => {
+test("terminal OMP agent end keeps an explicit wallclock contract", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as unknown as RuntimeHost, {
@@ -616,10 +611,10 @@ test("terminal OMP agent end clears an explicit wallclock contract", async () =>
   await host.emit("agent_end", { willContinue: true }, ctx);
   assert.equal(controller.status("main").active, true);
   await host.emit("agent_end", { willContinue: false }, ctx);
-  assert.equal(controller.status("main").active, false);
+  assert.equal(controller.status("main").active, true);
 });
 
-test("terminal settlement clears an explicit wallclock contract for a normal follow-up", async () => {
+test("terminal settlement keeps an explicit wallclock contract for a normal follow-up", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as unknown as RuntimeHost, {
@@ -634,7 +629,7 @@ test("terminal settlement clears an explicit wallclock contract for a normal fol
   assert.equal(controller.status("main").active, true);
   await host.emit("agent_settled", {}, ctx);
 
-  assert.equal(controller.status("main").active, false);
+  assert.equal(controller.status("main").active, true);
   assert.equal(await host.emit("tool_call", { toolCallId: "normal-follow-up", toolName: "read", input: {} }, ctx), undefined);
 });
 
@@ -1246,7 +1241,7 @@ test("OMP-shaped parent and child instances share assignment enforcement and per
   }, childCtx);
   assert.equal(allowedYield, undefined);
   await events.emit("task:subagent:lifecycle", { id: "child-agent", sessionFile: "child-session", status: "completed", parentToolCallId: "task-call" });
-  assert.equal(controller.status("main").active, false);
+  assert.equal(controller.status("main").active, true);
 });
 
 test("a child lifecycle end without a report produces a blocked fallback report", async () => {

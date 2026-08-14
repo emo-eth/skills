@@ -63,10 +63,6 @@ export class WallClockController {
       throw new Error("The turn-limit mode requires a duration, not a local-time deadline");
     }
     requireValidPlan(plan);
-    const existing = this.loadState(sessionId);
-    if (existing && !existing.stopped) {
-      throw new Error(`Wall-clock is already active for session ${sessionId}; stop it before starting a new contract`);
-    }
     const now = this.clock.now();
     const hardDeadline = input.deadlineMs ?? (input.durationMs === undefined ? undefined : now + input.durationMs);
     if (hardDeadline === undefined || !Number.isFinite(hardDeadline) || hardDeadline <= now) {
