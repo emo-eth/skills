@@ -23,10 +23,14 @@ Definitions here describe, they do not prescribe. Where a term names a pattern, 
 - **Yearn**: an existing user-facing capture for anything the user yearns for; not specific to skills. A skill-scoped variant has been proposed but is a separate, not-yet-named thing; it is not yearn.
 - **Papercut**: existing repo term: a small tool or workflow friction logged in the moment it happens.
 - **Top-k**: picking the best k items out of a pile without ordering the whole pile. A sibling idea under exploration: tiered heaps, dropping items into a few coarse tiers instead of a precise order.
+- **Stochastic descent**: the working model for how the vibe becomes reality. Each action is a small, noisy step that on average moves the system closer to the optimal state; the noise is tolerated because it is what lets the descent escape local optima. A sibling metaphor to the sieve: the sieve filters a pile, the descent moves the whole system toward the goal.
+- **Optimal state**: the target reality the vibe describes - the thing the descent is heading toward. The vibe is only its starting point.
 
 ## Vibe Promise
 
 Working with the tools and skills in this repo should both feel like and actually be making progress: fuzzy material - ideas, tickets, options, feedback - becomes sharp enough to act on. Sifting is the suspected mechanism: fast passes over the pile, gut calls when appropriate, broad strokes that can become successively finer. But sifting is what the user suspects works for them, not the goal. The goal is progress. A tool that makes the user sift without producing progress has failed, whatever it feels like.
+
+A written vibe is a starting point, not the destination. It is the initial state; the work is to descend from it toward reality in many small, noisy steps - stochastic descent - until the state matches the vibe. The noise in those steps is not a defect; it is what lets the process escape local optima and keep moving.
 
 The user's attention is the scarcest resource in the system. Everything here is built around that.
 
@@ -49,6 +53,11 @@ Added in round-1 review, same status:
 - "raw information plus intuition plus iteration leads to clarity leads to understanding"
 - "interruptions cost as little as possible; i can continue sifting with minimal context loss"
 - "working with the tools and skills should both feel like and crucially ACTUALLY BE making progress... sifting is what i suspect works for me"
+
+Added later (2026-08-13, user stream, same status):
+
+- "vibe is also just the starting point. we have a vibe. we need to figure out how to make it reality"
+- "stochastic; gradient descent. we want to descend to the optimal state. or something"
 
 Agent-communication preferences from the same dump (deliberately filed under the companion clause, not the sifting clauses):
 
@@ -119,10 +128,18 @@ One caveat applies to every example below: the tools and skills named are seeds 
 ### V7. Friction and wishes are logged in the moment
 
 - Promise: when a tool or skill annoys or falls short, the note is captured at the moment of use, with its context, never reconstructed later from memory.
-- Example: papercut does this for tool friction today. Yearn exists for anything the user yearns for; it is human-facing and general. A papercut-style logger scoped to skill invocations has been proposed as a separate tool with its own name (undecided; it is not yearn). Such notes feed skill-iteration, the existing improvement loop.
+- Example: papercut does this for tool friction today. Yearn exists for anything the user yearns for; it is human-facing and general. A papercut-style logger scoped to skill invocations is built and named `skiterate`; such notes feed skill-iteration, the existing improvement loop.
 - Does not mean: stopping the work to write the perfect note. One or two raw sentences is the whole format. Logging and fixing are separate passes; not every note gets fixed.
 - Violation: "I should remember to fix that skill" said in chat and lost; friction reconstructed in a retro that half-remembers what hurt.
 - Check: the logs show entries written mid-task, timestamped, one or two sentences each.
+
+### V8. The vibe is a starting point; the work is the descent
+
+- Promise: a written vibe is the initial state, not the goal. The work is to descend from it toward reality in many small, noisy, stochastic steps - each a low-cost move that on average improves the state - until the optimal state, the vibe made real, is reached. Taking steps beats taking one perfect step; noise is not a bug but the thing that lets the descent escape local optima.
+- Example: each sieve pass, review round, ticket cycle, skill-iteration, and logged friction is one gradient step. Cheap steps and fast models (wall-clock) exist to let the descent take many of them. The machinery in this repo - the lc- family, skiterate, the plugins - is descent machinery: it makes steps cheaper and less noisy; it is not itself the goal.
+- Does not mean: mistaking the vibe document for a finished product; demanding certainty before each step; or reacting to one noisy step by stopping.
+- Violation: treating the vibe as polished and complete; re-planning forever instead of stepping; removing all randomness until the process stalls.
+- Check: after many steps, the lived state is observably closer to the vibe than the starting file was; the vibe file changes rarely while reality changes often.
 
 ## Companion clause: every turn ends with a receipt
 
@@ -148,6 +165,7 @@ This one is an agent-communication preference, not part of the sifting strategy.
 | Loops too slow to finish in one sitting | Unmeasured, slow loops get abandoned; skills accumulate sediment | V6 |
 | "Remind me to fix that later" | Friction logged nowhere is friction kept forever | V7 |
 | Walls of text with the question buried somewhere inside | The user cannot find what the agent needs from them | Receipt |
+| Treating the written vibe as the finished deliverable | The vibe is the starting point; the work is the descent into reality | V8 |
 
 ## Approval
 

@@ -17,4 +17,5 @@
 - Understanding is symbiotic: the user strives; the system measures, probes, and guides; a system that cannot guide has failed. [D32]
 - Existing skills are seeds and context, often to be scrapped; never be poisoned by what already exists. [D33]
 - Design for interruption: near-zero context loss and resumable passes beat uninterrupted blocks. [D25]
-- Few stages, bounded rounds: three stages ideal, four or five in practice; at most two fix rounds per doc, aim for one. [D29, D34]
+- Few stages, bounded rounds: three stages ideal, four or five in practice; at most two fix rounds per doc, aim for one. [D26, D31]
+- The vibe is a starting point, not the deliverable; the goal is the descent into reality, taken in many small noisy steps. [D38]

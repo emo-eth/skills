@@ -410,7 +410,18 @@ Decision: The turn receipt is delivered as an Agent Plugins package, not as a st
 Why: "think that is also best as a plugin since wallclock injects the time left etc after each turn. succinct reminder culd be nice. longterm would be nice to have collapsible arrows for above-the-fold stuff and/or a companion model (v2 and v3)" - user in chat, 2026-08-13.
 Alternatives: Standing instruction in the global instructions file first, extension later (rejected: the plugin owns delivery from v1, and the wall-clock turn-context seam is already proven on this machine).
 Consequences: The earlier layer-1/layer-2 split (log doc P5) is superseded. v1 needs no model call. v3's cheap-model call path must be verified against the installed omp/pi before implementation, same discipline as wall-clock's capability checks.
-Source: user chat message, 2026-08-13
+Source: user chat, 2026-08-13
 Status: active
 Scope: v0 (v1); v1+ (v2, v3)
 Load-bearing: no
+
+## D38 - 2026-08-13 - The vibe is a starting point; reality is reached by stochastic descent
+
+Decision: A written vibe is the initial state of the work, not its destination. Work descends from the vibe toward reality through many small, noisy, stochastic steps; the noise is tolerated because it lets the descent escape local optima. The machinery (skills, tools, plugins) exists to make steps cheaper and less noisy, and is not itself the goal.
+Why: "vibe is also just the starting point. we have a vibe. we need to figure out how to make it reality" and "stochastic; gradient descent. we want to descend to the optimal state. or something" - user in chat, 2026-08-13.
+Alternatives: Treat the written vibe as the deliverable and measure the repo against the document (rejected: the vibe is the initial point, and a document can look complete while reality is nowhere near it); treat the descent as replacing the sieve (rejected: the two are compatible metaphors - the sieve filters a pile, the descent moves the whole system toward the goal).
+Consequences: docs/vibe.md gains V8 plus glossary and promise lines. Tool and process evaluation now asks "does it take a cheaper, less noisy step toward the vibe?" rather than "is it finished?".
+Source: user chat, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
