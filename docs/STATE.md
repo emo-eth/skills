@@ -6,22 +6,23 @@ Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enfor
 
 ## Where we are
 
-Current phase: v1 turn-limit mode implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, enforce the selected expiry policy, and support `/wallclock turn-limit <duration>` plus `/wallclock set <duration>`. Normal deadline contracts stop after terminal settlement; turn-limit contracts remain active, arm after terminal settlement, and reset the owner deadline at the next normal user message. Steering messages keep the current deadline; child deadlines are not extended by owner turn resets.
+Current phase: v1 turn-limit mode implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time plus phase-specific action guidance, enforce the selected expiry policy, and support `/wallclock turn-limit <duration>` plus `/wallclock set <duration>`. Normal deadline contracts remain active after terminal settlement, count down to zero, remain expired and enforced until `/wallclock stop`, and turn-limit contracts remain active, arm after terminal settlement, and reset the owner deadline at the next normal user message. Steering messages keep the current deadline; child deadlines are not extended by owner turn resets.
 
 The package is installed and enabled in the normal local OMP profile from the wall-clock plugin checkout. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
 Native wall-clock contracts started by an explicit `/wallclock` command or
-`wallclock_start` use terminal settlement for lifecycle handling. Default
-deadline contracts stop after terminal settlement. `turn-limit` contracts stay
-active after settlement and start their next owner window at the next normal
-user message; steering messages do not reset or extend that window. Expiry stays
-enforced through the current turn, and active child work retains its own
-deadline. Evidence is in the focused controller and host tests plus the Pi and
-OMP native runner tests.
+`wallclock_start` use terminal settlement for lifecycle handling. Normal
+deadline contracts remain active after settlement and stay visible after
+expiry until `/wallclock stop`. `turn-limit` contracts stay active after
+settlement and start their next owner window at the next normal user message;
+steering messages do not reset or extend that window. Expiry stays enforced
+through the current turn, and active child work retains its own deadline.
+Evidence is in the focused controller and host tests plus the Pi and OMP
+native runner tests.
 
-The current package includes version 4 state validation with mode and
-configured-duration fields, assignment and report contracts, report-linked
-plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone
+The current package includes the current persisted-state validation with mode
+and configured-duration fields, assignment and report contracts, report-linked
+plan revisions, Agent Plugin discovery, and optional MCP operations.
 MCP refuses activation and does not replace or mirror native host enforcement.
 Nested assignment limits are specified but not implemented in
 `proposals/wall-clock/nested-assignment-limits.md`; that future data shape is
@@ -38,6 +39,7 @@ Codex support finding: current Codex hooks make a narrower `block-new` adapter t
 The repository now also publishes `skills/initiative-standup/SKILL.md`, a user-invoked standup for recent cross-project initiatives that do not need Linear tickets. It starts with a Memex session ledger across Memex-supported indexed agent sources and repositories, then uses full transcripts and named artifacts to derive initiatives [documented]. On this device, Memex indexes its supported local agent sources, but it does not index OMP sessions; the `nicosuave.memex` Herdr plugin is installed and its refresh action succeeded on 2026-08-12 [verified-live]. These are supporting local integrations, not wall-clock enforcement.
 The repository now also publishes `skills/understand/SKILL.md`, a user-invoked workflow for building a working model before changing or delegating work. It uses a coverage map, evidence tiers, a gap sweep, teach-back, and a bounded delegation gate; it is documented but not yet field-tested.
 The repository now also publishes `skills/scope-decision-form/SKILL.md`, a six-field investigation-close form (Goal / What we learned / Decision / One next action / Done when / Do not do). Use it to turn the end of research or a scope discussion into one decision and one next action, with tagged evidence and a visible finish line.
+The repository now also publishes `skills/omp-plugin-iteration/SKILL.md`, a model-invoked workflow for changing an OMP runtime plugin, pushing the exact checkout to `main`, reinstalling it into an OMP profile, and separating installed-source verification from live-process verification. The user restarts OMP after installation; the agent owns reinstall.
 
 `docs/vibe.md` is the repo-level philosophy contract (progress through sifting: fast filter passes, few crystallization stages, deliverable breakdown, symbiotic understanding, recorded judgment, timed loops, in-the-moment friction logs, plus a companion turn-summary clause). Three review rounds are applied and captured (36 + 8 + 1 items, D20-D35, with D22 and D26 superseded), answers in `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md`. Review rounds are closed at the user's direction under the two-round bound [D34]; formal approval stays pending and the user edits directly instead. The vibe is the source of truth; skills and the artifact chain are downstream facets [D30, D33]. Proposals are in `docs/log/2026-08-13-sieve-vibe.md` (the user declined to r…
 
@@ -83,6 +85,7 @@ adapter proof. The contract and GAPs are in
 | Direct local token reporting | `tools/agent-skill-usage.ts`, `tools/agent-skill-usage-core.ts` | `fixtures/all-source-skill-usage/`, `tools/agent-skill-usage.test.ts` | focused direct-parser tests and live local Claude, Codex, Pi, and OMP smoke reports; Memex is not used for accounting | verified-focused |
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
 | Bug capture command | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md` | `plugins/bug-command/` | `npm run check`, 8 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
+| OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
 | Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |

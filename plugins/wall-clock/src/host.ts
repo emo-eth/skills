@@ -365,6 +365,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const activateSession = (ctx: RuntimeContext | undefined, input: ActivationInput, plan: PlanItem[] = []) => {
     const sessionId = requireOwnerSession(ctx);
     ensureActivationSupport(input.expiryPolicy, input.mode);
+    if (controller.status(sessionId).active) stopSessionById(sessionId, ctx);
     const status = controller.activate(sessionId, input, plan);
     scheduleDeadline(sessionId, undefined, ctx);
     persist(sessionId);
@@ -433,6 +434,11 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     for (const binding of coordination.childBindings.values()) {
       if (binding.parentSessionId === sessionId) return;
     }
+    if (fastLanes.has(sessionId)) {
+      coordination.settledSessions.delete(sessionId);
+      stopSessionById(sessionId, ctx);
+      return;
+    }
     if (status.mode === "turn-limit") {
       controller.armTurn(sessionId);
       coordination.providerContexts.delete(sessionId);
@@ -442,7 +448,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       return;
     }
     coordination.settledSessions.delete(sessionId);
-    stopSessionById(sessionId, ctx);
+    coordination.providerContexts.delete(sessionId);
   };
 
   const beginSessionTurn = (sessionId: string, ctx?: RuntimeContext): void => {
