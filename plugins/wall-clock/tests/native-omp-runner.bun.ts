@@ -161,7 +161,7 @@ test("OMP native ExtensionRunner injects context and blocks a late tool call", a
     expect(command).toBeDefined();
     await command!.handler("start 1ms block-new", runner.createCommandContext());
     const messages = await runner.emitContext([]);
-    expect(messageText(messages.at(-1))).toMatch(/Latest inference elapsed: 0s \(0ms\)/);
+    expect(messageText(messages.at(-1))).toMatch(/<wallclock>/);
     await Bun.sleep(5);
     const blocked = await runner.emitToolCall({ type: "tool_call", toolCallId: "late", toolName: "read", input: { path: "README.md" } } as any);
     expect(blocked?.block).toBe(true);

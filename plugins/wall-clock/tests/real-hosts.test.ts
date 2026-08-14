@@ -75,7 +75,7 @@ test("pinned Pi host loads, activates, reports, and blocks expired shell work", 
     ));
     assert.match(output, /"name":"wallclock"/);
     assert.match(output, /Wall-clock active: active/);
-    assert.match(output, /Latest tool-call elapsed: 0s \(0ms\)/);
+    assert.match(output, /policy block-new/);
     assert.match(output, /"id":"status"[^\n]+"success":true/);
     const blocked = await runExpiredBash(piBin, [
       "--offline", "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates",
@@ -102,7 +102,7 @@ test("pinned OMP host loads, activates, reports, and blocks expired shell work",
     ));
     assert.match(output, /"name":"wallclock"/);
     assert.match(output, /Wall-clock active: active/);
-    assert.match(output, /Latest tool-call elapsed: 0s \(0ms\)/);
+    assert.match(output, /policy block-new/);
     assert.match(output, /"id":"status"[^\n]+"success":true/);
     assert.doesNotMatch(output, /"agentInvoked":true/);
     const blocked = await runExpiredBash(ompBin, [

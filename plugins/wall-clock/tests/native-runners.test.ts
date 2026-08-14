@@ -75,7 +75,7 @@ test("Pi native ExtensionRunner injects context and blocks a late tool call", { 
     assert.ok(command);
     await command.handler("start 1ms block-new", runner.createCommandContext());
     const messages = await runner.emitContext([]);
-    assert.match(messageText(messages.at(-1)), /Latest inference elapsed: 0s \(0ms\)/);
+    assert.match(messageText(messages.at(-1)), /<wallclock>/);
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
     const blocked = await runner.emitToolCall({ type: "tool_call", toolCallId: "late", toolName: "read", input: { path: "README.md" } } as any);
     assert.equal(blocked?.block, true);

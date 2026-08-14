@@ -118,7 +118,7 @@ test("armed turn state has no remaining-time claims in its context text", () => 
   const { controller } = setup();
   controller.activate("main", { durationMs: 60_000, mode: "turn-limit", turnState: "armed", expiryPolicy: "block-new" });
   const text = controller.context("main");
-  assert.match(text, /timer is armed/);
+  assert.match(text, /Timer armed:/);
   assert.doesNotMatch(text, /Remaining time:/);
 });
 

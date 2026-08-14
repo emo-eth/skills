@@ -391,15 +391,15 @@ test("active wallclock status refreshes from the host clock", async () => {
   };
 
   await host.commands.get("wallclock").handler("5s block-new", ctx);
-  assert.equal(displayedStatuses.get("wall-clock"), "active 5s (block-new)");
+  assert.equal(displayedStatuses.get("wall-clock"), "⏱ 5s left · active · block-new");
 
   now = 2_100;
   scheduledStatus[0]?.();
-  assert.equal(displayedStatuses.get("wall-clock"), "active 4s (block-new)");
+  assert.equal(displayedStatuses.get("wall-clock"), "⏱ 4s left · active · block-new");
 
   now = 7_000;
   scheduledStatus[1]?.();
-  assert.equal(displayedStatuses.get("wall-clock"), "expired 0s (block-new)");
+  assert.equal(displayedStatuses.get("wall-clock"), "⏱ 0s left · expired · block-new");
   assert.equal(scheduledStatus.length, 2);
 });
 
@@ -689,8 +689,8 @@ test("Pi-shaped host injects measured context and blocks expired work before exe
   await host.commands.get("wallclock").handler("start 10s block-new", ctx);
   const contextResult = await host.emit("context", { messages: [{ role: "user", content: "existing" }] }, ctx) as any;
   assert.equal(contextResult.messages.length, 2);
-  assert.match(contextResult.messages[1].content[0].text, /Latest inference elapsed/);
-  assert.match(contextResult.messages[1].content[0].text, /Expiry policy: block-new/);
+  assert.match(contextResult.messages[1].content[0].text, /remaining · phase active/);
+  assert.match(contextResult.messages[1].content[0].text, /policy block-new/);
 
   now += 10_000;
   const blocked = await host.emit("tool_call", { toolCallId: "expired-call", toolName: "read", input: {} }, ctx) as any;

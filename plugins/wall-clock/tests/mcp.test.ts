@@ -109,7 +109,7 @@ test("MCP status surfaces turnState when armed", () => {
   const ctx = readObject(callTool(server, 9, "wallclock_context", { sessionId: "run-1" }));
   assert.equal(readObject(ctx.status).turnState, "armed");
   assert.equal(readObject(ctx.status).phase, "armed");
-  assert.match(String(ctx.context), /timer is armed/);
+  assert.match(String(ctx.context), /Timer armed:/);
 });
 
 test("JSON MCP state survives a new server instance", () => {
