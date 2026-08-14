@@ -449,9 +449,7 @@ export class WallClockController {
         ? "Decision: do not propose more work. Report the current result and stop."
         : status.phase === "wrap-up"
           ? "Decision: finish the current narrow task. Do not expand scope, delegate, or start destructive work."
-          : context.remainingMs <= 60_000
-            ? "Decision: stop starting new work. Finish the current narrow task or report what remains."
-            : "Decision: work only on the current acceptance target. Do not expand scope or delegate unless it clearly shortens that target.";
+          : "Decision: work only on the current acceptance target. Do not expand scope or delegate unless it clearly shortens that target.";
     const lines = [
       "<wallclock>",
       "This block is injected by the host, not written by the user.",

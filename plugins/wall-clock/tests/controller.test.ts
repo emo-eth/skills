@@ -129,6 +129,14 @@ test("active context gives phase guidance and honest block-new limits", () => {
   assert.match(text, /Decision: work only on the current acceptance target/);
   assert.match(text, /At expiry, the host blocks new work; an active model request may continue/);
 });
+ 
+test("wrap-up context uses the computed phase guidance", () => {
+  const { controller, advance } = setup();
+  controller.activate("main", { durationMs: 10_000, wrapUpMs: 2_000, expiryPolicy: "block-new" });
+  advance(8_500);
+  assert.equal(controller.status("main").phase, "wrap-up");
+  assert.match(controller.context("main"), /Decision: finish the current narrow task/);
+});
 
 test("armTurn and resetTurn round-trip a fresh active window", () => {
   const { controller, advance } = setup();
