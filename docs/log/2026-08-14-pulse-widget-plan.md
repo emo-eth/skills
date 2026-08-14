@@ -1,6 +1,6 @@
 # Plan: move the breathing status line to the widget seam
 
-Status: proposed, not implemented. Today's pulse (commit aa18eb55) ships on
+Status: approved (all review questions resolved), not yet implemented. Today's pulse (commit aa18eb55) ships on
 pi only, through the status string channel. This plan makes the pulse work on
 **both hosts — OMP included** — and moves the animation to where the hosts
 want it.
@@ -77,17 +77,13 @@ want it.
 - Native runner tests on both hosts confirm no theme-initialization crash
   and that the widget path mounts.
 
-## Open questions
+## Decisions (review pass 2, 2026-08-14, all resolved)
 
-1. **Placement**: `belowEditor` sits closest to where the footer status line
-   lives today; `aboveEditor` is more prominent. Default: `belowEditor`.
-2. **Duplicate line on OMP**: when the widget is mounted, keep the plain
-   (uncolored) hook status too, or drop it? Default: drop it — one timer
-   line, not two.
-3. **Countdown granularity**: the text still changes once per second
-   (`formatStatusTime` rounds to seconds); only the color changes per frame.
-   Smooth sub-second countdown is possible but jittery. Default: keep
-   seconds.
+1. **Placement**: `aboveEditor`. (Reviewer: "let's go above.")
+2. **Duplicate line on OMP**: drop the plain hook status line while the
+   widget is mounted — one timer line, not two. (Reviewer: "yes.")
+3. **Countdown granularity**: text changes once per second; only the color
+   changes per frame. (Reviewer: "yes.")
 
 ## Review answers (2026-08-14 plannotator pass)
 
