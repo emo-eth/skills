@@ -55,9 +55,15 @@ repository, worktree, branch, session, turn, recent activity, plugin, and
 skill metadata. The package checks and native OMP runner pass; Pi has package
 adapter proof. The contract and GAPs are in
 `docs/log/2026-08-14-bug-command.md` [verified-focused].
+The repository now also publishes `skills/agent-plugin/SKILL.md`, a
+model-invoked fast path for building native Pi and OMP plugins. It standardizes
+the minimal command or hook contract, shared implementation and thin
+adapters, bounded context records, adapter tests, live-host proof, state
+updates, and main-branch delivery. The skill has a manual structural check;
+the isolated cold-reader attempt was blocked by the host lifecycle gate, and
+the skill is not yet field-tested on a second plugin [documented].
 
 ## Standing constraints
-
 
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
 - Parent and child agents receive measured elapsed-time context at every turn; agents do not estimate task duration. [D5]
@@ -86,6 +92,7 @@ adapter proof. The contract and GAPs are in
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
 | Bug capture command | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md` | `plugins/bug-command/` | `npm run check`, 8 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
+| Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md` | `skills/agent-plugin/SKILL.md` | cold-reader scenario pass and skill structure inspection | documented |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
 | Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |

@@ -333,3 +333,32 @@ Source: user chat message, 2026-08-14
 Status: active
 Scope: v0
 Load-bearing: no
+
+## D41 - 2026-08-14 - Add a fast native plugin builder skill
+
+Decision: Publish `skills/agent-plugin/SKILL.md` as the default workflow for
+building small native Pi and OMP Agent Plugins. It starts with a minimal
+vertical slice, reuses the nearest existing package, keeps adapters thin,
+captures only bounded context, proves both adapters, separates source tests
+from live host proof, and hands installed OMP work to
+`omp-plugin-iteration`.
+
+Why: The bug-command build repeated package, host seam, record, test, state,
+and live-proof decisions. The user asked for a reusable skill so the next
+tool does not pay that setup cost again.
+
+Alternatives: Extend `omp-plugin-iteration` (rejected because that skill
+starts after a plugin exists and focuses on reinstall and restart); add a
+large code generator (rejected because plugin behavior and record shapes vary,
+and a generator would create stale scaffolding).
+
+Consequences: Future native plugin work has a named fast path and explicit
+proof boundary. The skill is model-invoked for native Pi or OMP plugin
+requests. It is documented; the isolated cold-reader attempt was blocked by
+the host lifecycle gate, and the skill is not yet field-tested on a second
+plugin.
+
+Source: user chat message, 2026-08-14
+Status: active
+Scope: v0
+Load-bearing: no
