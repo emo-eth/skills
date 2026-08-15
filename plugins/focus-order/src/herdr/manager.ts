@@ -1,6 +1,6 @@
 import readline from "node:readline";
 
-import { focusAgent, listAgents } from "./client.ts";
+import { focusTab, listAgents } from "./client.ts";
 import {
   addOrMoveToEnd,
   addOrMoveWorktreeToEnd,
@@ -10,52 +10,81 @@ import {
   moveRank,
   moveWorktreeRank,
   orderedAgents,
-  rankOf,
   snoozeAgent,
-  storedWorktreeLabel,
   unsetRank,
   worktreeFor,
   worktreeKey,
-  worktreeRankOf,
+  storedWorktreeLabel,
 } from "../shared/identity.ts";
 import { loadState, saveState } from "../shared/store.ts";
 import type {
   AgentSnapshot,
   FocusOrderState,
-  WorktreeIdentity,
 } from "../shared/types.ts";
-const RESET = "\u001b[0m";
-const DIM = "\u001b[2m";
-const BOLD = "\u001b[1m";
-const RED = "\u001b[31m";
-const GREEN = "\u001b[32m";
+import {
+  managerViewport,
+  renderManager,
+  type ManagerOffsets,
+  type ManagerSection,
+  type ManagerSelection,
+  type ManagerWorktreeRow,
+} from "./manager-view.ts";
 const CLEAR = "\u001b[2J\u001b[H";
 
-type Section = "agents" | "worktrees";
-type Selection = {
-  section: Section;
-  key?: string;
-};
-type WorktreeRow = {
-  identity: WorktreeIdentity;
-  label: string;
-  agent?: AgentSnapshot;
-};
-
+type Section = ManagerSection;
+type Selection = ManagerSelection;
+type WorktreeRow = ManagerWorktreeRow;
 async function main(): Promise<void> {
   let state = loadState();
   let agents = await listAgents();
   let selection: Selection = { section: "agents" };
   let status = "Ready";
-  selection = preserveSelection(state, agents, selection);
+  let helpOpen = false;
+  const sectionKeys: Record<Section, string | undefined> = {
+    agents: undefined,
+    worktrees: undefined,
+  };
+  const offsets: ManagerOffsets = { agents: 0, worktrees: 0 };
+
+  const rememberSelection = (): void => {
+    sectionKeys[selection.section] = selection.key;
+    ensureSelectionVisible(state, agents, selection, offsets);
+  };
+
+  const syncSelection = (): void => {
+    selection = preserveSelection(state, agents, {
+      section: selection.section,
+      key: sectionKeys[selection.section] ?? selection.key,
+    });
+    rememberSelection();
+  };
+
+  syncSelection();
 
   const render = (): void => {
-    process.stdout.write(CLEAR + renderScreen(state, agents, selection, status));
+    process.stdout.write(
+      CLEAR + renderManager(
+        state,
+        agents,
+        worktreeRows(state, agents),
+        selection,
+        status,
+        helpOpen,
+        offsets,
+        process.stdout.rows ?? 24,
+      ),
+    );
+  };
+
+  const switchSection = (section: Section): void => {
+    selection = { section, key: sectionKeys[section] };
+    syncSelection();
+    render();
   };
 
   const reload = async (): Promise<void> => {
     agents = await listAgents();
-    selection = preserveSelection(state, agents, selection);
+    syncSelection();
     status = `Loaded ${agents.length} agent pane(s)`;
     render();
   };
@@ -63,17 +92,38 @@ async function main(): Promise<void> {
   const update = (next: FocusOrderState, message: string): void => {
     state = next;
     saveState(state);
-    selection = preserveSelection(state, agents, selection);
+    syncSelection();
     status = message;
     render();
   };
 
   const handle = async (input: string): Promise<boolean> => {
     if (input === "q" || input === "Q" || input === "\u0003") return false;
-    if (input === "\t") {
-      selection = { section: selection.section === "agents" ? "worktrees" : "agents" };
-      selection = preserveSelection(state, agents, selection);
+
+    if (helpOpen) {
+      if (input === "?" || input === "h" || input === "H" || input === "\u001b") {
+        helpOpen = false;
+        render();
+      }
+      return true;
+    }
+
+    if (input === "?" || input === "h" || input === "H") {
+      helpOpen = true;
       render();
+      return true;
+    }
+    if (input === "\u001b") return false;
+    if (input === "\t") {
+      switchSection(selection.section === "agents" ? "worktrees" : "agents");
+      return true;
+    }
+    if (input === "1") {
+      switchSection("agents");
+      return true;
+    }
+    if (input === "2") {
+      switchSection("worktrees");
       return true;
     }
     if (input === "m" || input === "M") {
@@ -91,11 +141,6 @@ async function main(): Promise<void> {
       await reload();
       return true;
     }
-    if (input === "?" || input === "h" || input === "H") {
-      status = "Tab lists; arrows select; u/d rank; r add; x unset; s snooze; f focus; m mode; e guard; q close. Worktrees give unranked agents a fallback rank; ranked agents always win.";
-      render();
-      return true;
-    }
     if (input === "\u001b[A" || input === "k") {
       moveSelection(-1);
       render();
@@ -103,6 +148,26 @@ async function main(): Promise<void> {
     }
     if (input === "\u001b[B" || input === "j") {
       moveSelection(1);
+      render();
+      return true;
+    }
+    if (input === "\u001b[5~") {
+      moveSelection(-Math.max(1, managerViewport(process.stdout.rows ?? 24) - 2));
+      render();
+      return true;
+    }
+    if (input === "\u001b[6~") {
+      moveSelection(Math.max(1, managerViewport(process.stdout.rows ?? 24) - 2));
+      render();
+      return true;
+    }
+    if (input === "\u001b[H" || input === "\u001b[1~" || input === "g") {
+      moveSelectionTo(0);
+      render();
+      return true;
+    }
+    if (input === "\u001b[F" || input === "\u001b[4~" || input === "G") {
+      moveSelectionTo(Number.POSITIVE_INFINITY);
       render();
       return true;
     }
@@ -135,14 +200,25 @@ async function main(): Promise<void> {
     return true;
   };
 
-  const moveSelection = (delta: -1 | 1): void => {
+  const moveSelection = (delta: number): void => {
     const rows = selection.section === "agents"
       ? orderedAgents(state, agents).map((agent) => identityKey(identityFor(agent)))
       : worktreeRows(state, agents).map((row) => worktreeKey(row.identity));
     if (rows.length === 0) return;
-    const current = selection.key ? rows.indexOf(selection.key) : 0;
+    const current = Math.max(0, rows.indexOf(selection.key ?? ""));
     const next = Math.max(0, Math.min(rows.length - 1, current + delta));
     selection = { ...selection, key: rows[next] };
+    rememberSelection();
+  };
+
+  const moveSelectionTo = (target: number): void => {
+    const rows = selection.section === "agents"
+      ? orderedAgents(state, agents).map((agent) => identityKey(identityFor(agent)))
+      : worktreeRows(state, agents).map((row) => worktreeKey(row.identity));
+    if (rows.length === 0) return;
+    const next = target === Number.POSITIVE_INFINITY ? rows.length - 1 : Math.max(0, target);
+    selection = { ...selection, key: rows[Math.min(rows.length - 1, next)] };
+    rememberSelection();
   };
 
   const moveSelected = async (
@@ -223,115 +299,13 @@ async function main(): Promise<void> {
       render();
       return;
     }
-    await focusAgent(agent.pane_id);
-    status = `Focused ${agentLabel(agent)}; urgent status is unchanged`;
+    await focusTab(agent.tab_id);
+    status = `Focused tab for ${agentLabel(agent)}; rank is unchanged`;
     render();
   };
 
   render();
   await runInputLoop(handle);
-}
-
-function renderScreen(
-  state: FocusOrderState,
-  agents: AgentSnapshot[],
-  selection: Selection,
-  status: string,
-  height?: number,
-): string {
-  const total = height ?? process.stdout.rows ?? 24;
-  const chrome = 8; // title, subtitle, blank, agents hdr, blank, worktrees hdr, status, help
-  const available = Math.max(4, total - chrome);
-  const agentsActive = selection.section === "agents";
-  const agentBudget = agentsActive ? Math.ceil(available * 0.55) : Math.floor(available * 0.45);
-  const wtBudget = Math.max(2, available - agentBudget);
-
-  const rows: string[] = [];
-  rows.push(`${BOLD}Focus Order${RESET}  guard=${state.enabled ? `${GREEN}on${RESET}` : `${RED}off${RESET}`} mode=${state.mode}`);
-  rows.push(`${DIM}Order: rank first, then scheduler order. Worktrees = fallback rank for unranked agents.${RESET}`);
-  rows.push("");
-
-  rows.push(`${BOLD}Agents${RESET}${agentsActive ? " [active]" : ""}`);
-  const ordered = orderedAgents(state, agents);
-  const agentKeys = ordered.map((agent) => identityKey(identityFor(agent)));
-  const agentSel = agentsActive ? selection.key ?? agentKeys[0] : undefined;
-  if (ordered.length === 0) rows.push("  (none reported by Herdr)");
-  else rows.push(...windowRows(
-    ordered.map((agent) => agentRow(state, agent)),
-    agentKeys,
-    agentSel,
-    agentBudget,
-  ));
-
-  rows.push("");
-  rows.push(`${BOLD}Worktrees${RESET}${agentsActive ? "" : " [active]"}`);
-  const worktrees = worktreeRows(state, agents);
-  const wtKeys = worktrees.map((row) => worktreeKey(row.identity));
-  const wtSel = !agentsActive ? selection.key ?? wtKeys[0] : undefined;
-  if (worktrees.length === 0) rows.push("  (none reported by Herdr)");
-  else rows.push(...windowRows(
-    worktrees.map((row) => worktreeRow(state, row)),
-    wtKeys,
-    wtSel,
-    wtBudget,
-  ));
-
-  rows.push("");
-  rows.push(`${DIM}${status}${RESET}`);
-  rows.push(`${DIM}q close  ? help${RESET}`);
-  return `${rows.join("\n")}\n`;
-}
-
-/** Keep the selected row visible inside a fixed-height window; report overflow. */
-function windowRows(
-  lines: string[],
-  keys: string[],
-  selected: string | undefined,
-  viewport: number,
-): string[] {
-  const selIdx = selected !== undefined && keys.includes(selected)
-    ? keys.indexOf(selected)
-    : 0;
-  const start = Math.max(0, Math.min(selIdx - Math.floor(viewport / 2), Math.max(0, lines.length - viewport)));
-  const end = Math.min(lines.length, start + viewport);
-  const out: string[] = [];
-  if (start > 0) out.push(`${DIM}  (${start} more above)${RESET}`);
-  for (let i = start; i < end; i += 1) {
-    const selectedRow = i === selIdx;
-    out.push(selectedRow ? `\u001b[7m> ${lines[i]}\u001b[0m` : `  ${lines[i]}`);
-  }
-  if (end < lines.length) out.push(`${DIM}  (${lines.length - end} more below)${RESET}`);
-  return out;
-}
-
-/** Least->most granular: agent, status, workspace, worktree, tab, pane. */
-function agentRow(state: FocusOrderState, agent: AgentSnapshot): string {
-  const rank = rankOf(state, agent);
-  const worktreeRank = worktreeRankOf(state, agent);
-  const effective = rank === undefined && worktreeRank !== undefined
-    ? `wt:${worktreeRank}`
-    : rank === undefined ? "-" : String(rank);
-  const urgent = agent.agent_status === "idle"
-    || agent.agent_status === "blocked"
-    || agent.agent_status === "done";
-  const place = agent.workspace_label ?? agent.workspace_id;
-  const wt = agent.worktree_label ?? agent.worktree_path;
-  const pane = agent.pane_id;
-  const parts = [place];
-  if (wt && wt !== place) parts.push(wt);
-  parts.push(pane);
-  return `${effective.padStart(4, " ")} ${urgent ? "!" : " "} ${agentLabel(agent)} [${agent.agent_status}] ${parts.join(" \u00b7 ")}`;
-}
-
-/** Least->most granular: label, path, owning agent status. */
-function worktreeRow(state: FocusOrderState, row: WorktreeRow): string {
-  const rank = state.ordered_worktrees.findIndex(
-    (stored) => worktreeKey(stored.identity) === worktreeKey(row.identity),
-  );
-  const label = row.label;
-  const path = row.identity.value.startsWith("workspace:") ? "" : row.identity.value;
-  const status = row.agent ? ` [${row.agent.agent_status}]` : "";
-  return `${(rank === -1 ? "-" : String(rank + 1)).padStart(4, " ")} ${label}${path && path !== label ? ` \u00b7 ${path}` : ""}${status}`;
 }
 
 function worktreeRows(state: FocusOrderState, agents: AgentSnapshot[]): WorktreeRow[] {
@@ -392,6 +366,29 @@ function preserveSelection(
     section: selection.section,
     key: selection.key && rows.includes(selection.key) ? selection.key : rows[0],
   };
+}
+
+function ensureSelectionVisible(
+  state: FocusOrderState,
+  agents: AgentSnapshot[],
+  selection: Selection,
+  offsets: ManagerOffsets,
+): void {
+  const keys = selection.section === "agents"
+    ? orderedAgents(state, agents).map((agent) => identityKey(identityFor(agent)))
+    : worktreeRows(state, agents).map((row) => worktreeKey(row.identity));
+  if (keys.length === 0) {
+    offsets[selection.section] = 0;
+    return;
+  }
+  const selected = Math.max(0, keys.indexOf(selection.key ?? ""));
+  const viewport = managerViewport(process.stdout.rows ?? 24);
+  const bodyRows = keys.length > viewport ? Math.max(1, viewport - 2) : viewport;
+  const maxOffset = Math.max(0, keys.length - bodyRows);
+  let offset = Math.max(0, Math.min(offsets[selection.section], maxOffset));
+  if (selected < offset) offset = selected;
+  if (selected >= offset + bodyRows) offset = selected - bodyRows + 1;
+  offsets[selection.section] = offset;
 }
 
 async function runInputLoop(handle: (input: string) => Promise<boolean>): Promise<void> {

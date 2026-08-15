@@ -1,11 +1,9 @@
 import { pathToFileURL } from "node:url";
 
-import { closePopup, focusAgent, listAgents, openPopup } from "./client.ts";
+import { closePopup, focusTab, listAgents, openPopup } from "./client.ts";
 import { chooseTarget } from "./guard-policy.ts";
 import {
   clearResolvedSnoozes,
-  identityFor,
-  identityKey,
   urgentAgents,
 } from "../shared/identity.ts";
 import { popupOpen } from "../shared/modal-lock.ts";
@@ -45,10 +43,11 @@ export async function enforce(state: FocusOrderState, agents: AgentSnapshot[]): 
   if (!state.enabled || state.mode !== "focus") return;
 
   const focused = agents.find((agent) => agent.focused);
+  const focusedTabId = focused?.tab_id;
   const decision = chooseTarget(state, agents, focused);
   if (!decision.target || !decision.reason || decision.reason === "current_target") return;
-  if (!focused || identityKey(identityFor(focused)) !== identityKey(identityFor(decision.target))) {
-    await focusAgent(decision.target.pane_id);
+  if (focusedTabId !== decision.target.tab_id) {
+    await focusTab(decision.target.tab_id);
   }
 }
 

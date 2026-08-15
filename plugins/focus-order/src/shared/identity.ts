@@ -109,6 +109,29 @@ export function orderedAgents(state: FocusOrderState, agents: AgentSnapshot[]): 
   return [...agents].sort((left, right) => compareAgents(state, left, right));
 }
 
+export function compareAgentPriority(
+  state: FocusOrderState,
+  left: AgentSnapshot,
+  right: AgentSnapshot,
+): number {
+  const leftAgentRank = rankOf(state, left);
+  const rightAgentRank = rankOf(state, right);
+  if (leftAgentRank !== undefined && rightAgentRank !== undefined) {
+    return leftAgentRank - rightAgentRank;
+  }
+  if (leftAgentRank !== undefined) return -1;
+  if (rightAgentRank !== undefined) return 1;
+
+  const leftWorktreeRank = worktreeRankOf(state, left);
+  const rightWorktreeRank = worktreeRankOf(state, right);
+  if (leftWorktreeRank !== undefined && rightWorktreeRank !== undefined) {
+    return leftWorktreeRank - rightWorktreeRank;
+  }
+  if (leftWorktreeRank !== undefined) return -1;
+  if (rightWorktreeRank !== undefined) return 1;
+  return 0;
+}
+
 export function urgentAgents(state: FocusOrderState, agents: AgentSnapshot[]): AgentSnapshot[] {
   return orderedAgents(
     state,
@@ -237,20 +260,6 @@ function compareAgents(
   left: AgentSnapshot,
   right: AgentSnapshot,
 ): number {
-  const leftAgentRank = rankOf(state, left);
-  const rightAgentRank = rankOf(state, right);
-  if (leftAgentRank !== undefined && rightAgentRank !== undefined) {
-    return leftAgentRank - rightAgentRank || agentLabel(left).localeCompare(agentLabel(right));
-  }
-  if (leftAgentRank !== undefined) return -1;
-  if (rightAgentRank !== undefined) return 1;
-
-  const leftWorktreeRank = worktreeRankOf(state, left);
-  const rightWorktreeRank = worktreeRankOf(state, right);
-  if (leftWorktreeRank !== undefined && rightWorktreeRank !== undefined) {
-    return leftWorktreeRank - rightWorktreeRank || agentLabel(left).localeCompare(agentLabel(right));
-  }
-  if (leftWorktreeRank !== undefined) return -1;
-  if (rightWorktreeRank !== undefined) return 1;
-  return agentLabel(left).localeCompare(agentLabel(right));
+  return compareAgentPriority(state, left, right)
+    || agentLabel(left).localeCompare(agentLabel(right));
 }

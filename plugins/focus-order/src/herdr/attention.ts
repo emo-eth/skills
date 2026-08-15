@@ -1,6 +1,6 @@
 import readline from "node:readline";
 
-import { closePopup, focusAgent, listAgents } from "./client.ts";
+import { closePopup, focusTab, listAgents } from "./client.ts";
 import {
   agentLabel,
   clearResolvedSnoozes,
@@ -94,8 +94,8 @@ async function main(): Promise<void> {
       if (input === "f" || input === "F" || input === "\r" || input === "\n") {
         const target = urgent[selected];
         if (target) {
-          await focusAgent(target.pane_id);
-          status = `${agentLabel(target)} focused; urgent state remains unresolved`;
+          await focusTab(target.tab_id);
+          status = `${agentLabel(target)} tab focused; urgent state remains unresolved`;
           render(state, urgentAgents(state, agents), selected, status);
         }
         return true;

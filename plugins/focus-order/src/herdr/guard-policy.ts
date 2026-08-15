@@ -1,4 +1,5 @@
 import {
+  compareAgentPriority,
   identityFor,
   identityKey,
   isSnoozed,
@@ -20,10 +21,7 @@ export function chooseTarget(
   const urgent = urgentAgents(state, agents);
   if (urgent.length === 0) return {};
   const winner = urgent[0];
-  if (
-    currentTarget
-    && identityKey(identityFor(currentTarget)) === identityKey(identityFor(winner))
-  ) {
+  if (currentTarget && compareAgentPriority(state, winner, currentTarget) >= 0) {
     return { target: currentTarget, reason: "current_target" };
   }
   return {

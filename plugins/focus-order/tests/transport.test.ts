@@ -9,7 +9,7 @@ import {
   request,
   subscribe,
 } from "../src/herdr/transport.ts";
-import { openPopup } from "../src/herdr/client.ts";
+import { focusTab, openPopup } from "../src/herdr/client.ts";
 import type { HerdrEvent } from "../src/shared/types.ts";
 
 type JsonMessage = Record<string, unknown>;
@@ -187,6 +187,16 @@ describe("transport", () => {
         height: 20,
         focus: true,
       });
+      srv.write({ id: msg.id, result: {} });
+      await pending;
+    });
+  });
+
+  it("focuses the target tab instead of the agent pane", async () => {
+    await withServer(async (srv) => {
+      const pending = focusTab("tab-urgent");
+      const msg = await srv.waitFor((m) => m.method === "tab.focus");
+      assert.deepEqual(msg.params, { tab_id: "tab-urgent" });
       srv.write({ id: msg.id, result: {} });
       await pending;
     });

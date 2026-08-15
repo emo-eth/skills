@@ -47,8 +47,8 @@ export async function listAgents(): Promise<AgentSnapshot[]> {
   });
 }
 
-export async function focusAgent(target: string): Promise<void> {
-  await call("agent.focus", { target });
+export async function focusTab(tabId: string): Promise<void> {
+  await call("tab.focus", { tab_id: tabId });
 }
 
 export async function openPopup(options: {

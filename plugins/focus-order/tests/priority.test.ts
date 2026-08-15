@@ -231,6 +231,48 @@ describe("urgent target selection", () => {
     assert.equal(decision.reason, "current_target");
   });
 
+  it("does not steal focus between equal-ranked worktree agents", () => {
+    const current = agent({
+      pane_id: "pane-current",
+      agent: "z-current",
+      worktree_id: "wt-shared",
+    });
+    const sibling = agent({
+      pane_id: "pane-sibling",
+      agent: "a-sibling",
+      worktree_id: "wt-shared",
+      agent_status: "blocked",
+    });
+    const st = state({
+      ordered_worktrees: [{ identity: { kind: "worktree", value: "wt-shared" } }],
+    });
+    const decision = chooseTarget(st, [current, sibling], current);
+    assert.equal(decision.target, current);
+    assert.equal(decision.reason, "current_target");
+  });
+
+  it("does not steal focus from a higher-ranked working agent", () => {
+    const current = agent({
+      pane_id: "pane-current",
+      agent: "current",
+      agent_status: "working",
+    });
+    const lower = agent({
+      pane_id: "pane-lower",
+      agent: "lower",
+      agent_status: "blocked",
+    });
+    const st = state({
+      ordered_agents: [
+        { identity: identityFor(current), label: "current" },
+        { identity: identityFor(lower), label: "lower" },
+      ],
+    });
+    const decision = chooseTarget(st, [current, lower], current);
+    assert.equal(decision.target, current);
+    assert.equal(decision.reason, "current_target");
+  });
+
   it("switches when the highest-ranked urgent agent changes", () => {
     const newTop = agent({ pane_id: "pane-nt", agent: "nt", agent_status: "idle" });
     const st = state({
