@@ -132,3 +132,9 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-10T23:30:01Z** `openai-codex/gpt-5.6-luna`
   - cwd: `.`
   - note: Syncing the chezmoi lock -> `re-add` did not update a `create_` entry, while `add` renamed it and auto-push hit a non-fast-forward; fetch and merge remote changes before pushing.
+- **2026-08-11T00:46:46Z** `codex`
+  - cwd: `.`
+  - note: Loading the required bug-diagnosis skill -> the documented r2 path was not present, so the installed skill had to be found under the configured r1 agent-skills directory.
+- **2026-08-11T00:47:34Z** `codex`
+  - cwd: `.`
+  - note: Searching official Codex worktree documentation -> the first search request had malformed JavaScript arguments and had to be retried; no user or repository state changed.
