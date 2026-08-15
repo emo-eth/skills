@@ -267,6 +267,8 @@ Destination status: proposed, not created
 Make each child fit one owner-sized worktree and one proof. Keep the parent open
 until the child proofs together satisfy the parent's closure proof. Do not make
 a child named `finish the rest`; give it the missing result and its own check.
+In single-branch mode, when the last open child proof passes, `branch-closure`
+aggregates the child evidence and applies the parent close when authorized.
 
 If the user explicitly asked in this run to split a named ticket, apply the
 approved split only after reading the destination's fields and existing grain.

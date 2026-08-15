@@ -147,8 +147,9 @@ The sub-ticket breakdown process itself is not settled. If the fanout reaches
 this step, do not invent a new convention: propose it in the follow-up, and
 record it. The owner is tracking how this should work through a dedicated
 ticket; check whether that ticket still needs input and flag anything new the
-fanout revealed. Use `references/ticket-contract.md` for the fields every
-proposed ticket must carry before the breakdown goes to the owner.
+fanout revealed. Use the canonical `standup/references/ticket-contract.md` for
+the fields every proposed ticket must carry before the breakdown goes to the
+owner.
 
 Completion: every worktree has a decided exit (merge, observe, or research)
 with the exact proof; oversized tickets have an approved sub-ticket breakdown
@@ -317,6 +318,8 @@ Reconcile the verified outcomes into the shared source and the standup:
   decision reversing it would change future behavior.
 - Record what the fanout learned about breaking tickets into sub-tickets, so
   the owner's dedicated ticket on that mechanism gets real evidence.
+In batch mode, when the last open child proof passes, `standup-fanout`
+aggregates the child evidence and applies the parent close when authorized.
 
 Completion: the standup, its follow-up, the source logs, and `docs/STATE.md`
 agree; every verified ticket shows its real evidence state; every gap, failure,

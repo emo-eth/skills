@@ -32,6 +32,12 @@ The repository now also publishes `skills/understand/SKILL.md`, a user-invoked w
 
 The downstream revision landed on `sieve-vibe` (2026-08-13, user suspended the push-to-main-immediately rule for this iteration; the branch carries skill edits not yet on main): lc-north-star declares the chain a downstream facet of the vibe with stage and fix-round discipline [D30, D29, D34], its interview now probes understanding [D32], and its quality gates reject prescriptive vibes [D20]; the vibe template's `Means:` field is now `Example:`; `docs/lifecycle.md` declares the vibe upstream of the artifact chain; lc-ticketize requires deliverable tickets with enumerated sub-tickets [D31]; lc-review-capture names endless fix rounds a failure mode [D34]; lc-project-state's AGENTS.md wiring points at `docs/vibe.md` when present. branch-closure and lc-phase-tracker were checked and already align. The improved lc-north-star gates were run against `docs/vibe.md` itself: pass on all gates (details in the session).
 
+On `ticketize-revision` (2026-08-13), the overlap-audit follow-on gives
+`lc-ticketize` one parent ticket per deliverable with tracked sub-tickets and
+named dependencies, routes unsettled input to `synthesize` or `understand`,
+keeps `standup` on small deltas, uses one canonical ticket contract, and names
+the child-proof handoff to parent close.
+
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 ## Standing constraints
