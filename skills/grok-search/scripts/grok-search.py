@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -174,17 +175,38 @@ def _extract_text(payload: dict) -> str:
     return "\n\n".join(parts).strip()
 
 
+_STATUS_ID_RE = re.compile(r"(?:x|twitter)\.com/([^/]+)/status/(\d+)")
+
+
 def _extract_citations(payload: dict) -> list[dict]:
-    """Merge top-level citations and inline url_citation annotations."""
-    seen = set()
-    merged = []
+    """Merge top-level citations and inline url_citation annotations.
+
+    Deduplicates by X status ID: xAI reports the same post both as
+    x.com/i/status/<id> and x.com/<handle>/status/<id>. Prefers the
+    handle form and drops junk titles (bare numbers, title == url).
+    """
+    by_key: dict[str, dict] = {}
+    order: list[str] = []
 
     def add(url: str, title: str) -> None:
         url = str(url or "").strip()
-        if not url or url in seen:
+        if not url:
             return
-        seen.add(url)
-        merged.append({"url": url, "title": str(title or "").strip()})
+        title = str(title or "").strip()
+        if title == url or title.isdigit():
+            title = ""
+        match = _STATUS_ID_RE.search(url)
+        key = match.group(2) if match else url
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = {"url": url, "title": title}
+            order.append(key)
+            return
+        # Upgrade the anonymous /i/status/ form to the handle form.
+        if match and match.group(1) != "i" and "/i/status/" in existing["url"]:
+            existing["url"] = url
+        if title and not existing["title"]:
+            existing["title"] = title
 
     for cite in payload.get("citations") or []:
         if isinstance(cite, str):
@@ -198,7 +220,7 @@ def _extract_citations(payload: dict) -> list[dict]:
             for note in content.get("annotations") or []:
                 if note.get("type") == "url_citation":
                     add(note.get("url", ""), note.get("title", ""))
-    return merged
+    return [by_key[key] for key in order]
 
 
 # ---------------------------------------------------------------------------
@@ -250,10 +272,14 @@ def _run(args: argparse.Namespace, prompt: str, tools: list[dict], filters_activ
 
     print(answer or "(no answer text returned)")
     if citations:
+        shown = citations if args.max_citations <= 0 else citations[: args.max_citations]
         print("\nCitations:")
-        for cite in citations:
+        for cite in shown:
             title = f" -- {cite['title']}" if cite["title"] else ""
             print(f"- {cite['url']}{title}")
+        hidden = len(citations) - len(shown)
+        if hidden > 0:
+            print(f"(+{hidden} more; rerun with --json or --max-citations 0 for all)")
     elif filters_active:
         print(
             "\n[warning] no citations returned despite narrowing filters -- "
@@ -342,6 +368,8 @@ def main() -> None:
         p.add_argument("--model", default=DEFAULT_MODEL, help=f"xAI model (default: {DEFAULT_MODEL})")
         p.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="request timeout seconds")
         p.add_argument("--json", action="store_true", help="emit structured JSON instead of markdown")
+        p.add_argument("--max-citations", type=int, default=10, metavar="N",
+                       help="cap the markdown citation list (0 = unlimited; default 10)")
 
     p_x = sub.add_parser("x", help="search X (Twitter) posts, profiles, threads")
     p_x.add_argument("query", help="natural-language search question")

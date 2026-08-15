@@ -11,11 +11,21 @@ side and returns a cited answer -- no browser, no scraping, small context
 footprint.
 
 The CLI is `scripts/grok-search.py` inside this skill directory (python3,
-stdlib only). Resolve it relative to this SKILL.md and call it directly:
+stdlib only, executable). Invocation, first match wins:
+
+1. `~/.agents/skills/grok-search/scripts/grok-search.py` (the standard
+   `npx skills` universal install location).
+2. `scripts/grok-search.py` resolved relative to this SKILL.md, wherever
+   your harness installed it.
+
+Copy-paste examples:
 
 ```sh
-skill_dir=$(dirname <path-to-this-SKILL.md>)
-"$skill_dir/scripts/grok-search.py" x "what are people saying about <topic>?"
+grok-search.py x "what are people saying about <topic>? summarize with links" --from 2026-08-01
+grok-search.py x "latest post from @someuser, text and URL" --handle @someuser
+grok-search.py fetch https://x.com/someuser/status/123456789
+grok-search.py web "current <library> release version" --allow-domain github.com
+grok-search.py ask "did <event> actually happen? check X and the web"
 ```
 
 ## Commands
@@ -30,8 +40,11 @@ skill_dir=$(dirname <path-to-this-SKILL.md>)
 
 Every search command accepts `--json` (structured output: `answer`,
 `citations`, `degraded`), `--model <id>` (default `grok-4-fast`; override
-with a heavier model like `grok-4` for hard synthesis questions), and
-`--timeout <seconds>` (default 180; typical calls return in 4-15s).
+with a heavier model like `grok-4` for hard synthesis questions),
+`--timeout <seconds>` (default 180; typical calls return in 4-15s), and
+`--max-citations N` (markdown citation cap, default 10, `0` = unlimited).
+Citations are deduplicated by post ID; `--json` always carries the full
+list.
 
 ### `x` filters
 
