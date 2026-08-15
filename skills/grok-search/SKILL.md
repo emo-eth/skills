@@ -1,14 +1,14 @@
 ---
 name: grok-search
-description: Search X (Twitter) and the web live via xAI Grok server-side search, using the local grok CLI's subscription OAuth. Use when the user asks to search Twitter/X, find tweets or posts, check what people are saying about something, fetch a tweet or thread by URL, or wants fresher web results than a normal search tool. Requires a one-time `grok login` (SuperGrok / X Premium+ subscription) or XAI_API_KEY.
+description: Search X (Twitter) and the web live, fetch tweets/threads, and run plain Grok inference via xAI's API on a SuperGrok / X Premium+ subscription (grok CLI OAuth, its own login, or XAI_API_KEY). Use when the user asks to search Twitter/X, find tweets or posts, check what people are saying about something, fetch a tweet or thread by URL, gather raw X sources for synthesis, or wants fresher web results than a normal search tool.
 ---
 
 # grok-search
 
-Search X (Twitter) and the web through xAI's server-side `x_search` /
-`web_search` tools on the Responses API. Grok runs the search on xAI's
-side and returns a cited answer -- no browser, no scraping, small context
-footprint.
+X (Twitter) search, web search, post fetching, and plain Grok inference
+through xAI's Responses API. Search runs server-side on xAI (`x_search` /
+`web_search` tools) and returns a cited answer -- no browser, no scraping,
+small context footprint.
 
 The CLI is `scripts/grok-search.py` inside this skill directory (python3,
 stdlib only, executable). Invocation, first match wins:
@@ -22,31 +22,51 @@ Copy-paste examples:
 
 ```sh
 grok-search.py x "what are people saying about <topic>? summarize with links" --from 2026-08-01
+grok-search.py x "reactions to <event>" --brief --from 2026-08-10   # raw sources, you synthesize
 grok-search.py x "latest post from @someuser, text and URL" --handle @someuser
 grok-search.py fetch https://x.com/someuser/status/123456789
 grok-search.py web "current <library> release version" --allow-domain github.com
 grok-search.py ask "did <event> actually happen? check X and the web"
+grok-search.py prompt "one-off question for Grok" --system "You are terse."
+cat notes.md | grok-search.py prompt -                              # '-' reads stdin
 ```
 
 ## Commands
 
 | Command | Use for |
 | --- | --- |
-| `grok-search.py x "<question>"` | X/Twitter posts, profiles, threads, reactions, trends |
-| `grok-search.py fetch <post-url>` | One specific X post or thread, quoted verbatim with author + timestamp |
-| `grok-search.py web "<question>"` | Live web search (uses the same subscription) |
-| `grok-search.py ask "<question>"` | Free-form; Grok picks X search and/or web search itself |
-| `grok-search.py auth` | Show which credential will be used and its expiry |
+| `x "<question>"` | X/Twitter posts, profiles, threads, reactions, trends |
+| `fetch <post-url>` | One specific X post or thread, quoted verbatim with author + timestamp |
+| `web "<question>"` | Live web search (same subscription) |
+| `ask "<question>"` | Free-form; Grok picks X search and/or web search itself |
+| `prompt "<text>"` | Plain Grok inference, no search tools (`--system` supported) |
+| `models` | List models this credential can use, with context sizes |
+| `auth` | Show every available credential and which one is active |
+| `login` / `logout` | This script's own OAuth sign-in/out (only needed without the grok CLI) |
 
-Every search command accepts `--json` (structured output: `answer`,
-`citations`, `degraded`), `--model <id>` (default `grok-4-fast`; override
-with a heavier model like `grok-4` for hard synthesis questions),
-`--timeout <seconds>` (default 180; typical calls return in 4-15s), and
-`--max-citations N` (markdown citation cap, default 10, `0` = unlimited).
-Citations are deduplicated by post ID; `--json` always carries the full
-list.
+Search commands accept `--json` (structured: `answer`, `citations`,
+`degraded`), `--model <id>` (default `grok-4-fast`; see `models` for the
+catalog -- note xAI may serve an alias, e.g. `grok-4-fast` resolves to a
+current fast model), `--timeout <seconds>` (default 180; typical calls
+return in 4-25s), and `--max-citations N` (markdown cap, default 10,
+`0` = unlimited; `--json` always carries the full deduplicated list).
+Query arguments accept `-` to read from stdin.
 
-### `x` filters
+## `--brief`: cheap sources, smart synthesis
+
+`x`, `web`, and `ask` take `--brief`: Grok returns ONLY a raw source list
+(one line per post: `@handle (date): "verbatim text" -- URL`) with no
+synthesis. Use this when the calling model should do the reasoning and
+Grok should only gather -- it burns fewer subscription tokens per call and
+gives you verbatim post text instead of Grok's summary. Default mode is
+better when you want a one-shot answer.
+
+Subscription quota is limited (per-account, not per-key). To conserve it:
+prefer `--brief` + the default fast model for gathering, batch related
+questions into one query, and reach for a heavier `--model` only when the
+one-shot synthesis genuinely matters.
+
+## `x` filters
 
 - `--handle @user` (repeatable, max 10): only posts from these accounts.
 - `--exclude-handle @user` (repeatable, max 10): exclude these accounts.
@@ -54,7 +74,7 @@ list.
 - `--from YYYY-MM-DD` / `--to YYYY-MM-DD`: post date window.
 - `--images` / `--videos`: let Grok read media in posts.
 
-### `web` filters
+## `web` filters
 
 - `--allow-domain example.com` / `--block-domain example.com` (repeatable,
   mutually exclusive).
@@ -76,25 +96,31 @@ retry before trusting it.
 
 ## Auth model
 
-Credential preference order:
+Credential preference order (see `auth` for live state):
 
-1. `XAI_API_KEY` env var (pay-as-you-go API billing), if set.
+1. `XAI_API_KEY` env var (pay-as-you-go API billing).
 2. The standalone `grok` CLI's OAuth token in `~/.grok/auth.json`
-   (SuperGrok / X Premium+ subscription -- no API billing).
+   (SuperGrok / X Premium+ subscription). The grok CLI owns that token's
+   lifecycle: its refresh token is single-use, so this script never spends
+   it -- on expiry or 401/403-unauthenticated it runs a minimal
+   `grok --no-auto-update -p` call so the CLI rotates its own tokens, then
+   re-reads them.
+3. This script's own OAuth login: `grok-search.py login` (loopback PKCE
+   against auth.x.ai, same public client as the grok CLI). Tokens live in
+   `~/.config/grok-search/auth.json` (mode 600) with self-managed refresh
+   and rotation. Use this on machines without the grok CLI installed.
 
-The script never touches the single-use refresh token: when the access
-token is expired or rejected, it runs a minimal `grok --no-auto-update -p`
-call so the grok CLI refreshes and persists its own tokens, then re-reads
-them. If there is no `~/.grok/auth.json` at all, tell the user to run
-`grok login` once (or set `XAI_API_KEY`).
+If no credential exists anywhere, tell the user to run `grok login` (if
+they have the grok CLI) or `grok-search.py login`, or set `XAI_API_KEY`.
 
 ## Gotchas
 
-- Latency is seconds, not milliseconds: 4-15s typical, more for complex
+- Latency is seconds, not milliseconds: 4-25s typical, more for complex
   synthesis. Leave the default timeout alone.
 - Date filters are strict `YYYY-MM-DD`; malformed dates fail fast
   client-side (xAI would otherwise burn the call and answer from memory).
 - Citation URLs often come back as `https://x.com/i/status/<id>` -- they
-  resolve to the post regardless of handle.
+  resolve to the post regardless of handle. The CLI deduplicates the
+  handle and `/i/` forms of the same post.
 - Each call spends the user's Grok subscription quota (or API credits when
   `XAI_API_KEY` is set). Batch questions into one query where sensible.
