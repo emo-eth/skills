@@ -318,3 +318,15 @@ Small frictions agents hit while working in this repository. These are not full 
 - **2026-08-12T16:03:04Z** `codex`
   - cwd: `.`
   - note: Validating the new user-invoked skill -> the bundled skill-creator quick validator rejects the documented disable-model-invocation frontmatter key even though the existing standup skill uses it; use repository conventions plus YAML parsing instead.
+- **2026-08-12T17:32:08Z** `codex`
+  - cwd: `.`
+  - note: Investigating the disable-model-invocation skill -> the documented skill URI was unavailable even though the current worktree is named for that skill, so the skill system could not load its guidance.
+- **2026-08-12T17:33:03Z** `codex`
+  - cwd: `.`
+  - note: Checking installed skill links -> the GNU stat format directive failed on macOS; use BSD stat flags or readlink instead.
+- **2026-08-12T17:38:06Z** `codex`
+  - cwd: `.`
+  - note: Verifying OMP skill resolution -> `omp read skill://standup` returned a directory listing instead of SKILL.md content, so the CLI subcommand is not a direct equivalent of the internal read tool.
+- **2026-08-12T18:49:10Z** `codex`
+  - cwd: `.`
+  - note: Converting zsh history epochs -> macOS date treats the numeric argument as a file path, unlike GNU date; use Python or BSD date's epoch format for conversion.
