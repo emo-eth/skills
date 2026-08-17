@@ -64,9 +64,18 @@ The repository now also publishes `skills/agent-plugin/SKILL.md`, a
 model-invoked fast path for building native Pi and OMP plugins. It standardizes
 the minimal command or hook contract, shared implementation and thin
 adapters, bounded context records, adapter tests, live-host proof, state
-updates, and main-branch delivery. The skill has a manual structural check;
-the isolated cold-reader attempt was blocked by the host lifecycle gate, and
-the skill is not yet field-tested on a second plugin [documented].
+updates, and main-branch delivery. The original structural check and cold-reader
+attempt are recorded in `docs/log/2026-08-14-agent-plugin-skill.md`; the skill
+was then field-tested by the model-invocable-skills plugin with focused checks
+and live Pi proof [verified-live].
+
+The repository now also contains `plugins/model-invocable-skills/`, a native
+Pi extension that classifies Pi's authoritative loaded skill objects as
+model-invocable or user-only. `/model-invocable-skills show|list|hide` controls
+a bounded widget and complete selector; the widget refreshes before agent runs.
+The pinned Pi 0.84.1 host loaded and executed the command through RPC and
+rendered the expected model/user widget in an interactive TUI smoke. Evidence
+is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
 
 ## Standing constraints
 
@@ -97,7 +106,8 @@ the skill is not yet field-tested on a second plugin [documented].
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
-| Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md` | `skills/agent-plugin/SKILL.md` | cold-reader scenario pass and skill structure inspection | documented |
+| Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
+| Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 5 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus interactive TUI smoke | verified-live |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
 | X/web live search + Grok inference | `skills/grok-search/SKILL.md` | `skills/grok-search/scripts/grok-search.py` | live `x`/`fetch`/`web`/`ask`/`prompt`/`models` calls against api.x.ai with grok CLI OAuth, `--brief` source-list mode, validation error checks; own-OAuth `login` verified to callback bind | verified-live |

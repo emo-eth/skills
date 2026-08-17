@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "model-invocable-skills",
+  "version": "0.1.0",
+  "description": "Show which Pi skills are available to the model and which require explicit user invocation.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "pi",
+    "skills",
+    "model invocation",
+    "visibility"
+  ]
+}

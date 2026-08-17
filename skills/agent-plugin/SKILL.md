@@ -119,6 +119,13 @@ work around unverified host types. Catch notification failures separately from
 the main result. A logging failure must report an error without corrupting a
 successful host process.
 
+For Pi UI that reports loaded skill visibility, use
+`ExtensionCommandContext.getSystemPromptOptions().skills` for an immediate
+user command and `before_agent_start.systemPromptOptions.skills` to refresh
+from Pi's authoritative loaded objects. Do not re-scan skill directories or
+monkey-patch the built-in startup resource list; Pi 0.84.1 exposes no public
+styling seam for that list.
+
 ## 4. Prove both adapters
 
 Add focused tests before broad cleanup:

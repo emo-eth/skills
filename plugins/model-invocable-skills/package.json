@@ -1,0 +1,32 @@
+{
+  "name": "@emo-eth/model-invocable-skills-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": [
+    "pi-package",
+    "skills",
+    "model-invocation"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/pi.ts"
+    ]
+  },
+  "exports": {
+    ".": "./src/host.ts",
+    "./pi": "./src/pi.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}
