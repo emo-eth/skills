@@ -34,8 +34,6 @@ function harness(skills: Skill[], mode: ExtensionContext["mode"] = "tui") {
   const commands = new Map<string, Command>();
   const handlers = new Map<string, BeforeAgentStartHandler>();
   const widgets = new Map<string, string[] | undefined>();
-  const notices: Array<{ message: string; type?: string }> = [];
-  const selections: Array<{ title: string; options: string[] }> = [];
 
   const pi = {
     registerCommand(name: string, options: Command) {
@@ -48,27 +46,24 @@ function harness(skills: Skill[], mode: ExtensionContext["mode"] = "tui") {
 
   const ctx = {
     mode,
-    hasUI: true,
     getSystemPromptOptions: () => ({ cwd: "/repo", skills }),
     ui: {
+      theme: {
+        fg(color: string, text: string) {
+          return `<${color}>${text}</${color}>`;
+        },
+      },
       setWidget(key: string, content: string[] | undefined) {
         widgets.set(key, content);
-      },
-      notify(message: string, type?: string) {
-        notices.push({ message, type });
-      },
-      async select(title: string, options: string[]) {
-        selections.push({ title, options });
-        return undefined;
       },
     },
   } as unknown as ExtensionCommandContext;
 
   installModelInvocableSkills(pi);
-  return { commands, ctx, handlers, notices, selections, widgets };
+  return { commands, ctx, handlers, widgets };
 }
 
-test("classifies and sorts skills by model visibility", () => {
+test("classifies and sorts model-invocable and user-only skills", () => {
   const inventory = inventorySkills([
     skill("z-user", true),
     skill("b-model", false),
@@ -79,63 +74,51 @@ test("classifies and sorts skills by model visibility", () => {
   assert.deepEqual(inventory.userOnly.map((item) => item.name), ["z-user"]);
 });
 
-test("renders a bounded, explicit widget", () => {
-  const skills = Array.from({ length: 10 }, (_, index) => skill(`model-${index}`, false));
-  const lines = renderWidgetLines([...skills, skill("manual", true)]);
-
-  assert.equal(lines[0], "[skills] 10 model-invocable · 1 user-only");
-  assert.match(lines[1], /\+2 more$/);
-  assert.equal(lines[2], "○ user   manual");
-  assert.equal(lines[3], `/${COMMAND_NAME} list|hide`);
-});
-
-test("show and hide command control the widget", async () => {
-  const h = harness([skill("automatic", false), skill("manual", true)]);
-  const command = h.commands.get(COMMAND_NAME);
-  assert.ok(command);
-
-  await command.handler("show", h.ctx);
-  assert.deepEqual(h.widgets.get(WIDGET_KEY), [
-    "[skills] 1 model-invocable · 1 user-only",
-    "● model  automatic",
-    "○ user   manual",
-    `/${COMMAND_NAME} list|hide`,
+test("renders the screenshot-matching themed model-invocable line", () => {
+  const theme = { fg: (color: "mdHeading" | "dim", text: string) => `<${color}>${text}</${color}>` };
+  assert.deepEqual(renderWidgetLines([
+    skill("manual", true),
+    skill("ctx7-docs", false),
+  ], theme), [
+    "<mdHeading>[Model-invocable skills]</mdHeading> <dim>ctx7-docs</dim>",
   ]);
-  assert.equal(h.notices.at(-1)?.message, "1 model-invocable skill; 1 user-only skill.");
-
-  await command.handler("hide", h.ctx);
-  assert.equal(h.widgets.get(WIDGET_KEY), undefined);
+  assert.deepEqual(renderWidgetLines([], theme), [
+    "<mdHeading>[Model-invocable skills]</mdHeading> <dim>none</dim>",
+  ]);
 });
 
-test("list command presents every skill with its invocation class", async () => {
-  const h = harness([skill("automatic", false), skill("manual", true)]);
+test("command renders immediately and before_agent_start refreshes authoritative skills", async () => {
+  const h = harness([skill("initial", false), skill("manual", true)]);
   const command = h.commands.get(COMMAND_NAME);
   assert.ok(command);
 
-  await command.handler("list", h.ctx);
-  assert.deepEqual(h.selections, [{
-    title: "Skill invocation visibility",
-    options: [
-      "[model] automatic — automatic description",
-      "[user]  manual — manual description",
-    ],
-  }]);
-});
+  await command.handler("", h.ctx);
+  assert.deepEqual(h.widgets.get(WIDGET_KEY), [
+    "<mdHeading>[Model-invocable skills]</mdHeading> <dim>initial</dim>",
+  ]);
 
-test("first agent turn refreshes visible skills from Pi's loaded prompt options", () => {
-  const h = harness([]);
   const handler = h.handlers.get("before_agent_start");
   assert.ok(handler);
-
   handler({
     type: "before_agent_start",
     prompt: "hello",
     systemPrompt: "system",
     systemPromptOptions: {
       cwd: "/repo",
-      skills: [skill("automatic", false), skill("manual", true)],
+      skills: [skill("fresh", false), skill("initial", true)],
     },
   }, h.ctx);
 
-  assert.equal(h.widgets.get(WIDGET_KEY)?.[0], "[skills] 1 model-invocable · 1 user-only");
+  assert.deepEqual(h.widgets.get(WIDGET_KEY), [
+    "<mdHeading>[Model-invocable skills]</mdHeading> <dim>fresh</dim>",
+  ]);
+});
+
+test("non-TUI modes do not emit a widget", async () => {
+  const h = harness([skill("automatic", false)], "rpc");
+  const command = h.commands.get(COMMAND_NAME);
+  assert.ok(command);
+
+  await command.handler("", h.ctx);
+  assert.equal(h.widgets.has(WIDGET_KEY), false);
 });

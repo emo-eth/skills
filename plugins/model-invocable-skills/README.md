@@ -1,9 +1,14 @@
 # model-invocable-skills
 
-A native Pi extension that makes skill invocation visibility obvious.
+A native Pi extension that shows which loaded skills the model can invoke automatically.
 
-- `● model` means Pi includes the skill in the model's available-skills prompt.
-- `○ user` means the skill has `disable-model-invocation: true` and only runs through explicit `/skill:<name>` invocation.
+It adds one themed widget above the editor:
+
+```text
+[Model-invocable skills] ctx7-docs
+```
+
+Pi's built-in `[Skills]` section continues to show every loaded skill. Skills omitted from the model-invocable widget have `disable-model-invocation: true` and require explicit `/skill:<name>` invocation.
 
 ## Use
 
@@ -13,15 +18,7 @@ Load the extension from this checkout:
 pi --extension ./plugins/model-invocable-skills/src/pi.ts
 ```
 
-Then run:
-
-```text
-/model-invocable-skills          # show the bounded widget
-/model-invocable-skills list     # inspect every loaded skill
-/model-invocable-skills hide     # remove the widget
-```
-
-The widget refreshes from Pi's loaded `systemPromptOptions.skills` before each agent run. It shows at most eight names per class and reports the remaining count instead of taking over the terminal.
+Run `/model-invocable-skills` to render or refresh the widget immediately. It also refreshes from Pi's authoritative loaded `systemPromptOptions.skills` before each agent run.
 
 ## Verify
 

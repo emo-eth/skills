@@ -71,10 +71,10 @@ and live Pi proof [verified-live].
 
 The repository now also contains `plugins/model-invocable-skills/`, a native
 Pi extension that classifies Pi's authoritative loaded skill objects as
-model-invocable or user-only. `/model-invocable-skills show|list|hide` controls
-a bounded widget and complete selector; the widget refreshes before agent runs.
+model-invocable or user-only. `/model-invocable-skills` renders the source
+video's one-line themed model-invocable widget; it refreshes before agent runs.
 The pinned Pi 0.84.1 host loaded and executed the command through RPC and
-rendered the expected model/user widget in an interactive TUI smoke. Evidence
+rendered the expected one-line widget in an interactive TUI smoke. Evidence
 is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
 
 ## Standing constraints
@@ -107,7 +107,7 @@ is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
-| Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 5 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus interactive TUI smoke | verified-live |
+| Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 4 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus screenshot-matching interactive TUI smoke | verified-live |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
 | X/web live search + Grok inference | `skills/grok-search/SKILL.md` | `skills/grok-search/scripts/grok-search.py` | live `x`/`fetch`/`web`/`ask`/`prompt`/`models` calls against api.x.ai with grok CLI OAuth, `--brief` source-list mode, validation error checks; own-OAuth `login` verified to callback bind | verified-live |
