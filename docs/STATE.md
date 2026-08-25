@@ -81,6 +81,14 @@ The pinned Pi 0.84.1 host loaded and executed the command through RPC and
 rendered the expected one-line widget in an interactive TUI smoke. Evidence
 is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
 
+The repository now also contains `plugins/no-code-comments/`, a native Pi and
+OMP `tool_call` input-rewrite extension. It strips prose comments before
+`write`, replacement and patch `edit`, hashline, and `ast_edit` payloads run;
+preserves semantic directives; and fails closed on likely comment syntax in
+unsupported code extensions. Focused TypeScript, Node, package, and native OMP
+ExtensionRunner checks pass. The exact enforcement boundary is in
+`docs/log/2026-08-24-no-code-comments.md` [verified-focused].
+
 ## Standing constraints
 
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
@@ -112,6 +120,7 @@ is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
 | Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 4 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus screenshot-matching interactive TUI smoke | verified-live |
+| Comment-free code writes | `docs/log/2026-08-24-no-code-comments.md` | `plugins/no-code-comments/` | `npm run check`, 6 Node tests, package dry run, and native OMP ExtensionRunner input-rewrite smoke | verified-focused |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata, and a judgment gate that skips harmless oddities without requiring a known fix | documented |
 | X/web live search + Grok inference | `skills/grok-search/SKILL.md` | `skills/grok-search/scripts/grok-search.py` | live `x`/`fetch`/`web`/`ask`/`prompt`/`models` calls against api.x.ai with grok CLI OAuth, `--brief` source-list mode, validation error checks; own-OAuth `login` verified to callback bind | verified-live |

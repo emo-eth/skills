@@ -1,0 +1,33 @@
+{
+  "name": "@emo-eth/no-code-comments-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": ["pi-package", "omp-package", "code-comments"],
+  "pi": {
+    "extensions": ["./src/pi.ts"]
+  },
+  "omp": {
+    "extensions": ["./src/omp.ts"]
+  },
+  "exports": {
+    ".": "./src/host.ts",
+    "./pi": "./src/pi.ts",
+    "./omp": "./src/omp.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "npm run test:node && npm run test:omp-runner",
+    "test:node": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:omp-runner": "bun test ./tests/native-omp-runner.bun.ts"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@oh-my-pi/pi-coding-agent": "17.3.4",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

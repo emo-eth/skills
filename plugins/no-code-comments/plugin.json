@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "no-code-comments",
+  "version": "0.1.0",
+  "description": "Deterministically strips prose comments from code-writing tool inputs while preserving semantic directives.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": ["code comments", "enforcement", "pi", "omp"]
+}
