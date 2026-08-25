@@ -1,12 +1,12 @@
 ---
 name: papercut
-description: Log small agent workflow frictions to a user-global PAPERCUTS.md file with the bundled shell helper.
+description: Log actionable agent workflow friction to a user-global PAPERCUTS.md file with the bundled shell helper.
 license: MIT
 ---
 
 # Papercut Logging
 
-Use this skill whenever you notice a small friction while working in a repository: a misleading command, flaky setup step, unclear documentation, cache surprise, missing helper, path mismatch, template drift, or another annoyance that was not worth stopping for but should be visible later.
+Use this skill only when a small workflow friction points to a concrete change in a repository, owned tool, documentation, or agent process. A papercut is not merely surprising: it must be likely to affect another agent or future session, and someone must be able to act on it.
 
 The helper writes to one user-global append-only file, not the repository. The default is `~/PAPERCUTS.md`; set `PAPERCUTS_PATH` or pass `--path` to choose another file.
 
@@ -50,12 +50,17 @@ papercut -m codex "what you were doing -> what got in the way"
 
 ## Rules
 
-- Log it in the moment; do not wait for a perfect postmortem.
-- Keep it to one or two sentences.
-- Include the work context and the friction.
+- Before logging, name the concrete change that could prevent the friction. If there is no plausible change, do not log it.
+- Log only problems in code, configuration, documentation, tools, or agent processes that we own or can change.
+- Do not log a third-party command's unusual output or exit code unless our documentation, wrapper, or automation depends on that behavior and needs a specific change.
+- Do not log a typo, expected behavior, harmless quirk, or one-off transient failure without evidence of a maintained-system problem.
+- After these checks pass, log it in the moment; do not wait for a perfect postmortem.
+- Keep it to one or two sentences. Include the work context, the friction, and the proposed action.
 - Use `--file <path>` when one file caused the friction.
 - Do not put secrets, tokens, private URLs, or copied logs with credentials in the message.
-- This is for sandpaper, not big bugs. Real bugs still need the normal tracker/review path.
+- This is for small, actionable improvements, not big bugs. Real bugs still need the normal tracker or review path.
+
+For example, do not log "`vendor --help` returned an unusual exit code." Log it only when the repository has an incorrect assumption to fix, such as "The setup check treats `vendor --help` exit 1 as unavailable -> change the check to use `vendor --version`."
 
 Each entry records the repository identity, worktree, branch (or detached commit), current folder, agent, related files, and note. Paths are local metadata; do not log secrets in paths or messages.
 
