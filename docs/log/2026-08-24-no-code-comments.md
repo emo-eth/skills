@@ -27,8 +27,9 @@ Unsupported extensions containing likely comment syntax are blocked with a model
 - `npm run check`: passed with TypeScript 5.9.3.
 - Node suite: 6 tests passed, covering C-family literals/directives, hash directives, write/replace rewrites, hashline patch rewrites, unsupported-language fail-closed behavior, and both host-shaped adapters.
 - Native OMP ExtensionRunner: loaded the OMP adapter, registered `/no-code-comments`, rewrote a real `write` proposal from `const a = 1; // remove` to `const a = 1;`, and injected the system rule.
+- Installed default OMP profile: `omp plugin list` reported the plugin enabled; a fresh auto-discovery RPC process advertised `/no-code-comments` as an extension command and executed it without invoking a model, emitting the exact policy notice.
 - `npm pack --dry-run --json`: passed with both native adapters, manifest, host implementation, scanner, and tests present.
 
 ## GAP
 
-No live already-running OMP process can acquire a newly installed plugin without a full restart. Installation-on-disk and post-restart live behavior are separate receipts.
+The already-running user OMP process still needs a full restart to load the installed plugin. A separate fresh OMP process has verified the on-disk install and command autoload.
