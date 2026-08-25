@@ -13,6 +13,7 @@ export type RefreshDependencies = {
 export type RestartDependencies = {
   delay: () => Promise<void>;
   stop: () => Promise<void>;
+  update: () => Promise<void>;
   start: () => Promise<void>;
   waitUntilReady: () => Promise<void>;
 };
@@ -25,10 +26,7 @@ type HerdrStatus = {
   };
 };
 
-export function updatePlan(
-  includeExtensions: boolean,
-  herdrBinary = "herdr",
-): PlannedCommand[] {
+export function updatePlan(includeExtensions: boolean): PlannedCommand[] {
   const commands: PlannedCommand[] = [
     { label: "OMP", executable: "omp", args: ["update"] },
   ];
@@ -46,13 +44,16 @@ export function updatePlan(
     executable: "pi",
     args: includeExtensions ? ["update", "--all"] : ["update", "--self"],
   });
-  commands.push({
-    label: "Herdr",
-    executable: herdrBinary,
-    args: ["update"],
-  });
 
   return commands;
+}
+
+export function environmentOutsideHerdr(
+  environment: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const result = { ...environment };
+  delete result.HERDR_ENV;
+  return result;
 }
 
 export function assertRestartableServerStatus(raw: string): void {
@@ -73,11 +74,10 @@ export function assertRestartableServerStatus(raw: string): void {
 
 export async function performRefresh(
   includeExtensions: boolean,
-  herdrBinary: string,
   dependencies: RefreshDependencies,
 ): Promise<void> {
   await dependencies.preflight();
-  for (const command of updatePlan(includeExtensions, herdrBinary)) {
+  for (const command of updatePlan(includeExtensions)) {
     await dependencies.run(command);
   }
   await dependencies.scheduleRestart();
@@ -86,6 +86,20 @@ export async function performRefresh(
 export async function restartHerdr(dependencies: RestartDependencies): Promise<void> {
   await dependencies.delay();
   await dependencies.stop();
+
+  let updateFailed = false;
+  let updateError: unknown;
+  try {
+    await dependencies.update();
+  } catch (error: unknown) {
+    updateFailed = true;
+    updateError = error;
+  }
+
   await dependencies.start();
   await dependencies.waitUntilReady();
+
+  if (updateFailed) {
+    throw updateError;
+  }
 }

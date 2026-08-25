@@ -93,15 +93,19 @@ command autoload also pass. The exact enforcement boundary is in
 The repository now also contains `plugins/hard-update-restart/`, a Herdr plugin
 with two actions that appear in the installed command palette: update Herdr,
 OMP, and Pi, or also update installed OMP plugins and Pi extensions. The
-focused popup requires confirmation, runs each updater in sequence, and does
-not restart after a failed preflight or update. After success, a detached
-helper stops the persistent Herdr server, starts a replacement server, and
-waits for it to become ready so restored supported agents launch the updated
-runtimes. The current Herdr client closes during the hard restart; the user
-runs `herdr` again to reattach. Herdr plugin updates are not included because
-Herdr 0.8.2 has no plugin-update command. TypeScript checking, 7 focused tests,
-manifest linking, action discovery, an interactive cancellation smoke, and an
-isolated named-server hard restart all pass [verified-live].
+focused popup requires confirmation and updates OMP and Pi in sequence. A
+failed preflight or in-session update does not restart Herdr. After those
+updates succeed, a detached helper stops the persistent Herdr server, removes
+the nested-session marker, runs `herdr update` outside the stopped session as
+Herdr requires, starts the replacement server, and waits for it to become
+ready. If the detached Herdr update fails, the helper still restarts the
+existing server before it reports failure. Restored supported agents then
+launch the available updated runtimes. The current Herdr client closes during
+the hard restart; the user runs `herdr` again to reattach. Herdr plugin updates
+are not included because Herdr 0.8.2 has no plugin-update command. TypeScript
+checking, 10 focused tests, manifest linking, action discovery, an interactive
+cancellation smoke, an isolated named-server hard restart, and a detached
+outside-session update smoke all pass [verified-live].
 
 ## Standing constraints
 
@@ -130,7 +134,7 @@ isolated named-server hard restart all pass [verified-live].
 | Repo philosophy (the sieve) | `docs/vibe.md`, `docs/log/2026-08-13-sieve-vibe.md`, `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md` | not implemented; proposals P1-P5 in the log, P1/P4 reshaped by D31/D24 | Plannotator rounds 1-3 applied (36 + 8 + 1 items, D20-D35); rounds closed at user direction; approval pending, edits direct | proposed |
 | Direct local token reporting | `tools/agent-skill-usage.ts`, `tools/agent-skill-usage-core.ts` | `fixtures/all-source-skill-usage/`, `tools/agent-skill-usage.test.ts` | focused direct-parser tests and live local Claude, Codex, Pi, and OMP smoke reports; Memex is not used for accounting | verified-focused |
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
-| Hard update restart | none yet | `plugins/hard-update-restart/` | `npm run check`, 7 Node tests, `herdr plugin link`, command-palette action discovery, interactive confirmation/cancellation smoke, and isolated Herdr 0.8.2 server replacement | verified-live |
+| Hard update restart | none yet | `plugins/hard-update-restart/` | `npm run check`, 10 Node tests, `herdr plugin link`, command-palette action discovery, interactive confirmation/cancellation smoke, isolated Herdr 0.8.2 server replacement, and detached outside-session update smoke | verified-live |
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |

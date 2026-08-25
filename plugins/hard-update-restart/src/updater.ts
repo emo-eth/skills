@@ -80,7 +80,7 @@ try {
     process.exit(0);
   }
 
-  await performRefresh(includeExtensions, herdrBinary, {
+  await performRefresh(includeExtensions, {
     preflight: async () => {
       const status = spawnSync(herdrBinary, ["status", "server", "--json"], {
         encoding: "utf8",
@@ -95,7 +95,9 @@ try {
     scheduleRestart: scheduleRestartHelper,
   });
 
-  console.log("\nUpdates complete. Herdr will close and restart now.");
+  console.log(
+    "\nOMP and Pi updates complete. Herdr will close, update outside the session, and restart now.",
+  );
 } catch (error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`\nUpdate stopped: ${message}`);

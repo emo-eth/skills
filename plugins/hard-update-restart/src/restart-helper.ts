@@ -2,7 +2,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { restartHerdr } from "./core.ts";
+import { environmentOutsideHerdr, restartHerdr } from "./core.ts";
 
 const herdrBinary = process.env.HERDR_BIN_PATH || "herdr";
 const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
@@ -39,6 +39,25 @@ try {
       if (stopped.status !== 0) {
         const detail = stopped.stderr.trim() || stopped.stdout.trim() || "unknown stop failure";
         throw new Error(detail);
+      }
+    },
+    update: async () => {
+      appendLog("updating Herdr outside the stopped session");
+      const updated = spawnSync(herdrBinary, ["update"], {
+        encoding: "utf8",
+        env: environmentOutsideHerdr(process.env),
+        timeout: 300_000,
+      });
+      if (updated.stdout.trim()) {
+        appendLog(`Herdr update output:\n${updated.stdout.trim()}`);
+      }
+      if (updated.stderr.trim()) {
+        appendLog(`Herdr update diagnostics:\n${updated.stderr.trim()}`);
+      }
+      if (updated.status !== 0) {
+        throw new Error(
+          updated.stderr.trim() || updated.stdout.trim() || "unknown Herdr update failure",
+        );
       }
     },
     start: async () => {
