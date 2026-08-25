@@ -5,11 +5,16 @@ import { fileURLToPath } from "node:url";
 import {
   assertRestartableServerStatus,
   performRefresh,
+  resolveHerdrBinary,
+  unsettledAgentsFromList,
+  waitForAgentDrain,
+  type AgentDrainPhase,
   type PlannedCommand,
+  type UnsettledAgent,
 } from "./core.ts";
 
 const includeExtensions = process.argv.includes("--extensions");
-const herdrBinary = process.env.HERDR_BIN_PATH || "herdr";
+const herdrBinary = resolveHerdrBinary();
 
 async function confirmRestart(): Promise<boolean> {
   console.log("Update Herdr, OMP, and Pi, then hard-restart the Herdr server.");
@@ -20,6 +25,7 @@ async function confirmRestart(): Promise<boolean> {
   );
   console.log("");
   console.log("The restart stops every pane. Supported agent sessions will resume with the new runtimes.");
+  console.log("Working, blocked, and unknown agents must become idle or done before updates and restart.");
   console.log("The current Herdr client will close. Run `herdr` again to reattach.");
   console.log("");
 
@@ -29,6 +35,44 @@ async function confirmRestart(): Promise<boolean> {
     return answer.length === 0;
   } finally {
     input.close();
+  }
+}
+
+function readUnsettledAgents(): Promise<UnsettledAgent[]> {
+  const listed = spawnSync(herdrBinary, ["agent", "list"], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (listed.status !== 0) {
+    throw new Error(listed.stderr.trim() || "failed to read Herdr agent states");
+  }
+  return Promise.resolve(unsettledAgentsFromList(listed.stdout));
+}
+
+function pauseForAgentCheck(): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, 1_000);
+  return promise;
+}
+
+async function waitForAgents(phase: AgentDrainPhase): Promise<void> {
+  let announced = false;
+  await waitForAgentDrain({
+    read: readUnsettledAgents,
+    delay: pauseForAgentCheck,
+    onChange: (agents) => {
+      announced = true;
+      const boundary = phase === "before_updates" ? "updates" : "restart";
+      console.log(`\nWaiting for active agents before ${boundary}. Ctrl+C cancels.`);
+      for (const agent of agents) {
+        const identity = agent.name || agent.paneId;
+        const location = agent.cwd ? ` at ${agent.cwd}` : "";
+        console.log(`- ${identity}: ${agent.agent} is ${agent.status}${location}`);
+      }
+    },
+  });
+  if (announced) {
+    console.log("All active agents are now idle or done.");
   }
 }
 
@@ -91,6 +135,7 @@ try {
       }
       assertRestartableServerStatus(status.stdout);
     },
+    waitForAgents,
     run: runUpdateCommand,
     scheduleRestart: scheduleRestartHelper,
   });

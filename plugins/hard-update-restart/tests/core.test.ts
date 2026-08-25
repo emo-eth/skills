@@ -11,7 +11,10 @@ import {
   environmentOutsideHerdr,
   performRefresh,
   restartHerdr,
+  resolveHerdrBinary,
+  unsettledAgentsFromList,
   updatePlan,
+  waitForAgentDrain,
   type PlannedCommand,
 } from "../src/core.ts";
 
@@ -66,6 +69,9 @@ test("a failed update prevents later updates and the hard restart", async () => 
       preflight: async () => {
         ran.push("preflight");
       },
+      waitForAgents: async (phase) => {
+        ran.push(phase);
+      },
       run: async (command: PlannedCommand) => {
         ran.push(command.label);
         if (command.label === "Pi") {
@@ -79,7 +85,7 @@ test("a failed update prevents later updates and the hard restart", async () => 
     /Pi failed/,
   );
 
-  assert.deepEqual(ran, ["preflight", "OMP", "Pi"]);
+  assert.deepEqual(ran, ["preflight", "before_updates", "OMP", "Pi"]);
   assert.equal(restartScheduled, false);
 });
 
@@ -91,6 +97,9 @@ test("a failed preflight does not mutate runtimes", async () => {
     performRefresh(false, {
       preflight: async () => {
         throw new Error("no persistent server");
+      },
+      waitForAgents: async () => {
+        throw new Error("agent wait must not run");
       },
       run: async () => {
         updateRan = true;
@@ -113,6 +122,9 @@ test("a successful refresh schedules restart only after every update", async () 
     preflight: async () => {
       events.push("preflight");
     },
+    waitForAgents: async (phase) => {
+      events.push(phase);
+    },
     run: async (command: PlannedCommand) => {
       events.push(command.label);
     },
@@ -123,11 +135,57 @@ test("a successful refresh schedules restart only after every update", async () 
 
   assert.deepEqual(events, [
     "preflight",
+    "before_updates",
     "OMP",
     "OMP plugins",
     "Pi and extensions",
+    "before_restart",
     "restart",
   ]);
+});
+
+test("only idle and done agents are settled", () => {
+  const unsettled = unsettledAgentsFromList(
+    JSON.stringify({
+      result: {
+        agents: [
+          { pane_id: "p1", agent: "omp", agent_status: "idle" },
+          { pane_id: "p2", agent: "pi", agent_status: "done" },
+          { pane_id: "p3", name: "builder", agent: "omp", agent_status: "working", cwd: "/repo" },
+          { pane_id: "p4", agent: "codex", agent_status: "blocked" },
+          { pane_id: "p5", agent: "pi", agent_status: "unknown" },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(unsettled, [
+    { paneId: "p3", name: "builder", agent: "omp", status: "working", cwd: "/repo" },
+    { paneId: "p4", agent: "codex", status: "blocked" },
+    { paneId: "p5", agent: "pi", status: "unknown" },
+  ]);
+});
+
+test("agent drain requires two clear checks and reports unchanged work once", async () => {
+  const working = [{ paneId: "p1", agent: "omp", status: "working" }];
+  const snapshots = [working, working, [], []];
+  const changes: typeof working[] = [];
+  let reads = 0;
+  let delays = 0;
+
+  await waitForAgentDrain({
+    read: async () => snapshots[reads++] ?? [],
+    delay: async () => {
+      delays += 1;
+    },
+    onChange: (agents) => {
+      changes.push(agents);
+    },
+  });
+
+  assert.equal(reads, 4);
+  assert.equal(delays, 3);
+  assert.deepEqual(changes, [working]);
 });
 
 test("server preflight requires a running detached daemon", () => {
@@ -188,6 +246,11 @@ test("hard restart stops the old server before starting and checking the new one
   });
 
   assert.deepEqual(events, ["delay", "stop", "update", "start", "ready"]);
+});
+
+test("a stale injected Herdr path falls back to the PATH command", () => {
+  assert.equal(resolveHerdrBinary("/definitely/missing/herdr"), "herdr");
+  assert.equal(resolveHerdrBinary(process.execPath), process.execPath);
 });
 
 test("a failed Herdr update still restarts the server before reporting failure", async () => {
@@ -259,10 +322,16 @@ test("the detached helper updates Herdr after stop without the nested marker", {
     child.once("exit", resolve);
     assert.equal(await promise, 0);
 
-    const calls = await readFile(join(root, "calls.log"), "utf8");
-    assert.match(
-      calls,
-      /^server stop HERDR_ENV=1\nupdate HERDR_ENV=unset\nserver HERDR_ENV=1\nstatus server --json HERDR_ENV=1\n$/,
+    const calls = (await readFile(join(root, "calls.log"), "utf8")).trim().split("\n");
+    assert.deepEqual(calls.slice(0, 2), [
+      "server stop HERDR_ENV=1",
+      "update HERDR_ENV=unset",
+    ]);
+    assert.ok(calls.includes("server HERDR_ENV=1"));
+    assert.ok(calls.includes("status server --json HERDR_ENV=1"));
+    assert.equal(
+      calls.some((call) => call.startsWith("update ") && call !== "update HERDR_ENV=unset"),
+      false,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

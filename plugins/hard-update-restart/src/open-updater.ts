@@ -2,10 +2,12 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
+import { resolveHerdrBinary } from "./core.ts";
+
 const PLUGIN_ID = "hard-update-restart";
 const includeExtensions = process.argv.includes("--extensions");
 const entrypoint = includeExtensions ? "runtimes-and-extensions" : "runtimes";
-const herdrBinary = process.env.HERDR_BIN_PATH || "herdr";
+const herdrBinary = resolveHerdrBinary();
 
 function delay(milliseconds: number): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();

@@ -2,9 +2,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { environmentOutsideHerdr, restartHerdr } from "./core.ts";
+import {
+  environmentOutsideHerdr,
+  resolveHerdrBinary,
+  restartHerdr,
+} from "./core.ts";
 
-const herdrBinary = process.env.HERDR_BIN_PATH || "herdr";
+const herdrBinary = resolveHerdrBinary();
 const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
 
 function appendLog(message: string): void {
