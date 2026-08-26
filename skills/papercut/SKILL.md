@@ -1,12 +1,12 @@
 ---
 name: papercut
-description: Log agent workflow friction that is worth revisiting to a user-global PAPERCUTS.md file with the bundled shell helper.
+description: Log small agent workflow friction that affected the work to a user-global PAPERCUTS.md file with the bundled shell helper.
 license: MIT
 ---
 
 # Papercut Logging
 
-Use this skill when a small workflow friction had a real effect on the work or is likely to matter again. The purpose is to leave useful signal for later improvement, not to record every surprising detail. Use judgment: if a future review would only ask "so what?", skip it.
+Use this skill when a small workflow friction affects how the work goes: it costs time, causes confusion, forces a retry or workaround, or makes the result less reliable. Log it while the context is fresh. Do not turn this into an eligibility review.
 
 The helper writes to one user-global append-only file, not the repository. The default is `~/PAPERCUTS.md`; set `PAPERCUTS_PATH` or pass `--path` to choose another file.
 
@@ -50,17 +50,17 @@ papercut -m codex "what you were doing -> what got in the way"
 
 ## Rules
 
-- Log friction that slowed the work, caused avoidable confusion, or seems likely to recur.
-- A known fix is not required. Include enough context for a later reviewer to understand why the friction mattered.
-- Third-party behavior can qualify when it materially affects the workflow. Unusual output or an unexpected exit code by itself does not.
-- Do not log expected behavior, harmless quirks, typos, or transient failures that did not affect the task.
+- Log workflow or system friction when it affects the work, even if it is small, happens once, comes from a third party, or has no known fix.
+- The effect on the work is enough. Do not require recurrence, ownership, severity, a proposed action, or proof that the note will matter later.
+- Skip irrelevant oddities that had no effect on the work and self-corrected mistakes that the system did not contribute to.
+- When unsure whether an effect was important enough, log it; importance is not a separate threshold.
 - Log it in the moment; do not wait for a perfect postmortem.
 - Keep it to one or two sentences. Include the work context, the friction, and its effect.
 - Use `--file <path>` when one file caused the friction.
 - Do not put secrets, tokens, private URLs, or copied logs with credentials in the message.
 - This is for small workflow problems, not big bugs. Real bugs still need the normal tracker or review path.
 
-For example, do not log "`vendor --help` returned an unusual exit code" when nothing depended on it. If that behavior blocked setup or repeatedly sent agents down the wrong path, log the effect and context; you do not need to know the fix.
+For example, do not log "`vendor --help` returned an unusual exit code" when the work was unaffected. Do log it when that behavior misled you, forced a workaround, delayed the task, or made the result uncertain, even if the tool is third-party and you do not know the fix.
 
 Each entry records the repository identity, worktree, branch (or detached commit), current folder, agent, related files, and note. Paths are local metadata; do not log secrets in paths or messages.
 
