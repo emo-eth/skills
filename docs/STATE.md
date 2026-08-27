@@ -52,6 +52,11 @@ register `poteto-agent` and `comment-sicko` with both OMP and Pi. Role maps live
 at `~/.config/pstack/omp-agents.json` and
 `~/.config/pstack/pi-agents.json`. The PR watcher, orchestrator, licenses, and
 all prior OMP adaptations remain distributed with their owning skills.
+All 46 published pstack skill directories are installed for both OMP and Pi.
+A fresh OMP process executed both registered agents. Pi's RPC registry loaded
+the four gateway skills and its subagent doctor discovered both user agents;
+Pi model execution remains unexercised because this device has no configured
+Pi model credential.
 
 
 The repository now also publishes `skills/rubber-stamp-travel-field-note/`, a model-invoked image-editing procedure that preserves each source travel/place photo on the left of an independent 4:3 poster and generates a small simplified multicolor rubber-stamp memory on warm paper at right. The bundled prompt reference carries the composition, material, typography, exclusion, and validation contract. Codex 0.142.5 built-in `$imagegen` was verified through the active ChatGPT subscription by generating and inspecting a 1448×1086 Venice poster with exact requested text [verified-live].
@@ -160,7 +165,7 @@ restart, and a detached outside-session update smoke all pass [verified-live].
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata, and an effect-based trigger with no recurrence, ownership, severity, or known-fix gate | documented |
 | X/web live search + Grok inference | `skills/grok-search/SKILL.md` | `skills/grok-search/scripts/grok-search.py` | live `x`/`fetch`/`web`/`ask`/`prompt`/`models` calls against api.x.ai with grok CLI OAuth, `--brief` source-list mode, validation error checks; own-OAuth `login` verified to callback bind | verified-live |
-| OMP/Pi pstack | upstream `cursor/plugins@799151d91b6e12ee7dbd09f708eec108d7de9b3b` | 45 upstream skill mappings plus `skills/pstack-runtime/`; agent bundles under `poteto-mode` and `no-comments` | 45/45 structural coverage; 57 Bun tests; strict TypeScript check; installed-agent and fresh-host smokes pending | verified-focused |
+| OMP/Pi pstack | upstream `cursor/plugins@799151d91b6e12ee7dbd09f708eec108d7de9b3b` | 45 upstream skill mappings plus `skills/pstack-runtime/`; agent bundles under `poteto-mode` and `no-comments` | 45/45 structural coverage; 57 Bun tests; strict TypeScript check; 46/46 installed in OMP and Pi; fresh OMP poteto-agent and comment-sicko task smokes; fresh Pi RPC skill discovery and two-user-agent doctor discovery; Pi model execution unavailable without a configured credential | verified-live |
 | Rubber-stamp travel field notes | `skills/rubber-stamp-travel-field-note/SKILL.md` | `skills/rubber-stamp-travel-field-note/references/poster-spec.md` | Codex 0.142.5 built-in `$imagegen` subscription smoke; 1448×1086 exact 4:3 output and visual acceptance audit | verified-live |
 | Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
