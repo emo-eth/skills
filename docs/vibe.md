@@ -21,7 +21,7 @@ Definitions here describe, they do not prescribe. Where a term names a pattern, 
 - **Taste signal**: a recorded gut call, such as one pairwise comparison or one keep/drop decision, kept so that future agents might inherit the user's judgment. Whether the current mechanisms actually achieve that inheritance is unproven.
 - **Turn summary**: a fixed short block at the end of an agent turn: what happened, what the agent needs, open questions, what is next.
 - **Yearn**: an existing user-facing capture for anything the user yearns for; not specific to skills. A skill-scoped variant has been proposed but is a separate, not-yet-named thing; it is not yearn.
-- **Papercut**: existing repo term: a small workflow friction worth revisiting because it affected the work or is likely to matter again, logged when it happens.
+- **Papercut**: existing repo term: a small tool or workflow friction logged in the moment it happens.
 - **Top-k**: picking the best k items out of a pile without ordering the whole pile. A sibling idea under exploration: tiered heaps, dropping items into a few coarse tiers instead of a precise order.
 
 ## Vibe Promise
@@ -116,13 +116,13 @@ One caveat applies to every example below: the tools and skills named are seeds 
 - Violation: a skill-iteration cycle that spans days because each pass costs an hour of setup; a review tool that loses state when interrupted.
 - Check: one full skill iteration - run it, log friction, prune, report the diff - fits in one timed sitting, and the elapsed time is known.
 
-### V7. Useful friction and wishes are logged in the moment
+### V7. Friction and wishes are logged in the moment
 
-- Promise: when a tool or skill friction has a real effect on the work or is likely to matter again, the note is captured at the moment of use with enough context to show why it mattered. It is never reconstructed later from memory.
-- Example: papercut captures tool friction worth revisiting. Yearn exists for anything the user yearns for; it is human-facing and general. A papercut-style logger scoped to skill invocations has been proposed as a separate tool with its own name (undecided; it is not yearn). Such notes feed skill-iteration, the existing improvement loop.
-- Does not mean: logging every annoyance or requiring the agent to know the fix. A third-party command's unusual output or exit code by itself is not useful signal; it can be when it blocked work, caused avoidable confusion, or is likely to matter again.
-- Violation: a harmless third-party quirk is logged with no effect on the work; or meaningful recurring setup friction is lost because the agent did not know how to fix it.
-- Check: each papercut was written during the task and gives a later reviewer enough context to understand why it may be worth acting on.
+- Promise: when a tool or skill annoys or falls short, the note is captured at the moment of use, with its context, never reconstructed later from memory.
+- Example: papercut does this for tool friction today. Yearn exists for anything the user yearns for; it is human-facing and general. A papercut-style logger scoped to skill invocations has been proposed as a separate tool with its own name (undecided; it is not yearn). Such notes feed skill-iteration, the existing improvement loop.
+- Does not mean: stopping the work to write the perfect note. One or two raw sentences is the whole format. Logging and fixing are separate passes; not every note gets fixed.
+- Violation: "I should remember to fix that skill" said in chat and lost; friction reconstructed in a retro that half-remembers what hurt.
+- Check: the logs show entries written mid-task, timestamped, one or two sentences each.
 
 ## Companion clause: every turn ends with a summary
 
