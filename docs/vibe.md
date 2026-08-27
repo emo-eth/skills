@@ -21,7 +21,6 @@ Definitions here describe, they do not prescribe. Where a term names a pattern, 
 - **Taste signal**: a recorded gut call, such as one pairwise comparison or one keep/drop decision, kept so that future agents might inherit the user's judgment. Whether the current mechanisms actually achieve that inheritance is unproven.
 - **Turn summary**: a fixed short block at the end of an agent turn: what happened, what the agent needs, open questions, what is next.
 - **Yearn**: an existing user-facing capture for anything the user yearns for; not specific to skills. A skill-scoped variant has been proposed but is a separate, not-yet-named thing; it is not yearn.
-- **Papercut**: existing repo term: a small tool or workflow friction logged in the moment it happens.
 - **Top-k**: picking the best k items out of a pile without ordering the whole pile. A sibling idea under exploration: tiered heaps, dropping items into a few coarse tiers instead of a precise order.
 
 ## Vibe Promise
@@ -66,7 +65,7 @@ Agent-communication preferences from the same dump (deliberately filed under the
 
 ## Vibe Clauses
 
-One caveat applies to every example below: the tools and skills named are seeds and context - works in progress, some of which should be scrapped. Nothing is load-bearing merely because it already exists; each is downstream of this vibe and subject to rewrite as the vibe iterates.
+One caveat applies to every example below: the tools and skills named are seeds and context - works in progress, some of which should be scrapped. They point toward the desired feel; they do not define it. Nothing is load-bearing merely because it already exists; each is downstream of this vibe and subject to rewrite as the vibe iterates.
 
 ### V1. Progress you can feel
 
@@ -119,7 +118,7 @@ One caveat applies to every example below: the tools and skills named are seeds 
 ### V7. Friction and wishes are logged in the moment
 
 - Promise: when a tool or skill annoys or falls short, the note is captured at the moment of use, with its context, never reconstructed later from memory.
-- Example: papercut does this for tool friction today. Yearn exists for anything the user yearns for; it is human-facing and general. A papercut-style logger scoped to skill invocations has been proposed as a separate tool with its own name (undecided; it is not yearn). Such notes feed skill-iteration, the existing improvement loop.
+- Example: papercut is one current example for tool friction, and Yearn is one current example for things the user wants. A separate skill-scoped capture has also been proposed. These examples point toward preserving context close to use; they do not define the required mechanism or boundary. Such notes feed skill-iteration, the existing improvement loop.
 - Does not mean: stopping the work to write the perfect note. One or two raw sentences is the whole format. Logging and fixing are separate passes; not every note gets fixed.
 - Violation: "I should remember to fix that skill" said in chat and lost; friction reconstructed in a retro that half-remembers what hurt.
 - Check: the logs show entries written mid-task, timestamped, one or two sentences each.
