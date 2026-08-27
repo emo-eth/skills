@@ -6,11 +6,13 @@ disable-model-invocation: true
 
 # Architect
 
-Design before implementing. Sketch types, function signatures, class shapes, and module boundaries with `not implemented` bodies and pseudocode. Synthesize independent OMP agent attempts, then fill in code against the chosen sketch. If implementation proves the sketch wrong, throw it out and redesign.
+Read `pstack-runtime` before the first host-specific operation.
+
+Design before implementing. Sketch types, function signatures, class shapes, and module boundaries with `not implemented` bodies and pseudocode. Synthesize independent agent attempts, then fill in code against the chosen sketch. If implementation proves the sketch wrong, throw it out and redesign.
 
 ## Start
 
-Open an OMP `todo` list with one entry per phase before starting. The list shows phase position and keeps phases from silently disappearing.
+Open the current host's `todo` list with one entry per phase before starting. The list shows phase position and keeps phases from silently disappearing.
 
 1. Ground
 2. Sketch

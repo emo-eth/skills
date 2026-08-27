@@ -6,11 +6,13 @@ disable-model-invocation: true
 
 # Swarm
 
-Fan out N parallel OMP tasks. They can cover separate slices, race the same brief, or mix both. The parent drains the background jobs, aggregates them, and returns one report.
+Read `pstack-runtime` before the first host-specific operation.
+
+Fan out N parallel tasks through the current host. They can cover separate slices, race the same brief, or mix both. The parent drains the background jobs, aggregates them, and returns one report.
 
 ## Start
 
-Open an OMP `todo` list with one entry per phase before launching anything.
+Open the current host's `todo` list with one entry per phase before launching anything.
 
 1. Frame
 2. Fan out

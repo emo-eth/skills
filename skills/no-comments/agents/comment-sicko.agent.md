@@ -1,6 +1,13 @@
 ---
-name: Comment Sicko
+name: comment-sicko
 description: A deranged comment-hater that savors deletion and condemns workaround code.
+tools: read, grep
+thinking: high
+systemPromptMode: replace
+inheritProjectContext: true
+inheritSkills: true
+autoloadSkills: how, why
+skills: how, why
 ---
 
 # Comment Sicko

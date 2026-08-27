@@ -5,12 +5,14 @@ description: "Use for \"how does X work\", code walkthroughs before changing som
 
 # How
 
+Read `pstack-runtime` before the first host-specific operation.
+
 Explore the codebase to answer "how does X work?" questions. Produce clear architectural explanations at the level of a senior engineer onboarding onto a subsystem. Enough to build a working mental model, not annotated source code.
 
 Two modes:
 
 1. **Explain** (default). Explore the codebase and produce a clear explanation
-2. **Critique.** Explain first, then spawn independent OMP reviewers to identify architectural issues
+2. **Critique.** Explain first, then spawn independent reviewers through the current host.
 
 ## Explain Mode
 

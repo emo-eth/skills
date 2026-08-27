@@ -1,12 +1,14 @@
 ---
 name: interrogate
-description: "Use for \"interrogate\", \"adversarial review\", \"multi-model review\", \"challenge this\", \"stress test this code\", \"find blind spots\", or \"tear this apart\". Independent OMP reviewers challenge changes from separate contexts."
+description: "Use for \"interrogate\", \"adversarial review\", \"multi-model review\", \"challenge this\", \"stress test this code\", \"find blind spots\", or \"tear this apart\". Independent OMP or Pi reviewers challenge changes from separate contexts."
 disable-model-invocation: true
 ---
 
 # Interrogate
 
-Spawn independent OMP reviewers to challenge code changes with one prompt and rubric. OMP does not promise model-family diversity. The signal comes from independent contexts and specialized reviewer contracts. Agreement is strong evidence; a lone finding still needs inspection.
+Read `pstack-runtime` before the first host-specific operation.
+
+Spawn independent reviewers to challenge code changes with one prompt and rubric. Agent names do not prove model-family diversity. The signal comes from independent contexts and specialized reviewer contracts. Agreement is strong evidence; a lone finding still needs inspection.
 
 The deliverable is a synthesized verdict. Apply no changes during this skill.
 

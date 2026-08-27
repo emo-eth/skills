@@ -1,45 +1,48 @@
 ---
 name: setup-pstack
-description: Configure which OMP agent types pstack uses for each role. Use for /setup-pstack, "configure pstack agents", or changing pstack delegation choices.
+description: Configure pstack agents and runtime support for OMP or Pi. Use for /setup-pstack, configuring pstack roles, registering poteto-agent or Comment Sicko, or repairing a pstack installation.
 ---
 
-# Setup pstack for OMP
+# Setup pstack
 
-Write `~/.config/pstack/omp-agents.json`. Pstack reads this optional file when it creates OMP `task` batches. The value `default` means to omit the `agent` field and use OMP's default task agent.
+Read `pstack-runtime`. Configure only the current host branch.
 
-## Steps
+## 1. Check host support
 
-### 1. Detect available agent types
+OMP requires its native `task`, `hub`, `todo`, `ask`, and browser surfaces.
 
-Read the current OMP `task` tool roster in the system context. That roster is authoritative for this session. Do not invent a type. `default` is always valid because it omits the optional `agent` field.
+Pi requires these installed extensions:
 
-### 2. Load current state
+- `pi-subagents`
+- `@juicesharp/rpiv-todo`
+- `@juicesharp/rpiv-ask-user-question`
+- `pi-background-tasks`
+- `pi-agent-browser-native`
 
-If `~/.config/pstack/omp-agents.json` exists, read it and treat its values as the current choices. Otherwise use the defaults in step 5.
+Inspect the current host. Name every missing prerequisite. Install a missing Pi extension with `pi install npm:<package>` when setup is running interactively, then tell the user that Pi must restart before that extension is available.
 
-### 3. Map roles
+## 2. Register bundled agents
 
-Show each role and its current agent type. Mark any type that is not in the current roster. Use OMP roles for their stated purpose:
+Run both installed scripts for the current host:
 
-- `scout` for read-only repository research.
-- `reviewer` for code or decision review.
-- `security-reviewer` for security review.
-- `designer` for user-interface design.
-- `librarian` for external library and API research.
-- `sonic` for large mechanical work.
-- `default` for general implementation or synthesis.
+- OMP uses `bash ~/.agents/skills/poteto-mode/scripts/install-agents.sh` and `bash ~/.agents/skills/no-comments/scripts/install-agents.sh`.
+- Pi uses `bash ~/.pi/agent/skills/poteto-mode/scripts/install-agents.sh` and `bash ~/.pi/agent/skills/no-comments/scripts/install-agents.sh`.
 
-Use the `ask` tool only when the user must choose between materially different role mappings. Otherwise keep valid current values and replace invalid values with the safest matching type.
+The scripts install only `poteto-agent` and `comment-sicko`. Re-running them converges on the current bundled definitions.
 
-List-valued panel roles set the number of independent agents. Repeated types are valid. OMP does not promise that two agent types use different model families, so call these independent-agent panels, not multi-model panels.
+## 3. Detect agent types
 
-### 4. Validate
+OMP reads the current `task` roster from the system context. Pi calls `subagent` with `action: \"list\"`. The live roster is authoritative. Do not invent a type.
 
-Every value must be `default` or an agent type in the current OMP roster. Remove unsupported types. A bad type breaks every delegation that reads it.
+## 4. Load current roles
 
-### 5. Write the configuration
+OMP uses `~/.config/pstack/omp-agents.json`. Pi uses `~/.config/pstack/pi-agents.json`. Preserve valid current choices. Replace unavailable roles with the safest built-in role that keeps the same read or write boundary.
 
-Overwrite the file so repeated setup converges on one state. Create its parent directory when needed. Use this shape:
+## 5. Write the role map
+
+Create the parent directory. Overwrite the current host's file so repeated setup converges.
+
+OMP defaults:
 
 ```json
 {
@@ -65,12 +68,38 @@ Overwrite the file so repeated setup converges on one state. Create its parent d
 }
 ```
 
-If a listed specialist is unavailable, use a valid type with the closest contract. Preserve panel length unless the user changes it.
+Pi defaults:
 
-### 6. Confirm
+```json
+{
+  "feature": "worker",
+  "refactoring": "worker",
+  "bug-fix": "worker",
+  "perf-issue": "worker",
+  "hillclimb": "worker",
+  "judgment-and-prose": "reviewer",
+  "hardest-tasks": "oracle",
+  "how-explorer": "scout",
+  "how-explainer": "researcher",
+  "how-critics": ["reviewer", "reviewer"],
+  "why-investigators": "researcher",
+  "why-synthesizer": "reviewer",
+  "reflect-tooling": "reviewer",
+  "reflect-judgment": "reviewer",
+  "arena-runners": ["worker", "worker", "worker"],
+  "arena-cross-judge": "reviewer",
+  "swarm-workers": "worker",
+  "architect-runners": ["worker", "worker", "worker"],
+  "interrogate-reviewers": ["reviewer", "reviewer", "oracle"]
+}
+```
 
-Report the written path and any fallback substitutions. New task calls use it immediately because each pstack skill reads the file when invoked.
+List-valued roles set panel size. Repeated types are valid independent agents. They do not prove model-family diversity.
 
-### 7. Offer a verification skill
+## 6. Verify setup
 
-Check whether the current project has a real-surface verification harness or an installed `verify-*` skill. If neither exists, offer `/create-verification-skill` once. That skill writes its source under `~/dev/skills/skills/` and installs it through `npx skills`; it does not write into an agent's installed-skill directory.
+Read both registered agent definitions through the host's agent discovery surface. Confirm the role file parses and every configured role exists. Report the host, written path, agent registrations, installed prerequisites, substitutions, and any restart still required.
+
+## 7. Offer a verification skill
+
+Check whether the current project has a real-surface verification harness or an installed `verify-*` skill. If neither exists, offer `/create-verification-skill` once.

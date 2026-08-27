@@ -10,13 +10,17 @@ Spawn Comment Sicko. Act on accepted findings.
 
 Authoring agents defend comments. Defer to Comment Sicko's fresh perspective.
 
+## Runtime
+
+Read `pstack-runtime` before dispatch. After installation, register the bundled agent once with `bash ~/.agents/skills/no-comments/scripts/install-agents.sh` on OMP or `bash ~/.pi/agent/skills/no-comments/scripts/install-agents.sh` on Pi. Re-run it after skill updates.
+
 ## Scope
 
 Use the caller's files or diff. Otherwise use the current diff against the base branch, default `main`, including the working tree.
 
 ## Steps
 
-1. Spawn one OMP default `task` agent. Its first instruction is to read `skill://no-comments/agents/comment-sicko.md` in full, then apply that prompt to the passed scope. Omit the `agent` field. Do not restate the agent rules.
+1. Spawn one read-only `comment-sicko` agent through the current host's parallel-agent tool. If that registered agent is unavailable, use one default read-only worker whose first instruction is to read `skill://no-comments/agents/comment-sicko.agent.md` on OMP or `~/.pi/agent/skills/no-comments/agents/comment-sicko.agent.md` on Pi, then apply that prompt to the passed scope. Report the fallback. Do not restate the agent rules.
 2. Inspect its report and diff. Reject application-code edits, scope escapes, exception-protected deletions, misstated `MUST KILL` reasons, and flags that treat kept intentional code as guilty. Reshape flags on our-code surprises stay actionable. Do not restore those comments. A keep survives only with proof it is about something we cannot change. Audit missed scoped lint and TypeScript suppressions. Correctness or safety suppressions stay actionable `MUST KILL`s. Restore deletions only with exact exceptions and scoped proof. Before accepting thin `IMPORTANT` or `do not remove` kills or keeps, run `/how` or `/why` on their symbol. If a kill is ambiguous, do not restore. If a keep is refuted or still ambiguous, delete it. Revert and rerun one rejected report with the failure named. Reject a second, report it open, and fail `/no-comments`.
 3. Fix trivial accepted flags directly by deleting a dead path, dropping a parameter, or using the real API. If any fix needs a shape, run `/architect` once for the accepted set and surrounding code. Stop at the sketch. Architect shapes. Step 4 implements.
 4. Implement the smallest root-cause fix in scope. Remove every named workaround. If the root cause is out of scope, land the smallest in-scope fix and report the rest open. The **principle-fix-root-causes** and **principle-redesign-from-first-principles** skills guide intent only: fix real causes, redesign as if requirements always existed, never bolt on symptom guards. Neither authorizes widening the fence nor fixing instances outside it.

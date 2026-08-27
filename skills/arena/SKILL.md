@@ -6,11 +6,13 @@ disable-model-invocation: true
 
 # Arena
 
+Read `pstack-runtime` before the first host-specific operation.
+
 Fan out N parallel attempts at the same task. Read every candidate end to end. Pick the strongest as the base. Graft the best ideas from the others into it. Verify the synthesized result.
 
 ## Start
 
-Open an OMP `todo` list with one entry per phase before launching anything. The list keeps phases from silently disappearing.
+Open the current host's `todo` list with one entry per phase before launching anything. The list keeps phases from silently disappearing.
 
 1. Frame
 2. Fan out

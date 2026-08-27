@@ -6,14 +6,16 @@ disable-model-invocation: true
 
 # Poteto mode
 
+Read `pstack-runtime` before the first host-specific operation. It maps every OMP-oriented term in this skill and its playbooks to the current OMP or Pi tool.
+
 ## Non-negotiables
 
-**Start every multi-step task with an OMP `todo` list whose first item is to read the Principles section below in full.** Name each principle that changed a decision and state the choice it changed. A name with no changed choice means the leaf skill was not applied.
+**Start every multi-step task with the current host's `todo` list whose first item is to read the Principles section below in full.** Name each principle that changed a decision and state the choice it changed. A name with no changed choice means the leaf skill was not applied.
 
 Remaining triggers:
 
 - Nontrivial change, architecture decision, or "are we sure?" → the **how** skill.
-- Before using OMP `ask` on an approach or behavior fork, decide whether an experiment can answer it. Observable behavior, timing, layout, output, performance, and eval separation are facts to measure through the Prototype playbook. Keep a read-only Investigation read-only. Use `ask` only for a genuine product or preference call that evidence cannot settle.
+- Before using the current host's user-question tool on an approach or behavior fork, decide whether an experiment can answer it. Observable behavior, timing, layout, output, performance, and eval separation are facts to measure through the Prototype playbook. Keep a read-only Investigation read-only. Ask only for a genuine product or preference call that evidence cannot settle.
 - Any code → name the data shape first per **principle-model-the-domain**. Shared contracts require a one-page field list, concrete example, lifecycle diagram when needed, and explicit user sign-off before implementation.
 - Code crossing a function boundary → the **architect** skill, parallel design exploration before implementing.
 - Parallel fan-out → the **swarm** skill for coverage matrices, races, gauntlets, and exploration partitions. Use **arena** for design or code bakeoffs with base selection and grafting.
@@ -22,7 +24,7 @@ Remaining triggers:
 - Any prose surface → the **unslop** skill. Agent-facing prose follows the **Authoring a skill** playbook.
 - Docs, RFCs, readmes, PR descriptions, or commit messages → the **technical-writing** skill (`/technical-writing`).
 - Before review → the **no-comments** skill (`/no-comments`).
-- Shipping UI, IDE, or CLI → verify the actual surface with OMP tools. Use `browser` for web UI, the actual program and PTY for CLI/TUI, and `debug` for runtime state. Reproduce bug fixes on the same surface.
+- Shipping UI, IDE, or CLI → verify the actual surface with the current host's tools. Use `browser` on OMP or `agent_browser` on Pi for web UI, the actual program and PTY for CLI/TUI, and an available debugger for runtime state. Reproduce bug fixes on the same surface.
 - Any PR-status request → the **Babysit** playbook (`playbooks/babysit.md`). This includes "babysit this", "get it green", "address the bugbot comments", "check on PR X", and "anything outstanding on X". Opening a PR alone does not trigger it.
 - Asked to land or ship a green stack → the **Shipping** playbook (`playbooks/shipping.md`). Green is not safe. Nothing is armed before an independent per-PR verdict.
 - Bugbot or an agentic security review commented → triage each finding as fix, dismiss, or ask using `references/bugbot-triage.md`. Do not churn code on unsupported claims.
@@ -31,7 +33,7 @@ Remaining triggers:
 
 ## Principles
 
-Read `skill://<principle-name>` in full for every principle you apply.
+Read every applied principle skill in full. Use `skill://<principle-name>` on OMP or `~/.pi/agent/skills/<principle-name>/SKILL.md` on Pi.
 
 **Core**
 
@@ -81,9 +83,11 @@ Read `skill://<principle-name>` in full for every principle you apply.
 
 ## Subagents
 
-For a general playbook worker, start the brief with: read `skill://poteto-mode` in full, then read each applicable principle leaf URI named in the Principles section. This is the OMP-native poteto wrapper.
+Register the bundled `poteto-agent` once after installation with `bash ~/.agents/skills/poteto-mode/scripts/install-agents.sh` on OMP or `bash ~/.pi/agent/skills/poteto-mode/scripts/install-agents.sh` on Pi. Re-run it after skill updates.
 
-Launch independent tasks in one OMP `task` batch. Read optional role types from `~/.config/pstack/omp-agents.json`; `default` means omit `agent`. Use `scout` for read-only repository research and the current specialized agent roster where its contract fits. Give writers disjoint file ownership. Pass large context through repo files or `local://` artifacts. OMP tasks are asynchronous; drain them with `hub` while continuing parent work.
+For a general playbook worker, prefer the registered `poteto-agent`. If it is unavailable, use the runtime's default writer and start the brief with an instruction to read poteto-mode in full, then each applicable principle skill. Report the fallback.
+
+Launch independent tasks in one runtime-native wave per `pstack-runtime`. Read optional role types from the current host's pstack role file. Use `scout` for read-only repository research and the current specialized agent roster where its contract fits. Give writers disjoint file ownership. Pass large context through host-native artifacts or named files. Drain asynchronous results while continuing parent work.
 
 Routed workflow skills such as **how**, **why**, **interrogate**, **reflect**, **swarm**, and **arena** own their task types. Follow their rules instead of replacing them with the general worker.
 

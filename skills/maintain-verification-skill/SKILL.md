@@ -1,10 +1,12 @@
 ---
 name: maintain-verification-skill
-description: "Keep an installed OMP verification skill and feature map aligned with source and live behavior. Use for /maintain-verification-skill or \"audit the verify skill\"."
+description: "Keep an installed OMP or Pi verification skill and feature map aligned with source and live behavior. Use for /maintain-verification-skill or \"audit the verify skill\"."
 disable-model-invocation: true
 ---
 
 # Maintain a verification skill
+
+Read `pstack-runtime` before the first host-specific operation.
 
 A feature map rots when the app changes. This workflow maintains a `verify-*` skill whose source lives under `~/dev/skills/skills/`. Cover every feature file from source and exercise every feature on its real user surface.
 

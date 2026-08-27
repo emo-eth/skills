@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Reflect
 
+Read `pstack-runtime` before the first host-specific operation.
+
 Mine the current conversation for durable learnings, then route them into skill edits.
 
 ## When to invoke

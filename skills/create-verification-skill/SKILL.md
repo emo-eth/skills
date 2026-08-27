@@ -1,12 +1,14 @@
 ---
 name: create-verification-skill
-description: "Generate a globally installed OMP verification skill that drives an app through its real user surface. Use for /create-verification-skill, \"make a control skill for this repo\", or when a project has no repeatable UI, CLI, or service proof."
+description: "Generate a globally installed OMP or Pi verification skill that drives an app through its real user surface. Use for /create-verification-skill, \"make a control skill for this repo\", or when a project has no repeatable UI, CLI, or service proof."
 disable-model-invocation: true
 ---
 
 # Create a verification skill
 
-Every serious project needs a repeatable way to drive the real app and prove behavior. This workflow writes `~/dev/skills/skills/verify-<app>/` as the source of truth, then installs it for OMP. It never writes directly into an installed-skill directory.
+Read `pstack-runtime` before the first host-specific operation.
+
+Every serious project needs a repeatable way to drive the real app and prove behavior. This workflow writes `~/dev/skills/skills/verify-<app>/` as the source of truth, then installs it for the current host. It never writes directly into an installed-skill directory.
 
 ## 1. Interview the repo, not the user
 

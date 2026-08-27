@@ -1,10 +1,12 @@
 ---
 name: automate-me
-description: "Use for \"automate me\", \"create/update/refresh my -mode skill\", or turning the user's working style into a durable OMP skill. Mines OMP transcripts, writes through pstack's authoring playbook, and installs from the personal skills source."
+description: "Use for \"automate me\", \"create/update/refresh my -mode skill\", or turning the user's working style into a durable OMP or Pi skill. Mines local transcripts, writes through pstack's authoring playbook, and installs from the personal skills source."
 disable-model-invocation: true
 ---
 
 # Automate me
+
+Read `pstack-runtime` before the first host-specific operation.
 
 A guided flow for turning the user's working conventions into a skill agents will follow. The output is one `-mode` skill tailored to them (e.g. `jay-mode`, `priya-mode`).
 
