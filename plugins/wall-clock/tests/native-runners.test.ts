@@ -130,3 +130,98 @@ test("Pi native ExtensionRunner injects context and blocks a late tool call", { 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("Pi native parent and child sessions stay transparent when wall-clock was never invoked", { timeout: 30_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "wall-clock-pi-inactive-child-"));
+  const runtimes = [];
+  for (const name of ["parent", "child"]) {
+    const loader = new DefaultResourceLoader({
+      cwd: pluginRoot,
+      agentDir: join(root, `${name}-agent`),
+      additionalExtensionPaths: [join(pluginRoot, "src", "pi.ts")],
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+    });
+    await loader.reload();
+    const sessionManager = PiSessionManager.create(pluginRoot, join(root, `${name}-sessions`));
+    const { session } = await createPiSession({
+      cwd: pluginRoot,
+      agentDir: join(root, `${name}-agent`),
+      resourceLoader: loader,
+      sessionManager,
+    });
+    const runner = session.extensionRunner;
+    const coreBindings = {
+      sendMessage: () => undefined,
+      sendUserMessage: () => undefined,
+      appendEntry: (customType: string, data?: unknown) => { sessionManager.appendCustomEntry(customType, data); },
+      setSessionName: async () => undefined,
+      getSessionName: () => sessionManager.getSessionName(),
+      setLabel: () => undefined,
+      getActiveTools: () => session.getActiveToolNames(),
+      getAllTools: () => session.getAllTools(),
+      setActiveTools: (names: string[]) => session.setActiveToolsByName(names),
+      refreshTools: async () => undefined,
+      getCommands: () => [],
+      setModel: async () => false,
+      getThinkingLevel: () => session.thinkingLevel,
+      setThinkingLevel: () => undefined,
+    };
+    const agentBindings = {
+      getModel: () => session.model,
+      getScopedModels: () => [],
+      isIdle: () => true,
+      isProjectTrusted: () => true,
+      getSignal: () => undefined,
+      abort: () => undefined,
+      hasPendingMessages: () => false,
+      shutdown: () => undefined,
+      getContextUsage: () => undefined,
+      compact: () => undefined,
+      getSystemPrompt: () => session.systemPrompt,
+    };
+    runner.bindCore(
+      coreBindings as unknown as Parameters<typeof runner.bindCore>[0],
+      agentBindings as unknown as Parameters<typeof runner.bindCore>[1],
+    );
+    await runner.emit({ type: "session_start" });
+    runtimes.push({ session, runner });
+  }
+
+  try {
+    const parent = runtimes[0]!;
+    const parentGate = await parent.runner.emitToolCall({
+      type: "tool_call",
+      toolCallId: "ordinary-subagent",
+      toolName: "subagent",
+      input: { agent: "scout", task: "Read README.md" },
+    } as unknown as Parameters<typeof parent.runner.emitToolCall>[0]);
+    assert.equal(parentGate, undefined);
+
+    const child = runtimes[1]!;
+    const childGate = await child.runner.emitToolCall({
+      type: "tool_call",
+      toolCallId: "child-read",
+      toolName: "read",
+      input: { path: "README.md" },
+    } as unknown as Parameters<typeof child.runner.emitToolCall>[0]);
+    assert.equal(childGate, undefined);
+
+    const readTool = child.session.getToolDefinition("read");
+    assert.ok(readTool);
+    const result = await readTool.execute(
+      "child-read",
+      { path: "README.md" },
+      new AbortController().signal,
+      undefined,
+      child.runner.createContext(),
+    );
+    assert.match(JSON.stringify(result), /Wall Clock/i);
+  } finally {
+    for (const runtime of runtimes) runtime.session.dispose();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
