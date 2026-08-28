@@ -53,16 +53,18 @@ The repository now also publishes `skills/omp-plugin-iteration/SKILL.md`, a mode
 The repository now also publishes `skills/grok-search/`, a model-invoked skill with a stdlib-only python3 CLI (`scripts/grok-search.py`) for X (Twitter) search, web search, post fetching, plain Grok inference (`prompt`), and model listing (`models`) through xAI's Responses API (server-side `x_search`/`web_search` tools). Credentials, in order: `XAI_API_KEY`; the grok CLI's subscription OAuth token in `~/.grok/auth.json` (never spends its single-use refresh token -- on expiry or 401/403-unauthenticated it runs a minimal `grok -p` call so the CLI rotates its own tokens); or the script's own loopback-PKCE OAuth (`login`/`logout`, tokens in `~/.config/grok-search/auth.json`, self-managed rotation) for machines without the grok CLI. `--brief` returns a raw source list for a smarter model to synthesize; citations are deduplicated by post ID and capped in markdown (`--max-citations`, full list in `--json`); query args accept `-` for stdin. Live-verified on this device: `x`, `fetch`, `web`, `ask`, `prompt` (with `--system` and stdin), `models`, and `auth`; `login` verified to discovery, PKCE URL, and callback bind only -- the browser grant needs a human [verified-live].
 The repository now publishes an OMP/Pi port of Lauren Tan's pstack at upstream
 `cursor/plugins` commit `799151d91b6e12ee7dbd09f708eec108d7de9b3b`.
-It maps all 45 upstream skills, publishes `tdd` and `teach` as `pstack-tdd`
-and `pstack-teach`, and adds `pstack-runtime` as the host-operation bridge.
-The updated multi-phase planner includes its executable shape checker.
-`make-bot-ui` supports an existing Grok Bot webhook while failing closed on
-Cursor-only routine creation and secret-request cards. Bundled install scripts
-register `poteto-agent` and `comment-sicko` with both OMP and Pi. Role maps live
-at `~/.config/pstack/omp-agents.json` and
-`~/.config/pstack/pi-agents.json`. The PR watcher, orchestrator, licenses, and
-all prior OMP adaptations remain distributed with their owning skills.
-All 46 published pstack skill directories are installed for both OMP and Pi.
+All 45 upstream skills and the `pstack-runtime` host adapter live only under
+`skills/pstack/<skill-name>/`; none occupy the root of `skills/`. Source
+discovery and installation use `npx skills --full-depth`, which keeps the
+repository grouped while installing each child by its unchanged skill name.
+`tdd` and `teach` remain `pstack-tdd` and `pstack-teach`. The updated
+multi-phase planner includes its executable shape checker. `make-bot-ui`
+supports an existing Grok Bot webhook while failing closed on Cursor-only
+routine creation and secret-request cards. Bundled install scripts register
+`poteto-agent` and `comment-sicko` with both OMP and Pi. Role maps live at
+`~/.config/pstack/omp-agents.json` and `~/.config/pstack/pi-agents.json`.
+The PR watcher, orchestrator, licenses, and all prior host adaptations remain
+distributed with their owning skills.
 A fresh OMP process executed both registered agents. Pi's RPC registry loaded
 the four gateway skills and its subagent doctor discovered both user agents;
 Pi model execution remains unexercised because this device has no configured
@@ -175,7 +177,7 @@ restart, and a detached outside-session update smoke all pass [verified-live].
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata, and an effect-based trigger with no recurrence, ownership, severity, or known-fix gate | documented |
 | X/web live search + Grok inference | `skills/grok-search/SKILL.md` | `skills/grok-search/scripts/grok-search.py` | live `x`/`fetch`/`web`/`ask`/`prompt`/`models` calls against api.x.ai with grok CLI OAuth, `--brief` source-list mode, validation error checks; own-OAuth `login` verified to callback bind | verified-live |
-| OMP/Pi pstack | upstream `cursor/plugins@799151d91b6e12ee7dbd09f708eec108d7de9b3b` | 45 upstream skill mappings plus `skills/pstack-runtime/`; agent bundles under `poteto-mode` and `no-comments` | 45/45 structural coverage; 57 Bun tests; strict TypeScript check; 46/46 installed in OMP and Pi; fresh OMP poteto-agent and comment-sicko task smokes; fresh Pi RPC skill discovery and two-user-agent doctor discovery; Pi model execution unavailable without a configured credential | verified-live |
+| OMP/Pi pstack | upstream `cursor/plugins@799151d91b6e12ee7dbd09f708eec108d7de9b3b` | `skills/pstack/` contains 45 upstream skill mappings plus `pstack-runtime`; no pstack skill is rooted directly under `skills/` | 46/46 nested source paths; `npx skills --full-depth` discovery; 57 Bun tests; strict TypeScript check; 46/46 installed in OMP and Pi; fresh OMP poteto-agent and comment-sicko task smokes; fresh Pi RPC skill discovery and two-user-agent doctor discovery; Pi model execution unavailable without a configured credential | verified-live |
 | Rubber-stamp travel field notes | `skills/rubber-stamp-travel-field-note/SKILL.md` | `skills/rubber-stamp-travel-field-note/references/poster-spec.md` | Codex 0.142.5 built-in `$imagegen` subscription smoke; 1448×1086 exact 4:3 output and visual acceptance audit | verified-live |
 | Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |

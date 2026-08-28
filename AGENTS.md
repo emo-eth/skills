@@ -39,14 +39,23 @@ npx skills update
 
 ## Repo layout
 
-`npx skills` discovers one skill per subdirectory of `skills/`, each with a `SKILL.md` containing YAML frontmatter (`name`, `description`). Supporting files (`references/`, `scripts/`, `agents/`) live alongside the `SKILL.md` and are copied with it.
+`npx skills` discovers top-level skills directly. Grouped collections live under
+`skills/<collection>/<skill-name>/` and require `--full-depth` during discovery
+or installation. A collection directory has no `SKILL.md`; each child skill
+still has YAML frontmatter (`name`, `description`). Supporting files
+(`references/`, `scripts/`, `agents/`) live alongside that child's `SKILL.md`
+and are copied with it.
 
 ```
 skills/
   <skill-name>/
-    SKILL.md          # required: frontmatter + instructions
-    references/       # optional: docs the skill loads on demand
-    scripts/          # optional: executables the skill invokes
+    SKILL.md
+  <collection>/
+    <skill-name>/
+      SKILL.md
+      references/
+      scripts/
+      agents/
 ```
 
 ## Conventions
@@ -81,14 +90,14 @@ Grep the whole skill dir for the old name and classify each hit before editing.
 
 `npx skills` distributes the *skill directory* but does **not** place subagents into a tool's agents dir (`~/.claude/agents`, etc.). A skill whose instructions dispatch subagents will silently install broken elsewhere unless the agents travel with it. The pattern (see `skills/contract-audit/` as the reference example):
 
-- Bundle the agents the skill needs — including their transitive closure — in `skills/<name>/agents/*.agent.md`.
-- Ship a `scripts/install-agents.sh` that links/copies them into the host tool's agents dir, and document the one-time step in `SKILL.md`.
+- Bundle the agents the skill needs — including their transitive closure — in `skills/<name>/agents/*.agent.md` or `skills/<collection>/<name>/agents/*.agent.md`.
+- Ship a `scripts/install-agents.sh` beside that skill's `SKILL.md`, link/copy the agents into the host tool's agents dir, and document the one-time step in `SKILL.md`.
 - **Agents are shared infra, not owned by one skill.** Never mass-delete by glob (a broad `rm nm-*-reviewer` will take out agents other skills need). Operate on an explicit list.
 
 ## Installing on a new machine
 
 ```sh
-npx skills add emo-eth/skills
+npx skills add emo-eth/skills --full-depth
 ```
 
 Later, to sync the latest:
@@ -100,11 +109,11 @@ npx skills update
 Note: `update` only refreshes skills already installed on that machine. Skills **newly added** to this repo are not pulled by `update` — install them explicitly (or re-run `add` interactively and pick them):
 
 ```sh
-npx skills add emo-eth/skills --skill <name> [<name>...] -g -y \
+npx skills add emo-eth/skills --full-depth --skill <name> [<name>...] -g -y \
   --agent amp antigravity antigravity-cli cline codex cursor deepagents \
           gemini-cli github-copilot kimi-code-cli opencode warp zed claude-code pi
 ```
 
 (The `--agent` list mirrors `lastSelectedAgents` in `~/.agents/.skill-lock.json`; adjust per machine.)
 
-To install **every** skill in the repo, use the undocumented wildcard — quoted, so zsh doesn't glob it: `--skill '*'`. (The interactive picker has no select-all; that's an upstream gap, [vercel-labs/skills#439](https://github.com/vercel-labs/skills/issues/439).)
+To install **every** skill in the repo, use `--full-depth` plus the undocumented wildcard — quoted, so zsh doesn't glob it: `--skill '*'`. (The interactive picker has no select-all; that's an upstream gap, [vercel-labs/skills#439](https://github.com/vercel-labs/skills/issues/439).)

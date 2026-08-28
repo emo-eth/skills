@@ -7,7 +7,7 @@
 3. Explore with independent read-only agents through `pstack-runtime`. Prefer the registered `poteto-agent`; otherwise use a read-only worker whose first instruction is to read poteto-mode. Each returns file pointers, conventions, focused checks, and entry points. Keep raw dumps out of the parent context.
 4. Copy the skeleton below into the plan file and fill every placeholder. Unless the operator names a path, write under the repository's `docs/`. Keep every heading and sub-block in order. One section per PR. Name the execution playbook in **How to read this**. Pick `autopilot-full.md`, `autopilot-stack.md`, or `orchestrate.md` from the work shape.
 5. Write under `/technical-writing`, then `/unslop`. The body is one Diátaxis how-to. Appendices hold explanation and reference. Two rules apply verbatim. "i dont want any abstract metaphors" and "write like hemingway". Each heading states a task or finding. No long dashes. No mid-sentence colons.
-6. Run `node skills/poteto-mode/scripts/check-plan.mjs <plan.md>` and fix every line it prints. It enforces the skeleton, the verification rule, ten live lanes, perf evidence, and punctuation.
+6. Run `node skills/pstack/poteto-mode/scripts/check-plan.mjs <plan.md>` and fix every line it prints. It enforces the skeleton, the verification rule, ten live lanes, perf evidence, and punctuation.
 7. Return the plan path and checker output, then stop. Execution starts only on the operator's explicit go under the named execution playbook.
 
 **Verification.** Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked. Every verification block opens with that sentence. The live block is mandatory. Ten independent live lanes at the PR head drive the actual surface through the current host's control tool per **swarm**. Each lane names a concrete scenario, saved evidence, and a pass predicate. The perf block names the metric, probe, trunk baseline, and numeric failure rule. Interaction changes wait for operator review with screenshots and a video.
@@ -23,7 +23,7 @@
 
 One box is one unit of work. Every box names the evidence that checks it. A nested box is a sub-step of the box above it. Check a box only when its evidence exists, such as a file, log line, screenshot, test run, or SHA. The body is a how-to. The appendices explain and record.
 
-The program runs `skills/poteto-mode/playbooks/<execution playbook>.md`. <Who merges, and which PR ids are the operator's items that stop at merge-ready.>
+The program runs `skills/pstack/poteto-mode/playbooks/<execution playbook>.md`. <Who merges, and which PR ids are the operator's items that stop at merge-ready.>
 
 Tests alone are not sufficient verification. A PR is verified only when its unit, live, and perf boxes are all checked.
 
@@ -52,7 +52,7 @@ Tests alone are not sufficient verification. A PR is verified only when its unit
 - [ ] Open the PR ready, never draft, with `gh pr create --draft=false`, or with Graphite for a stack.
 - [ ] Run the repository's lint and typecheck once before the PR-facing push. Push with hooks on.
 - [ ] Run `/unslop` before each commit and `/no-comments` before review.
-- [ ] Triage every Bugbot and security-reviewer comment per `skills/poteto-mode/references/bugbot-triage.md`.
+- [ ] Triage every Bugbot and security-reviewer comment per `skills/pstack/poteto-mode/references/bugbot-triage.md`.
 - [ ] Rebase onto current trunk before babysit and again before the merge-ready report.
 
 ### Verdict and merge, for every PR
