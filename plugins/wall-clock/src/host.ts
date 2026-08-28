@@ -1103,16 +1103,18 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         ...(typeof event?.sessionFile === "string" ? [sessionArtifactPrefix(event.sessionFile)] : []),
       ];
       const knownBinding = childIds.map((childId) => coordination.childBindings.get(childId)).find((binding) => binding !== undefined);
+      const eventParentSessionId = typeof event?.parentSessionId === "string" ? event.parentSessionId : currentDirectSessionId;
       const linkedEntry = parentToolCallId
         ? findActionLink(
           coordination.actionAssignments,
           parentToolCallId,
-          typeof event?.parentSessionId === "string" ? event.parentSessionId : currentDirectSessionId,
+          eventParentSessionId,
           true,
         )
         : undefined;
       const linked = linkedEntry?.[1];
       if (parentToolCallId && !linked && !knownBinding) {
+        if (!eventParentSessionId || !controller.status(eventParentSessionId).active) return;
         for (const childId of registeredChildIds) coordination.blockedChildSessions.add(childId);
         options.publishChildCoordination?.(registeredChildIds, coordination);
         if (event.status === "aborted" || event.status === "failed" || event.status === "completed") {
@@ -1124,9 +1126,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
         }
         return;
       }
-      const parentSessionId = linked?.sessionId ?? knownBinding?.parentSessionId
-        ?? (typeof event?.parentSessionId === "string" ? event.parentSessionId : undefined)
-        ?? currentDirectSessionId;
+      const parentSessionId = linked?.sessionId ?? knownBinding?.parentSessionId ?? eventParentSessionId;
       const assignmentIds = linked?.assignmentIds;
       const eventIndex = typeof event?.index === "number" && Number.isInteger(event.index) ? event.index : undefined;
 

@@ -383,6 +383,42 @@ test("inactive host sessions do not change delegation or ordinary tool calls", a
   assert.equal(controller.runningActions("main").length, 0);
 });
 
+test("inactive host sessions do not block ordinary task children", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as unknown as RuntimeHost, options);
+  installHostExtension(childHost as unknown as RuntimeHost, options);
+  await parentHost.emit("session_start", {}, context());
+
+  assert.equal(await parentHost.emit(
+    "tool_call",
+    { toolCallId: "inactive-task", toolName: "task", input: { task: "Normal work" } },
+    context(),
+  ), undefined);
+  await events.emit("task:subagent:lifecycle", {
+    id: "ordinary-child",
+    sessionFile: "ordinary-child-session",
+    status: "started",
+    parentToolCallId: "inactive-task",
+  });
+
+  assert.equal(await childHost.emit(
+    "tool_call",
+    { toolCallId: "child-read", toolName: "read", input: {} },
+    context("ordinary-child-session"),
+  ), undefined);
+  assert.equal(coordination.blockedChildSessions.has("ordinary-child-session"), false);
+});
+
 test("do-it-now arms a bounded fast lane and permits bounded delegation", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();

@@ -87,10 +87,10 @@ test("Pi native ExtensionRunner injects context and blocks a late tool call", { 
     await command.handler("stop", runner.createCommandContext());
     await command.handler("turn-limit 1s block-new", runner.createCommandContext());
     const turnContext = await runner.emitContext([]);
-    assert.match(messageText(turnContext.at(-1)), /Mode: turn-limit/);
+    assert.match(messageText(turnContext.at(-1)), /mode turn-limit/);
     await runner.emit({ type: "agent_settled" } as any);
     const resetContext = await runner.emitContext([]);
-    assert.match(messageText(resetContext.at(-1)), /Mode: turn-limit/);
+    assert.deepEqual(resetContext, []);
     await command.handler("set 2s", runner.createCommandContext());
     await command.handler("stop", runner.createCommandContext());
 

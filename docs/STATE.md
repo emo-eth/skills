@@ -28,6 +28,12 @@ Nested assignment limits are specified but not implemented in
 `proposals/wall-clock/nested-assignment-limits.md`; that future data shape is
 now version 5 and still requires separate user sign-off.
 
+An OMP task child spawned when no wall-clock contract was invoked stays
+outside wall-clock coordination. An uncorrelated child lifecycle fails closed
+only when a listener can identify an active parent contract; inactive or
+unidentified ordinary lifecycle events remain transparent. The host-level
+event-bus regression and native OMP `TaskTool` runner cover this boundary.
+
 Known child-test boundary: the native OMP `TaskTool` tests set `async.enabled` to false, while OMP 17.2.15 defaults it to true. The nested-assignment proposal makes a one-level background-child characterization test its first gate. Current synchronous child evidence must not be presented as proof of normal background-task behavior.
 
 Turn-summary v1 is now on `main` at `plugins/turn-summary/`. Native Pi and OMP adapters append one fixed end-of-turn reminder through the `context` seam; `/summary on|off` uses the optional native command seam. The package has no model calls, UI, or MCP surface. Installed local profiles are enabled, and the dated package and live-host evidence is in `docs/log/2026-08-13-turn-summary.md`.
@@ -147,7 +153,7 @@ restart, and a detached outside-session update smoke all pass [verified-live].
 | --- | --- | --- | --- | --- |
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
 | Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
-| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, serial Node suite (88 tests), 6 Bun native-runner tests, Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and the dated completion logs | verified-live |
+| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, serial Node suite (103 tests), 7 Bun native-runner tests, Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and the dated completion logs | verified-live |
 | Turn summaries | `docs/DECISIONS.md` D39, `docs/vibe.md` companion clause | `plugins/turn-summary/` | `docs/log/2026-08-13-turn-summary.md`, package checks, installed-plugin Pi and OMP live evidence | verified-live |
 | Nested assignment limits | `proposals/wall-clock/nested-assignment-limits.md` | not implemented | data-shape sign-off and Gate 0 still required | proposed |
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex session inventory and transcript retrieval, with optional Herdr navigation | `memex index --include-agents` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
