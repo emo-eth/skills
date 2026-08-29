@@ -1,12 +1,12 @@
 {
   "name": "@emo-eth/no-code-comments-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=22.6"
   },
-  "keywords": ["pi-package", "omp-package", "code-comments"],
+  "keywords": ["pi-package", "omp-package", "hermes-plugin", "code-comments"],
   "pi": {
     "extensions": ["./src/pi.ts"]
   },
@@ -20,9 +20,10 @@
   },
   "scripts": {
     "check": "tsc -p tsconfig.json",
-    "test": "npm run test:node && npm run test:omp-runner",
+    "test": "npm run test:node && npm run test:omp-runner && npm run test:hermes",
     "test:node": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:omp-runner": "bun test ./tests/native-omp-runner.bun.ts"
+    "test:omp-runner": "bun test ./tests/native-omp-runner.bun.ts",
+    "test:hermes": "python3 -m unittest discover -s hermes/tests -v"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.84.1",
