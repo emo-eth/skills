@@ -7,11 +7,33 @@ description: Search X (Twitter) and the web live, fetch tweets/threads, and run 
 
 X (Twitter) search, web search, post fetching, and plain Grok inference
 through xAI's Responses API. Search runs server-side on xAI (`x_search` /
-`web_search` tools) and returns a cited answer -- no browser, no scraping,
-small context footprint.
+`web_search` tools) and returns cited results -- no browser or scraping.
 
-The CLI is `scripts/grok-search.py` inside this skill directory (python3,
-stdlib only, executable). Invocation, first match wins:
+## Native tools
+
+When the host exposes them, use the native tools instead of invoking the CLI:
+
+| Tool | Use for |
+| --- | --- |
+| `grok_search` | X, web, or combined search; defaults to raw `sources` for the calling model to synthesize |
+| `grok_fetch` | One X post or thread by URL |
+| `grok_prompt` | Plain Grok inference without search |
+
+The tools return structured JSON with `model`, `answer`, `citations`, and
+`degraded`. They execute the bundled CLI without a shell, share its credentials
+and quota, and forward host cancellation to the request process. `auth`,
+`login`, `logout`, and `models` remain CLI-only administration.
+
+The same directory is an installable Pi and OMP package:
+
+```sh
+pi install ~/.agents/skills/grok-search
+omp plugin install ~/.agents/skills/grok-search
+```
+
+If the native tools are unavailable, use `scripts/grok-search.py` inside this
+skill directory (python3, stdlib only, executable). Invocation, first match
+wins:
 
 1. `~/.agents/skills/grok-search/scripts/grok-search.py` (the standard
    `npx skills` universal install location).
