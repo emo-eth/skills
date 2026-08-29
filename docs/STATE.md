@@ -130,6 +130,19 @@ verified but not enabled in the live default profile. The exact enforcement
 boundary is in `docs/log/2026-08-24-no-code-comments.md`, and the broader port
 triage is in `docs/log/2026-08-28-hermes-extension-porting.md` [verified-live].
 
+The repository now also publishes `skills/advisor-profiles/` and
+`plugins/advisor-profiles/` for named, switchable advisor roles across OMP,
+Pi, and Hermes from one OMP-compatible `WATCHDOG.yml`. OMP remains on its
+native multi-advisor runtime and `/advisor` commands. Pi and Hermes add the
+session-scoped `/advisor-profile` surface and run one host-owned structured
+post-turn review per selected advisor; concern/blocker notes produce at most
+one marked correction follow-up, exact notes deduplicate per session, and
+review failures fail open with visible status. Advisor tools remain OMP-only.
+Focused TypeScript and Python suites, package checks, Hermes Plugin Doctor,
+native OMP status, interactive Pi status, and an isolated real-model Hermes
+pass review all succeed. The contract and evidence are in
+`docs/log/2026-08-29-advisor-profiles.md` [verified-live].
+
 The repository now also contains `plugins/hard-update-restart/`, a Herdr plugin
 with two actions that appear in the installed command palette: update Herdr,
 OMP, and Pi, or also update installed OMP plugins and Pi extensions. The
@@ -187,6 +200,7 @@ restart, and a detached outside-session update smoke all pass [verified-live].
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
 | Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 4 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus screenshot-matching interactive TUI smoke | verified-live |
 | Comment-free code writes | `docs/log/2026-08-24-no-code-comments.md`, `docs/log/2026-08-28-hermes-extension-porting.md` | `plugins/no-code-comments/` including `hermes/` | `npm run check`, 6 Node tests, native OMP runner, 6 Python tests, Hermes Plugin Doctor, isolated direct dispatch, nested `execute_code` write, and package dry run | verified-live |
+| Advisor profiles | `skills/advisor-profiles/SKILL.md`, `docs/log/2026-08-29-advisor-profiles.md` | `plugins/advisor-profiles/` with Pi and Hermes adapters; OMP uses its native runtime | TypeScript check, 41 Node tests, 79 Python tests, package dry run, Hermes Plugin Doctor, native OMP status, interactive Pi status, and isolated real-model Hermes pass review | verified-live |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata, and an effect-based trigger with no recurrence, ownership, severity, or known-fix gate | documented |
 | X/web live search + Grok inference | `skills/grok-search/SKILL.md`, `docs/log/2026-08-28-grok-search-tools.md` | `skills/grok-search/scripts/grok-search.py`, `skills/grok-search/src/` | live CLI calls; 7 focused tool tests; native Pi 0.84.1 and OMP 17.2.15 runner execution; live OMP 18.0.5 tool call; Pi provider-level smoke blocked by missing caller auth | verified-live OMP; verified-focused Pi |

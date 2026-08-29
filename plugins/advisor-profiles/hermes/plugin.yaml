@@ -1,0 +1,14 @@
+name: advisor-profiles
+version: "0.1.0"
+description: Named advisor review profiles from WATCHDOG.yml — one host-owned post-turn review per selected advisor, with concern/blocker user follow-ups.
+author: emo-eth
+kind: standalone
+provides_hooks:
+  - post_llm_call
+  - on_session_start
+capabilities:
+  - llm.provider_override
+  - llm.model_override
+tags:
+  - review
+  - profiles
