@@ -35,4 +35,6 @@ Credentials stay in the existing CLI stores or `XAI_API_KEY`; tool inputs and re
 
 OMP 18.0.5 started a clean non-interactive process with only `src/omp.ts` and `grok_prompt` enabled. The calling model invoked the tool, the tool made a real xAI request through the bundled CLI and existing Grok OAuth, and the process returned `OMP_GROK_TOOL_OK`.
 
+Commit `6ee3449` was pushed to `origin/main`. The default OMP profile linked the package from that pushed checkout, and Pi added the same checkout as a user package. A fresh OMP 18.0.5 process discovered the installed extension without an explicit extension path and returned `OMP_INSTALLED_GROK_OK` through a real `grok_prompt` call. The already-running OMP process still requires a full restart before its tool list changes.
+
 GAP: global Pi 0.84.3 reached provider selection before a tool turn but had no authenticated calling model, so a live end-to-end Pi model invocation could not run. The pinned Pi 0.84.1 native-runner proof covers real extension loading and execution without claiming provider-level behavior.
