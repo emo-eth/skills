@@ -38,3 +38,7 @@ OMP 18.0.5 started a clean non-interactive process with only `src/omp.ts` and `g
 Commit `6ee3449` was pushed to `origin/main`. The default OMP profile linked the package from that pushed checkout, and Pi added the same checkout as a user package. A fresh OMP 18.0.5 process discovered the installed extension without an explicit extension path and returned `OMP_INSTALLED_GROK_OK` through a real `grok_prompt` call. The already-running OMP process still requires a full restart before its tool list changes.
 
 GAP: global Pi 0.84.3 reached provider selection before a tool turn but had no authenticated calling model, so a live end-to-end Pi model invocation could not run. The pinned Pi 0.84.1 native-runner proof covers real extension loading and execution without claiming provider-level behavior.
+
+## OMP code mode
+
+OMP's `eval` runtime exposes registered session tools through `tool.<name>(args)`, so the installed Grok tools require no code-mode-specific adapter. A fresh OMP 18.0.5 process used JavaScript eval to call `await tool.grok_prompt(...)`; the nested tool made the real xAI request and returned `GROK_CODE_MODE_OK`. Tool schemas, approval policy, quota use, cancellation, and errors remain active across the eval bridge.
