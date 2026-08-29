@@ -31,7 +31,7 @@ source_material: Agent Plugins 1.0.0 specification, Agent Skills specification, 
 
 ## One-sentence answer
 
-Agent Plugins standardizes packaging and discovery for reusable Agent Skills and optional Model Context Protocol (MCP) servers. It does not provide runtime hooks for deadlines, tool admission, child creation, or remote cancellation, so wall-clock activates only through a tested native adapter; package discovery alone never activates a limit.
+Agent Plugins standardizes packaging and discovery for reusable Agent Skills and optional Model Context Protocol (MCP) servers. It does not provide runtime hooks for deadlines, tool admission, child creation, or remote cancellation, so wall-clock ships portable instructions without an MCP server and activates only through a tested native adapter.
 
 ## What the Agent Plugins standard provides
 
@@ -56,8 +56,8 @@ This is a packaging and discovery contract. It is not an agent execution contrac
 | --- | --- | --- |
 | Root package identity | Yes | Give wall-clock a portable manifest and keep its paths contained. |
 | Reusable instructions | Yes, through Agent Skills | Put activation rules, phase meanings, elapsed-time context, and reporting contracts in the skill. |
-| Tool access | Yes, through optional MCP configuration | Expose time state, assignments, decisions, completion, and reports when the client supports MCP. MCP is not an enforcement mechanism. |
-| Stable conversation or session identity | No | Require the client or caller to provide a session key; do not activate without a stable key. |
+| Tool access | Yes, through optional MCP configuration | Wall-clock omits MCP because it cannot enforce deadlines and duplicates the native tool catalog on OMP. Native adapters expose the operation tools. |
+| Stable conversation or session identity | No | Native adapters use the host's stable session identity. |
 | Before-tool interception | No | A tested native pre-action boundary is required before wall-clock can activate. |
 | Blocking a tool after expiry | No | Claim enforcement only for a tested native adapter; otherwise reject activation. |
 | Automatic child-session creation | No | Let the host create children; wall-clock records assignments and associates children where the host exposes identifiers. |
@@ -76,13 +76,11 @@ Wall-clock uses the portable package for shared data and instructions, and uses 
 The portable package should:
 
 - define the activation request, which includes a duration or local-time deadline and a required expiry policy;
-- provide status, elapsed-time context, assignments, completion, and structured report shapes;
-- expose optional MCP operations for clients that support MCP;
-- persist state by an explicit session key in client-managed plugin data;
+- explain status, elapsed-time context, assignments, completion, and structured report shapes;
 - remain installed-but-inactive when no tested native enforcement adapter is available;
-- reject activation instead of falling back to a guidance-only wall-clock limit.
+- direct clients to native activation instead of exposing a guidance-only operation surface.
 
-Portable Agent Skill instructions and MCP results can explain the contract, but they cannot start or enforce an active limit. A client that only loads the skill or `mcp.json` must not be treated as a supported wall-clock host.
+Portable Agent Skill instructions explain the contract but cannot start or enforce an active limit. A client that only loads the skill must not be treated as a supported wall-clock host.
 
 ### Native adapters
 
@@ -136,13 +134,12 @@ Wall-clock must not say:
 
 ## Recommended product boundary
 
-The product should ship as one package with three deliberately separate layers:
+The product ships one package with two deliberately separate layers:
 
 1. **Portable instructions**: The Agent Skill explains the required activation inputs, measured context, time contraction, acceptance targets, safe wrap-up, selected expiry policy, and truthful reporting. It does not activate a limit.
-2. **Portable operations**: Optional MCP tools store and return session state, assignments, decisions, completions, and reports. The Agent Plugins standard does not require MCP, and MCP never enforces a deadline.
-3. **Native enforcement**: Pi and OMP adapters connect those operations to host events and enforce only the boundaries supported by each host. They reject activation when the requested policy cannot be enforced.
+2. **Native operations and enforcement**: Pi and OMP adapters expose the operation tools, connect them to host events, and enforce only the boundaries supported by each host. They reject activation when the requested policy cannot be enforced.
 
-The native adapter is the enforcement boundary, not an optional guidance upgrade. A package that lacks a tested native adapter remains discoverable but cannot run an active wall-clock session.
+The package omits `mcp.json`. MCP cannot enforce the host boundary, and OMP otherwise enumerates both MCP and native copies of the wall-clock operations. A package that lacks a tested native adapter remains discoverable but cannot run an active wall-clock session.
 
 ## Verification rules
 
@@ -162,8 +159,8 @@ The minimum evidence set is:
 - hard-expiry blocking for new tools where the host supports it;
 - `block-new` behavior showing that admitted work is not falsely reported as cancelled;
 - `abort-running` behavior showing an observed abort signal for every owned running action;
-- portable package discovery and Agent Skill loading;
-- optional MCP initialization, tool discovery, persistence, and report behavior when MCP is enabled.
+- portable package discovery, Agent Skill loading, and absence of MCP wall-clock tools;
+- one native wall-clock tool catalog in an installed OMP package.
 
 ## Implementation evidence
 
@@ -172,21 +169,20 @@ The v0 package now proves the Pi and OMP boundary with exact local host versions
 - Pi 0.84.1 loads the native adapter, injects measured context, blocks expired shell work, and aborts its actual bash executor under `abort-running`.
 - OMP 17.2.15 provides a native pre-action gate, child lifecycle identifiers on the parent event bus, and a session-wide abort function. It creates each task child with a different event-bus object. The adapter binds the real child session path through a process-wide registry, blocks expired shell work, and aborts its actual bash executor.
 - The OMP task path validates and creates one bounded assignment for each inline batch item, injects each assignment's measured context into its child, and correlates child lifecycle events by batch index. Nested delegation remains blocked. The child must report before its required native `yield`; a missing child report creates a structured fallback report.
-- Agent Plugin discovery loads the bundled skill and optional MCP tools without claiming that those portable components enforce a deadline.
+- Agent Plugin discovery loads the bundled skill without adding MCP tools; the installed OMP package exposes one native wall-clock catalog.
 - Unsupported activation, unknown abort-running tools, missing action identifiers, and malformed newest state all fail closed.
 
 The exact mechanisms, failure modes, and test files are listed in `plugins/wall-clock/README.md`. Codex and Claude native activation and provider-specific remote cancellation remain deferred.
 
 ## Product decisions implied by this boundary
 
-- The main session must provide or select the session key for portable calls.
 - A time budget is always a ceiling, never a work quota; agents do not estimate task duration.
 - Every active wall-clock session requires a tested host-enforced expiry policy.
 - Every activation request carries `block-new` or `abort-running`; the native `/wallclock` command supplies `abort-running` when the user omits the choice, and the host rejects a policy it cannot enforce.
 - Parent and child agents receive measured elapsed-time context at every turn.
 - Compressed work preserves a working vertical slice, with evidence and explicit skipped validation, shortcuts, risks, and unknowns.
 - Pi and OMP are the first native enforcement targets. Codex and Claude remain package targets until open enforcement seams are tested; Claude proprietary systems are excluded.
-- Agent Skills are portable instructions. MCP is optional and is never an enforcement dependency.
+- Agent Skills are portable instructions. Wall-clock intentionally omits MCP and uses native operation tools.
 - Child creation, child context injection, and remote cancellation remain host- or provider-specific.
 - Client-specific marketplace, installation, permission, and authentication policy is not part of the portable contract.
 
@@ -202,8 +198,8 @@ The exact mechanisms, failure modes, and test files are listed in `plugins/wall-
 
 ## Resolved Review Checkpoints
 
-- The package remains discoverable through Agent Plugins while standalone MCP refuses activation.
-- Portable MCP uses an explicit session key. Native Pi and OMP adapters use the stable host session file or identifier.
+- The package remains discoverable through Agent Plugins as a skill-only portable component.
+- Native Pi and OMP adapters use the stable host session file or identifier and expose the sole operation catalog.
 - Pi and OMP expose enough open lifecycle surface to prove both expiry policies for their tested local executors.
 - Pi's tested abort-running tools are `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls`. OMP's are `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task`.
 - Remote provider cancellation remains deferred until a provider-specific mechanism and confirmation contract are selected.

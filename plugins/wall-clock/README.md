@@ -5,7 +5,6 @@ Wall-clock gives Pi and OMP sessions a host-enforced time ceiling. It injects me
 ## Glossary
 
 - **Agent Plugins**: The portable package format for Agent Skills and optional Model Context Protocol servers.
-- **MCP**: Model Context Protocol, used here as an optional portable operation surface.
 - **Pi**: The `@earendil-works/pi-coding-agent` host.
 - **OMP**: The `@oh-my-pi/pi-coding-agent` host.
 - **Native adapter**: Host-specific code that observes model and tool events and enforces wall-clock decisions.
@@ -57,7 +56,7 @@ Activation accepts a positive duration such as `30m` or a future local time such
 - `block-new`: after expiry, reject new work and let work already admitted by the host finish.
 - `abort-running`: after expiry, reject new work and abort every supported wall-clock-owned action. The adapter rejects an action before it starts when it cannot prove that the native executor can be aborted.
 
-- The native `/wallclock` command defaults to `block-new` when the policy is omitted. Use `abort-running` when the host can prove safe cancellation. `abort` is accepted as a short spelling of `abort-running`. Native tools and the portable operation contract still carry the canonical policy explicitly.
+- The native `/wallclock` command defaults to `block-new` when the policy is omitted. Use `abort-running` when the host can prove safe cancellation. `abort` is accepted as a short spelling of `abort-running`. Native tools carry the canonical policy explicitly.
 
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
@@ -81,7 +80,7 @@ The default wrap-up period is 20 percent of the available time, capped at five m
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pi 0.84.1 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls` | Assignments are recorded; Pi has no native task child in this adapter | Activation or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-runners.test.ts` |
 | OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each batch item receives its own inline assignment and hard deadline bounded by the parent; child work is aborted at expiry and nested delegation is deferred | Missing event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
-| Portable Agent Plugin or MCP only | None | None | Activation rejected | Activation rejected | No child creation | Reports that a native Pi or OMP adapter is required | `tests/plugin.test.ts`, `tests/mcp.test.ts`, `tests/real-hosts.test.ts` |
+| Portable Agent Plugin skill only | None | None | Unavailable | Unavailable | No child creation | Instructs the client to use a native Pi or OMP adapter | `tests/plugin.test.ts`, `tests/real-hosts.test.ts` |
 
 Child assignments are strictly bounded by the parent contract. Each child deadline is
 the earlier of its requested budget and the parent's hard deadline. The host rejects
@@ -202,13 +201,9 @@ restoring older state.
 
 An OMP child sees only its assigned scope and cannot stop the parent limit, create a nested assignment, inspect a sibling assignment, revise the parent plan, or report for another assignment. The child must call `wallclock_report` before OMP's required `yield`. After a valid report, the adapter permits only that native completion step even when the assignment is complete or expired. Parent state and child reports are persisted by the parent host session.
 
-## Portable package and MCP
+## Portable package
 
-The root `plugin.json`, bundled Agent Skill, and `mcp.json` follow Agent Plugins 1.0.0. OMP discovery is covered by a real-host test.
-
-The standalone MCP server exposes the operation contracts but refuses `wallclock_start` because MCP has no native pre-action gate. It does not mirror native host session entries by itself. Package or MCP discovery is therefore not evidence of enforcement.
-
-The launcher needs Node.js 22.6 or newer because it uses native TypeScript type stripping.
+The root `plugin.json` and bundled Agent Skill follow Agent Plugins 1.0.0. The package intentionally has no `mcp.json`: OMP discovers both Agent Plugin MCP servers and native extension tools from one installed package, which exposed two wall-clock catalogs even though MCP could not enforce a deadline. The native catalog is the sole operation surface. OMP discovery is covered by a real-host test that asserts the skill remains available and no `mcp__wall_clock` tools appear.
 - OMP supports any number of bounded inline batch assignments before wrap-up. Each batch item uses `wallClock` assignment metadata, receives its own deadline bounded by the parent's hard deadline and report, and maps to one child session. Running child actions are aborted when their own deadline or the parent deadline expires, regardless of the parent's `block-new` versus `abort-running` policy. Nested delegation remains blocked until its lifecycle contract is implemented. Under `abort-running`, only one parent-session task action can be active because the abort function is session-wide.
 The Codex feasibility finding is in [CODEX-SUPPORT.md](CODEX-SUPPORT.md). It describes a possible `block-new`-only adapter; Codex activation is not implemented or supported in v0.
 
@@ -219,5 +214,5 @@ The Codex feasibility finding is in [CODEX-SUPPORT.md](CODEX-SUPPORT.md). It des
 - OMP 17.2.15 does not forward the parent event-bus object into a task-created child. The adapter binds the real child session file through a process-wide registry and removes the binding when the child reaches a terminal lifecycle state.
 - Remote provider cancellation needs provider-specific confirmation and is not implemented.
 - Do-it-now cannot infer semantic scope from arbitrary tool input. The host guard limits time, delegation, and tool-call count; the model instructions still prevent unrelated reads, writes, and research.
-- Codex and Claude can discover the portable package but cannot activate wall-clock until an open, tested native enforcement seam exists.
+- Codex and Claude can discover the portable instructions but cannot activate wall-clock until an open, tested native enforcement seam exists.
 - The full development dependency audit reports five high-severity findings in optional OMP model and image dependencies. `npm audit --omit=optional` reports zero findings. No production runtime dependency was added to the wall-clock controller.

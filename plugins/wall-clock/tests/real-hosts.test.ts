@@ -116,7 +116,7 @@ test("pinned OMP host loads, activates, reports, and blocks expired shell work",
   }
 });
 
-test("OMP discovers the portable Agent Plugin skill and MCP tools", { timeout: 30_000 }, () => {
+test("OMP discovers the portable Agent Plugin skill without MCP tools", { timeout: 30_000 }, () => {
   const sessionDir = mkdtempSync(join(tmpdir(), "wall-clock-agent-plugin-"));
   try {
     const output = run(ompBin, [
@@ -124,15 +124,14 @@ test("OMP discovers the portable Agent Plugin skill and MCP tools", { timeout: 3
       "--plugin-dir", pluginRoot, "--session-dir", sessionDir,
     ], rpcLines({ id: "tools", type: "prompt", message: "/tools" }));
     assert.match(output, /"name":"skill:wall-clock"/);
-    assert.match(output, /mcp__wall_clock_wall_clock_wallclock_start/);
-    assert.match(output, /mcp__wall_clock_wall_clock_wallclock_report/);
+    assert.doesNotMatch(output, /mcp__wall_clock/);
     assert.match(output, /"id":"tools"[^\n]+"agentInvoked":false/);
   } finally {
     rmSync(sessionDir, { recursive: true, force: true });
   }
 });
 
-test("OMP installs and autoloads the native package in an isolated profile", { timeout: 30_000 }, () => {
+test("OMP installs one native wall-clock tool catalog in an isolated profile", { timeout: 30_000 }, () => {
   const root = mkdtempSync(join(tmpdir(), "wall-clock-omp-install-"));
   const profile = "wall-clock-e2e";
   const isolatedEnv = {
@@ -141,6 +140,7 @@ test("OMP installs and autoloads the native package in an isolated profile", { t
     XDG_CONFIG_HOME: join(root, "config"),
     XDG_DATA_HOME: join(root, "data"),
     XDG_STATE_HOME: join(root, "state"),
+    PI_CODING_AGENT_DIR: join(root, "agent"),
     ANTHROPIC_API_KEY: "wall-clock-test-key",
   };
   try {
@@ -154,12 +154,15 @@ test("OMP installs and autoloads the native package in an isolated profile", { t
     assert.match(listed, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 
     const output = run(ompBin, [
-      "--profile", profile, "--model", "claude-sonnet", "--mode", "rpc", "--no-skills", "--no-rules",
-      "--session-dir", join(root, "sessions"),
+      "--profile", profile, "--model", "claude-sonnet", "--mode", "rpc", "--no-extensions",
+      "--extension", pluginRoot, "--no-skills", "--no-rules", "--session-dir", join(root, "sessions"),
     ], rpcLines(
+      { id: "tools", type: "prompt", message: "/tools" },
       { id: "start", type: "prompt", message: "/wallclock start 2s block-new" },
       { id: "status", type: "prompt", message: "/wallclock status" },
     ), isolatedEnv);
+    assert.match(output, /wallclock_start/);
+    assert.doesNotMatch(output, /mcp__wall_clock/);
     assert.match(output, /"name":"wallclock"/);
     assert.match(output, /Wall-clock active: active/);
     assert.match(output, /"id":"status"[^\n]+"success":true/);

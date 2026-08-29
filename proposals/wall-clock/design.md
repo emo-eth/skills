@@ -3,7 +3,6 @@
 ## Glossary
 
 - **Agent Plugins**: The portable package format for Agent Skills and optional Model Context Protocol servers.
-- **MCP**: Model Context Protocol, used as an optional operation surface but never as the enforcement boundary.
 - **Pi**: The `@earendil-works/pi-coding-agent` host.
 - **OMP**: The `@oh-my-pi/pi-coding-agent` host.
 - **WallClockController**: The host-independent module that owns time contracts, plans, assignments, reports, timing, and action decisions.
@@ -24,7 +23,7 @@
 
 The common controller is the deep module. Native adapters translate Pi and OMP events into its small interface and do not duplicate deadline rules. The package stays inert until explicit activation.
 
-Agent Skills and MCP can describe or expose the contract, but they cannot intercept arbitrary host actions. Only a tested native adapter can activate wall-clock.
+The Agent Skill describes the contract but cannot intercept host actions. Only a tested native adapter exposes operations or activates wall-clock.
 
 ## Module boundaries
 
@@ -48,7 +47,7 @@ Agent Skills and MCP can describe or expose the contract, but they cannot interc
 - OMP parent and child coordination;
 - host-session persistence and restore.
 
-`src/pi.ts` and `src/omp.ts` define the tested native enforcement capabilities. `src/mcp.ts` exposes optional portable operations and refuses activation.
+`src/pi.ts` and `src/omp.ts` define the tested native operation and enforcement capabilities.
 
 ## Time and phase model
 
@@ -166,23 +165,23 @@ Timers and running actions are not durable. Reload schedules fresh timers from t
 
 The package lives in `plugins/wall-clock/` and has three separate distribution surfaces:
 
-- `plugin.json`, `skills/wall-clock/SKILL.md`, and `mcp.json` for Agent Plugins discovery;
+- `plugin.json` and `skills/wall-clock/SKILL.md` for skill-only Agent Plugins discovery;
 - `package.json` `pi.extensions` and `omp.extensions` fields for native package discovery;
 - direct `--extension` paths for local Pi and OMP use.
 
-The package is not a root personal skill and must not be installed through `npx skills`. Native enforcement does not depend on the portable skill or MCP process.
+The package intentionally omits `mcp.json` so OMP exposes only the native operation catalog. It is not a root personal skill and must not be installed through `npx skills`.
 
 ## Verification
 
 `npm run check` type-checks the source. `npm test` runs:
 
-- controller, state, MCP, package, adapter, and shared-host tests under Node.js;
+- controller, state, package, adapter, and shared-host tests under Node.js;
 - real Pi and OMP command-line interface loading and expired shell blocking;
 - Pi's actual extension runner and abortable bash executor;
 - OMP's actual extension runner and abortable bash executor under Bun;
 - OMP's actual `TaskTool` creating children under both expiry policies, including context adoption, late-work blocking, report plus native yield, and a running child bash abort;
-- OMP Agent Plugin skill and MCP discovery;
-- isolated-profile OMP package installation and native adapter auto-loading;
+- OMP Agent Plugin skill discovery without MCP tools;
+- isolated-profile OMP package installation with one native wall-clock tool catalog;
 - parent and child scope, persistence, deadline, lifecycle, and abort-domain behavior.
 
 Codex and Claude activation, remote provider cancellation, and a portable visual dashboard remain deferred.

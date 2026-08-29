@@ -362,3 +362,31 @@ Source: user chat message, 2026-08-14
 Status: active
 Scope: v0
 Load-bearing: no
+
+## D42 - 2026-08-28 - Keep wall-clock operations native-only
+
+Decision: Remove wall-clock's root `mcp.json`, standalone MCP server, and MCP
+operation tests. Keep the Agent Plugins manifest and bundled skill, while Pi
+and OMP native adapters expose the sole wall-clock operation catalog.
+
+Why: OMP discovers both Agent Plugin MCP servers and native extension tools
+from one installed package. Shipping both exposed duplicate wall-clock
+operations with different session state and enforcement semantics, while the
+MCP `wallclock_start` could not activate an enforced deadline. The user
+reported the duplicate catalog and directed that it be fixed.
+
+Alternatives: Disable the MCP server in one local OMP profile (rejected because
+the package would remain broken for every other install); rename the MCP tools
+(rejected because two non-equivalent catalogs would remain); remove the native
+tools (rejected because only the native adapter can enforce the contract).
+
+Consequences: Agent Plugin clients can still discover the wall-clock
+instructions. Unsupported clients have no operation surface. Supported Pi and
+OMP sessions expose only native tools backed by the host session and
+pre-action gate. D9 remains true as a statement about the Agent Plugins
+standard, but this package no longer exercises its optional MCP component.
+
+Source: user chat message, 2026-08-28
+Status: active
+Scope: current
+Load-bearing: yes

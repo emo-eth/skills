@@ -20,10 +20,13 @@ through the current turn, and active child work retains its own deadline.
 Evidence is in the focused controller and host tests plus the Pi and OMP
 native runner tests.
 
-The current package includes the current persisted-state validation with mode
-and configured-duration fields, assignment and report contracts, report-linked
-plan revisions, Agent Plugin discovery, and optional MCP operations.
-MCP refuses activation and does not replace or mirror native host enforcement.
+The current package includes persisted-state validation with mode and
+configured-duration fields, assignment and report contracts, report-linked
+plan revisions, and skill-only Agent Plugin discovery. The root `mcp.json`,
+standalone MCP server, and MCP tests were removed under D42 because OMP
+enumerated both MCP and native copies of the wall-clock operations even though
+MCP could not enforce activation. Native Pi and OMP tools are now the sole
+operation catalog.
 Nested assignment limits are specified but not implemented in
 `proposals/wall-clock/nested-assignment-limits.md`; that future data shape is
 now version 5 and still requires separate user sign-off.
@@ -159,15 +162,15 @@ restart, and a detached outside-session update smoke all pass [verified-live].
 - `standup` is ticket-centered; `initiative-standup` is the separate path for cross-project work, must start with a Memex session ledger, and must not require or mutate Linear tickets. [documented]
 
 - Compression preserves a working vertical slice and reports gaps honestly. [D8]
-- MCP is optional and never enforces deadlines. [D9]
+- MCP is optional in the Agent Plugins standard; wall-clock omits it and keeps operations native-only. [D9, D42]
 
 ## Topic index
 
 | Topic | Thinking and decisions | Code | Verified by | Tier |
 | --- | --- | --- | --- | --- |
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
-| Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
-| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, serial Node suite (104 tests), 7 Bun native-runner tests, Pi and OMP command-line tests, isolated OMP install test, native Pi parent/child and OMP TaskTool child tests, and the dated completion logs | verified-live |
+| Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts`, installed OMP single-catalog regression | verified-focused |
+| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, serial Node suite, 7 Bun native-runner tests, Pi and OMP command-line tests, isolated OMP install test, native Pi parent/child and OMP TaskTool child tests, and the dated completion logs | verified-live |
 | Turn summaries | `docs/DECISIONS.md` D39, `docs/vibe.md` companion clause | `plugins/turn-summary/` | `docs/log/2026-08-13-turn-summary.md`, package checks, installed-plugin Pi and OMP live evidence | verified-live |
 | Nested assignment limits | `proposals/wall-clock/nested-assignment-limits.md` | not implemented | data-shape sign-off and Gate 0 still required | proposed |
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex session inventory and transcript retrieval, with optional Herdr navigation | `memex index --include-agents` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |

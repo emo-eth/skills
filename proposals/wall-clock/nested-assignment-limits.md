@@ -37,7 +37,7 @@ The real work is to define ancestor rules, validate the assignment tree, and pro
 | Background tasks | Medium to high uncertainty | Current native child tests do not exercise OMP's default asynchronous path. |
 | Persistence | Medium | Version 4 must reject cycles, bad ancestry, and child boundaries that exceed ancestor boundaries. |
 
-Expected change surface: five production modules (`types.ts`, `controller.ts`, `store.ts`, `host.ts`, and `mcp.ts`), tests, and documentation. The OMP adapter registry should not need a new architecture. No new dependency is needed.
+Expected change surface: four production modules (`types.ts`, `controller.ts`, `store.ts`, and `host.ts`), tests, and documentation. The OMP adapter registry should not need a new architecture. No new dependency is needed.
 
 ## Objective
 
@@ -362,10 +362,6 @@ This section identifies expected changes; it does not authorize implementation.
 
 No structural change is expected. Its global event-bus and session-file registries should support any depth. Native tests must prove that expectation.
 
-### `mcp.ts`
-
-- Expose the approved version 4 assignment field names.
-- Preserve the rule that standalone MCP cannot activate or enforce Wall Clock.
 
 ## Verification plan
 

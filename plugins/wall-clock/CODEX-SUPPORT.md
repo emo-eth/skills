@@ -23,12 +23,11 @@ The existing wall-clock controller is reusable. The Codex work would be a new na
 
 ## Package boundary
 
-The current wall-clock package follows Agent Plugins 1.0.0:
+The current wall-clock package follows Agent Plugins 1.0.0 as a skill-only package:
 
 ```text
 plugin.json
 skills/
-mcp.json
 ```
 
 Codex uses a separate client-specific package shape:
@@ -37,7 +36,6 @@ Codex uses a separate client-specific package shape:
 .codex-plugin/
   plugin.json
 skills/
-.mcp.json
 hooks/
   hooks.json
 ```

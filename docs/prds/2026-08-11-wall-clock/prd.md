@@ -20,7 +20,7 @@ source_vibe: docs/prds/2026-08-11-wall-clock/vibe.md
 - **Shortcut**: A deliberate reduction in scope, method, or validation, with its tradeoff stated.
 - **Host enforcement**: A runtime action that blocks or stops work.
 - **Elapsed-time context**: Measured total elapsed time, latest inference or tool-call elapsed time, current clock time, remaining time, and actual assignment elapsed time.
-- **Portable plugin**: The package of reusable instructions and optional MCP tools discoverable through the Agent Plugins format.
+- **Portable plugin**: The package of reusable instructions discoverable through the Agent Plugins format.
 - **Native adapter**: Host-specific integration that can use a client's session, context, tool, and child lifecycle events.
 - **Vertical slice**: The smallest working end-to-end result that remains useful when full scope is not complete.
 - **Abort signal**: A host signal sent to an owned running action that its executor accepts and obeys to stop the action.
@@ -50,7 +50,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 - **Core flow**: Select a supported harness -> activate one session with the default or selected expiry policy -> optionally start or steer work with the trailing prompt -> receive elapsed-time context every turn -> create bounded assignments -> admit only host-approved actions -> complete or report the vertical slice -> revise the parent plan -> finish or stop.
 - **Required surfaces**: Activation, status, elapsed-time context, enforced action admission, assignment, completion, report, persistence and restore, and a visible activation failure when the requested policy cannot be enforced.
 - **Harness expectations**: Pi and OMP are the first enforcement targets. Codex and Claude are considered only for the portable Agent Plugins package and open extension surfaces; Claude proprietary systems are out of scope. A client without a tested native enforcement seam must not activate wall-clock.
-- **Plugin expectations**: Agent Plugins requires a root manifest. Skills and MCP are optional components. Wall-clock may expose an MCP control surface, but MCP is never required for enforcement and never replaces a native adapter.
+- **Plugin expectations**: Agent Plugins requires a root manifest and permits optional skills and MCP servers. Wall-clock ships its skill but omits MCP so supported hosts expose only the native operation catalog.
 - **Data visibility expectations**: A session sees its own time contract and reports. A parent sees its assignments and child reports. A child sees only its assignment and elapsed-time context. Unrelated sessions do not see or change this state.
 
 ## Requirements
@@ -116,14 +116,14 @@ A user can give a supported agent session a real time boundary and trust the hos
 - Requirement: Wall-clock must support the selected Pi and OMP enforcement paths first. Codex and Claude may load the portable package, but wall-clock must refuse activation there until an open, tested enforcement seam exists. Claude proprietary systems are excluded.
 - Rationale: The product must work as an enforced tool, not as guidance that only says "hurry up."
 - Acceptance: Each target harness has a support entry naming its enforcement mechanism, failure mode, and test evidence. Unsupported activation fails closed with a clear reason.
-- Not acceptable: A client is called supported because it can load `SKILL.md` or `mcp.json` while it cannot block or abort the requested work.
+- Not acceptable: A client is called supported because it can load `SKILL.md` while it cannot block or abort the requested work.
 
-### R10. Optional portable packaging
+### R10. Skill-only portable packaging
 
-- Requirement: The reusable capability must be discoverable as an Agent Plugins-compatible package with a valid root manifest and Agent Skill. MCP may be included as an optional control and inspection surface. Native runtime behavior must remain separate from the portable core.
-- Rationale: The plugin standard makes shared packaging possible, but it does not make MCP or skills enforcement mechanisms.
-- Acceptance: A compatible client can discover the package and load the skill. If it supports MCP, it can connect to the optional control surface. Wall-clock enforcement does not depend on either component alone.
-- Not acceptable: The manifest claims that MCP is required by the standard, a portable skill is presented as a pre-action hook, or a package is activated on a client that has no enforcement adapter.
+- Requirement: The reusable capability must be discoverable as an Agent Plugins-compatible package with a valid root manifest and Agent Skill. The package must not ship an MCP server; native runtime behavior remains separate from the portable instructions.
+- Rationale: The plugin standard makes shared instructions portable, but MCP cannot enforce host actions. Shipping both surfaces makes OMP enumerate duplicate wall-clock tools with different state and enforcement semantics.
+- Acceptance: A compatible client can discover and load the skill. An installed supported host exposes one native wall-clock operation catalog and no `mcp__wall_clock` tools.
+- Not acceptable: A portable skill is presented as a pre-action hook, the package is activated on a client with no enforcement adapter, or OMP exposes native and MCP copies of the wall-clock operations.
 
 ### R11. Host-enforced in-flight expiry policy
 
@@ -163,7 +163,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 - Host-enforced action admission and, when selected, host-enforced abort of running owned work.
 - Status, assignments, completion, structured vertical-slice reports, and parent plan revision.
 - Durable, session-isolated state through supported reload and resume paths.
-- Agent Plugins packaging with a required root manifest, Agent Skill, and optional MCP surface.
+- Agent Plugins packaging with a required root manifest and Agent Skill, without an MCP surface.
 - Pi and OMP native adapters as the first enforcement targets.
 - Codex and Claude portable package loading without activation until open enforcement seams are tested.
 
@@ -190,7 +190,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 - `abort-running` is tested against an abortable executor, and `block-new` is tested without falsely claiming cancellation.
 - A parent can create a bounded assignment and receive a vertical-slice report that supports a plan revision.
 - A child can finish early without extra scope and return a working vertical slice with explicit tradeoffs.
-- Portable Agent Plugins package checks prove that MCP is optional and that the skill remains discoverable without treating it as enforcement.
+- Portable Agent Plugins package checks prove that the skill remains discoverable and no MCP wall-clock tools are exposed.
 - A session without activation behaves like ordinary work.
 - It works and is possible: the supported Pi and OMP paths are driven end to end and observed enforcing the promised limits.
 
@@ -199,7 +199,7 @@ A user can give a supported agent session a real time boundary and trust the hos
 - Pi and OMP are the first enforcement targets.
 - Codex and Claude are package targets only until open enforcement seams are proven.
 - Claude proprietary systems are not a target.
-- MCP is optional in the Agent Plugins standard and is not an enforcement dependency.
+- MCP is optional in the Agent Plugins standard; wall-clock intentionally omits it and uses native operation tools.
 - Activation always requires a host-enforced expiry policy.
 - The user can select whether expiry blocks new work only or aborts running wall-clock-owned work; omission from the native slash command means `abort-running`.
 

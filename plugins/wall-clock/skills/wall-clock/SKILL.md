@@ -1,7 +1,7 @@
 ---
 name: wall-clock
 description: Use when the user gives a deadline or time budget, asks for wall-clock planning, bounded agent assignments, wrap-up behavior, or explicit shortcut and risk reporting. Keeps work inside a time ceiling with start, status, check, assignment, completion, and report operations.
-compatibility: The optional MCP tools require a client that loads mcp.json and Node.js 22.6 or newer. Host-level tool blocking remains client-specific.
+compatibility: Requires a native Pi or OMP adapter; the Agent Plugin surface contains instructions only and never activates a time boundary.
 ---
 
 # Wall clock
@@ -9,7 +9,6 @@ compatibility: The optional MCP tools require a client that loads mcp.json and N
 ## Glossary
 
 - **Wall clock**: Real elapsed time measured against a duration or a local-time deadline.
-- **Session key**: The stable identifier passed to the MCP tools for one conversation or work run.
 - **Hard deadline**: The time after which new work must not start.
 - **Wrap-up**: The period before the hard deadline when new delegation and destructive work stop.
 - **Delegation bias**: Delegate only when an independent child clearly reduces risk or finishes part of the acceptance target faster; never delegate to use remaining time.
@@ -28,7 +27,7 @@ Use wall-clock control only when the user gives a deadline, gives a duration, or
 The explicit `/do-it-now` skill is the exception: on a supported native Pi or
 OMP host, its invocation starts a fixed 2-minute host guard with
 `abort-running`, bounded delegation encouraged, and a 12-call ordinary-tool
-limit. Do not call portable wall-clock tools to start that lane. The guard
+limit. Do not call `wallclock_start` to start that lane. The guard
 clears after the host reports that the agent run has fully settled. If the
 deadline expires first, it stays active through any post-run continuation so
 blocked work cannot bypass expiry.
@@ -36,7 +35,7 @@ blocked work cannot bypass expiry.
 The explicit `/wrap-it-up` skill is the second fixed lane: on a supported
 native Pi or OMP host, its invocation starts a two-minute host guard with
 `abort-running`, bounded delegation encouraged while the phase is active, and
-a 12-call ordinary-tool limit. Do not call portable wall-clock tools to start
+a 12-call ordinary-tool limit. Do not call `wallclock_start` to start
 that lane. The guard clears after the host reports that the agent run has fully
 settled. If the deadline expires first, it stays active through any post-run
 continuation so blocked work cannot bypass expiry.
@@ -68,16 +67,15 @@ the owner contract.
 
 The budget is a ceiling, not a target. Finish when the acceptance target is met. Do not spend unused time on extra scope.
 
-The portable Agent Plugins package can provide tools and instructions. It cannot, by itself, intercept every client tool call, cancel arbitrary work, or stop a remote action. Say when a result is model guidance only.
+The portable Agent Plugins package provides instructions only. It cannot activate a time boundary, intercept client tool calls, cancel work, or stop a remote action.
 
 ## Start a time boundary
 
 When the user gives a duration such as `30m` or a local time such as `5pm`:
 
-1. Create a short session key and reuse it for every wall-clock call in this run.
-2. If a native `wallclock_start` is available, call it with the exact duration or local time, the user's selected `block-new` or `abort-running` policy, and the current plan when one exists. Use `block-new` when the user does not select a policy.
-3. Read the returned phase and remaining time. State the hard deadline and the wrap-up point in the working plan.
-4. If activation is unavailable or rejected, do not create a guidance-only wall-clock session. Tell the user that this host cannot enforce the requested policy.
+1. If native `wallclock_start` is available, call it with the exact duration or local time, the user's selected `block-new` or `abort-running` policy, and the current plan when one exists. Use `block-new` when the user does not select a policy.
+2. Read the returned phase and remaining time. State the hard deadline and the wrap-up point in the working plan.
+3. If activation is unavailable or rejected, do not create a guidance-only wall-clock session. Tell the user that this host cannot enforce the requested policy.
 
 Use the native command `/wallclock turn-limit 2m` when every normal user turn
 must fit inside a fresh two-minute window. Steering messages do not start a new
@@ -97,7 +95,7 @@ Before an assignment, write, destructive action, or long operation:
 4. Delegate only when an independent child clearly reduces risk or finishes part of the acceptance target faster. Use one inline batch when several children should start together. Do not start delegation during wrap-up.
 5. After expiry, start no new tool work. Report the current state and any work that remains.
 
-The check is not a host gate. A supported Pi or OMP native adapter enforces the same decision at its pre-tool event. Portable MCP alone refuses activation.
+The check is advisory to the model. A supported Pi or OMP native adapter separately enforces the decision at its pre-tool event.
 
 ## Bound an assignment
 
@@ -107,7 +105,7 @@ Create an assignment only when the main session has an active wall-clock window:
 2. Define the acceptance target as observable output, not effort.
 3. Set `budgetMs` below the parent's remaining time. Include `wrapUpMs` when the child needs a separate closeout period.
 4. Call `wallclock_assign` and keep the returned assignment identifier.
-5. Pass the objective, scope, acceptance target, and remaining budget to the child through the host's supported child-session mechanism. The portable plugin does not create a child session by itself.
+5. Pass the objective, scope, acceptance target, and remaining budget to the child through the host's supported child-session mechanism. The assignment operation records a contract; it does not create a child session.
 
 If the child meets the acceptance target early, complete it. Do not turn the unused budget into extra work. OMP binds one unbound assignment to each task child. Pi does not create a native child through this package. Do not claim a hard child limit on an unsupported path.
 
@@ -128,4 +126,4 @@ Keep partial output usable. Never report cancellation unless the host executor c
 
 The package root also contains Pi and OMP adapters in `src/pi.ts` and `src/omp.ts`. When a supported host loads those entry points, the adapter restores the current persisted state schema, injects measured time and phase-specific guidance, observes tool and child results, arms `turn-limit` contracts after terminal settlement, starts the next owner window at a normal user message, and enforces its pre-tool decision.
 
-Under `abort-running`, the adapter rejects unknown or unabortable executors before they start. It records cancellation only after a correlated native result reports an abort. Native support does not imply that another Agent Plugins client has the same enforcement boundary.
+Under `abort-running`, the adapter rejects unknown or unabortable executors before they start. It records cancellation only after a correlated native result reports an abort. Native support in one host does not imply that another host has the same enforcement boundary.
