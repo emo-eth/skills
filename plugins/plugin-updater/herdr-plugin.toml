@@ -1,0 +1,28 @@
+id = "plugin-updater"
+name = "Plugin Updater"
+version = "0.1.0"
+min_herdr_version = "0.8.2"
+description = "Check installed GitHub plugins for upstream updates and reinstall the ones you confirm."
+platforms = ["linux", "macos", "windows"]
+
+[[actions]]
+id = "check"
+title = "Check plugins for updates"
+description = "Compare installed GitHub plugin commits with their upstream refs and print a report."
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/check.ts"]
+
+[[actions]]
+id = "update"
+title = "Update plugins"
+description = "Preview available plugin updates and reinstall the ones you confirm."
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/schedule-updater.ts"]
+
+[[panes]]
+id = "updater"
+title = "Plugin updates"
+placement = "popup"
+width = "90%"
+height = 30
+command = ["node", "--experimental-strip-types", "src/updater.ts"]
