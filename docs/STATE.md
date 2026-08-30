@@ -167,6 +167,22 @@ focused tests, manifest linking, action discovery, an interactive cancellation
 smoke, a live active-agent wait/cancel smoke, an isolated named-server hard
 restart, and a detached outside-session update smoke all pass [verified-live].
 
+The repository now also contains `plugins/plugin-updater/`, a Herdr plugin
+that closes that gap: its `check` action classifies every GitHub-managed
+plugin as current, behind, pinned, or error (one `git ls-remote --symref`
+per repo; behind plugins also get a version delta and subdir-scoped
+changed-files preview from the managed checkout), and its `update` action
+opens a confirmation popup that reinstalls only user-approved plugins via
+`herdr plugin install ... --yes`. Updates without an interactive terminal
+are refused, pinned installs are skipped, `min_herdr_version` refusals
+carry an update-Herdr-first hint, and the updater reinstalls itself last
+from a detached helper. It is installed on this machine from
+`emo-eth/skills/plugins/plugin-updater`. TypeScript checking, 20 focused
+tests, live classification of the real plugin set, refusal and cancel
+no-op smokes, a selective live update that preserved config, the
+action-to-popup path, and the detached self-update path all pass
+[verified-live]. Contract and evidence: `docs/log/2026-08-30-plugin-updater.md`.
+
 ## Standing constraints
 
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
@@ -195,6 +211,7 @@ restart, and a detached outside-session update smoke all pass [verified-live].
 | Direct local token reporting | `tools/agent-skill-usage.ts`, `tools/agent-skill-usage-core.ts` | `fixtures/all-source-skill-usage/`, `tools/agent-skill-usage.test.ts` | focused direct-parser tests and live local Claude, Codex, Pi, and OMP smoke reports; Memex is not used for accounting | verified-focused |
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
 | Hard update restart | none yet | `plugins/hard-update-restart/` | `npm run check`, 13 Node tests, `herdr plugin link`, command-palette action discovery, interactive confirmation/cancellation and active-agent wait smokes, isolated Herdr 0.8.2 server replacement, and detached outside-session update smoke | verified-live |
+| Plugin updater | `docs/log/2026-08-30-plugin-updater.md` | `plugins/plugin-updater/` | strict `tsc`, 20 Node tests, live Herdr 0.8.2 classification/refusal/cancel/selective-update/popup/self-update smokes documented in the log | verified-live |
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |

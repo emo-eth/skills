@@ -1,6 +1,6 @@
 id = "plugin-updater"
 name = "Plugin Updater"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.8.2"
 description = "Check installed GitHub plugins for upstream updates and reinstall the ones you confirm."
 platforms = ["linux", "macos", "windows"]

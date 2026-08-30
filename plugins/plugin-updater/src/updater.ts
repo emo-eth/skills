@@ -211,6 +211,11 @@ async function main(): Promise<void> {
       console.log(`Done with failures: ${summary}.`);
       process.exitCode = 1;
     }
+    if (updated + scheduled > 0) {
+      console.log("\nRe-checking installed state...");
+      const fresh = await collectOutcomes(runCommand, herdrBinary);
+      console.log(formatReport(fresh.outcomes, fresh.localCount));
+    }
   } finally {
     input.close();
   }
