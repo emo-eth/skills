@@ -104,7 +104,7 @@ async function scheduleSelfUpdate(outcome: CheckOutcome): Promise<void> {
   await promise;
   child.unref();
   console.log(
-    `${SELF_PLUGIN_ID} will reinstall itself after this window closes ` +
+    `${SELF_PLUGIN_ID} will reinstall itself about 15 s after this window closes ` +
       `(${shortSha(outcome.source.resolved_commit)} -> ${shortSha(outcome.remoteSha)}).`,
   );
   stateLog(`scheduled self-update to ${shortSha(outcome.remoteSha)}`);

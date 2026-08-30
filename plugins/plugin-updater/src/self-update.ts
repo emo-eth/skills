@@ -29,8 +29,8 @@ try {
     throw new Error("self-update started without an install command");
   }
   // The reinstall replaces this plugin's managed checkout, so this helper is
-  // detached from the popup and waits for it to exit first.
-  await delay(1_000);
+  // detached and waits for the popup to finish its summary and re-check.
+  await delay(15_000);
   log(`self-update running: ${herdrBinary} ${installArgs.join(" ")}`);
   const result = await runCommand(herdrBinary, installArgs);
   if (result.status === 0) {
