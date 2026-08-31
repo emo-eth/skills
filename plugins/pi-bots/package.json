@@ -1,0 +1,50 @@
+{
+  "name": "@emo-eth/pi-bots-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": [
+    "pi-package",
+    "bots",
+    "subagents",
+    "orchestration"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/pi.ts"
+    ]
+  },
+  "exports": {
+    ".": "./src/host.ts",
+    "./config": "./src/config.ts",
+    "./pi": "./src/pi.ts",
+    "./runtime": "./src/runtime.ts",
+    "./state": "./src/state.ts",
+    "./subagents": "./src/subagents.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "proper-lockfile": "^4.1.2",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@types/node": "24.10.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "5.9.3"
+  },
+  "description": "Persistent domain-owning bots for Pi through pi-subagents.",
+  "repository": "https://github.com/emo-eth/skills",
+  "files": [
+    "src/",
+    "BOTS.example.yml",
+    "README.md",
+    "plugin.json"
+  ]
+}

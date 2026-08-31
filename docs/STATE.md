@@ -183,6 +183,19 @@ no-op smokes, a selective live update that preserved config, the
 action-to-popup path, and the detached self-update path all pass
 [verified-live]. Contract and evidence: `docs/log/2026-08-30-plugin-updater.md`.
 
+The repository now also contains `plugins/pi-bots/`, a native Pi extension
+for persistent named bots that own domains. A strict user/project `BOTS.yml`
+roster is atomically mirrored through immutable standard `pi-subagents` agent
+generations so parent, nested child, background, and scheduled processes discover the same
+`bot.<name>` identities. The `bots` tool and `/bots` command add foreground
+routing, live shared context, owner-only provenance records, scoped private
+memory, doctor, and reload; native `pi-subagents` remains the sole runner,
+scheduler, and lifecycle surface. A live chief-of-staff run delegated to the
+research bot, wrote owner state and project memory, and returned through both
+agents. Native workflow validation accepted an operations routine. TypeScript
+checking and 84 focused tests pass. Contract, research, boundaries, and live
+evidence: `docs/log/2026-08-30-pi-bots.md` [verified-live].
+
 ## Standing constraints
 
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
@@ -212,6 +225,7 @@ action-to-popup path, and the detached self-update path all pass
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
 | Hard update restart | none yet | `plugins/hard-update-restart/` | `npm run check`, 13 Node tests, `herdr plugin link`, command-palette action discovery, interactive confirmation/cancellation and active-agent wait smokes, isolated Herdr 0.8.2 server replacement, and detached outside-session update smoke | verified-live |
 | Plugin updater | `docs/log/2026-08-30-plugin-updater.md` | `plugins/plugin-updater/` | strict `tsc`, 20 Node tests, live Herdr 0.8.2 classification/refusal/cancel/selective-update/popup/self-update smokes documented in the log | verified-live |
+| Persistent Pi domain bots | `docs/log/2026-08-30-pi-bots.md` | `plugins/pi-bots/` | strict TypeScript check, 73 focused tests, live chief-of-staff → research peer delegation with owner state and scoped memory writes, and native operations-workflow validation | verified-live |
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |

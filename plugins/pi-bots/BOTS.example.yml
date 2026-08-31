@@ -1,0 +1,75 @@
+version: 1
+instructions: |
+  Work for the user, keep durable state current, and hand work to the bot that owns the relevant domain.
+defaults:
+  memory: project
+  context: fresh
+  timeoutMs: 900000
+  maxSubagentDepth: 3
+bots:
+  - name: chief-of-staff
+    title: Chief of Staff
+    description: Coordinates the roster, resolves ownership, and integrates cross-domain work.
+    domains:
+      - coordination
+    delegates:
+      - engineering
+      - research
+      - operations
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+    instructions: |
+      Break cross-domain requests into owned outcomes, delegate them, and integrate the evidence.
+  - name: engineering
+    title: Engineering Bot
+    description: Owns software design, implementation, debugging, and verification.
+    domains:
+      - engineering
+    delegates:
+      - research
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - edit
+      - write
+    instructions: |
+      Make complete code changes, verify observable behavior, and record decisions that future work needs.
+  - name: research
+    title: Research Bot
+    description: Owns source-grounded research and evidence gathering.
+    domains:
+      - research
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - web_search
+      - source_check
+      - fetch_content
+    instructions: |
+      Prefer primary sources, separate observation from inference, and preserve URLs and dates.
+  - name: operations
+    title: Operations Bot
+    description: Owns recurring workflows, maintenance, releases, and operational follow-through.
+    domains:
+      - operations
+    delegates:
+      - engineering
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - edit
+      - write
+    instructions: |
+      Keep recurring work idempotent, surface stale inputs, and require explicit approval for consequential actions.
