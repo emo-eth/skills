@@ -38,5 +38,7 @@ OMP 18.0.5 started a clean non-interactive process with only the changed `src/om
 
 OMP code mode used JavaScript eval to call `await tool.grok_fetch(...)` for one of those X posts. The nested fetch completed through the same native tool seam and returned the post's cited media URL. The eval bridge exposes only the two tools registered by this package; it cannot recover removed web-search or plain-inference capabilities.
 
+Commit `5eeaabf` was pushed to `origin/main` and the stable local `main` checkout was reinstalled into the default OMP profile and Pi user package list. A fresh OMP 18.0.5 process rejected `grok_prompt` as an unknown tool; its runtime-generated valid-tool list contained `grok_search` and `grok_fetch` only.
+
 GAP: global Pi 0.84.3 has no authenticated calling model, so a live provider-level Pi invocation cannot run. The pinned Pi 0.84.1 native-runner proof covers real extension loading, the exact X-only registry, and tool execution without claiming provider-level behavior.
 
