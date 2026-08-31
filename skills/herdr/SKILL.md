@@ -1,35 +1,69 @@
 ---
 name: herdr
-description: "Control Herdr, a terminal multiplexer for coding agents. Use only when the user explicitly mentions Herdr or asks to use Herdr to inspect or control panes, tabs, workspaces, commands, or another agent. Do not use merely because a task could benefit from a background terminal, delegation, or parallel work. Do not use merely because a task could benefit from a background terminal, delegation, or parallel work."
+description: "Control Herdr, a terminal multiplexer for coding agents. Use only when the user explicitly asks to inspect or control Herdr panes, tabs, workspaces, commands, or agents. Requires either an in-pane Herdr context or an exact named session with explicit targets."
 ---
 
 # Herdr
 
 Herdr organizes terminals into workspaces, tabs, and panes, recognizes coding agents running inside panes, and exposes sessions through the `herdr` CLI.
 
-Determine whether this agent itself runs inside a Herdr-managed pane:
+Use this skill only when the user explicitly mentions Herdr or asks for Herdr control. Do not use it merely because a task could benefit from a background terminal, delegation, or parallel work.
+
+## Choose one controller mode
+
+### In-pane mode
+
+Use in-pane mode when this process is running inside a Herdr-managed pane:
 
 ```bash
 test "${HERDR_ENV:-}" = 1
 ```
 
-Controlling Herdr from outside any Herdr session is allowed and expected. Do not refuse the work or stop when `HERDR_ENV` is unset. The `herdr` binary in `PATH` talks to the running Herdr server in both cases. Use it to inspect work, create terminal layout, start agents and commands, read output, and wait for state changes.
+The inherited session and caller IDs are valid in this mode. `--current` may target the calling pane when that is the user's intent.
 
-The difference is targeting context. Inside a Herdr pane, the caller's workspace, tab, and pane IDs are injected, `--current` resolves the calling pane, and the caller's working directory is available directly. Outside a session those variables are unset, and `--current` or an omitted target falls back to the UI-focused pane, which can belong to the user or another client. Outside a session:
+### Explicit external-controller mode
 
-1. Run `herdr session list --json` and select the exact session name. Keep the global `--session <exact-name>` option before the command group on every control command for that session.
-2. Discover explicit targets with `herdr workspace list`, `herdr tab list --workspace <id>`, `herdr pane list --workspace <id>`, and `herdr agent list`.
-3. Pass an explicit workspace ID, tab ID, pane ID, or unique live agent name on every command that accepts a target. Never use `--current`, omit an optional target, or rely on UI focus.
+Use external mode only when the user explicitly asked for Herdr control and this process is outside a Herdr pane. Herdr subcommands do not require `HERDR_ENV`; only `--current` depends on inherited pane context. Never manually set or fake `HERDR_ENV`.
+
+Discover the exact session name before entering external-controller mode. Session listing is the only Herdr discovery command that may omit global `--session` because it does not control a session:
+
+```bash
+herdr session list --json
+```
+
+Select one exact session from that result. Global `--session <exact-name>` selects that session's socket and overrides inherited socket routing. Put it before the command group on every later Herdr command:
+
+```bash
+herdr --session <exact-name> workspace list
+herdr --session <exact-name> pane list --workspace <workspace-id>
+herdr --session <exact-name> agent list
+```
+
+External mode has these strict rules:
+
+- Never use `--current`.
+- Never omit an optional workspace, pane, or agent target.
+- Never rely on UI focus or focused-state fallback; omitted optional targets can use focused state.
+- Every targetable operation must use an explicit workspace ID, pane ID, or unique live agent name.
+- Keep global `--session <exact-name>` on every command after session discovery.
+
+Use only session-scoped list or snapshot commands for discovery after selecting the session. Use their returned IDs and names for all later targetable operations.
 
 ## Learn the current CLI
 
-The installed binary is the authority for command syntax. Start with:
+The installed binary is the authority for command syntax. In in-pane mode, start with:
 
 ```bash
 herdr --help
 ```
 
-Then print the relevant command group by running the group without a subcommand:
+In external mode, retain the selected session even while reading help:
+
+```bash
+herdr --session <exact-name> --help
+```
+
+Then print only the relevant command group. In external mode, prefix every example below with `herdr --session <exact-name>` instead of `herdr`:
 
 ```bash
 herdr agent
@@ -77,12 +111,13 @@ Herdr injects the caller's context into each managed pane. These variables exist
 printf '%s\n' "$HERDR_WORKSPACE_ID" "$HERDR_TAB_ID" "$HERDR_PANE_ID"
 ```
 
-Prefer `--current` when a pane command should target the calling pane, and only when running inside that pane. Omitting a target may use the UI-focused pane, which can belong to the user or another client.
+In in-pane mode, prefer `--current` when a pane command should target the calling pane. Omitting a target may use the UI-focused pane, which can belong to the user or another client.
 
-Discover live state with:
+In external mode, caller context is unavailable or irrelevant. Always use the selected session and an explicit target. Do not use `--current`, and do not omit a target that the command accepts.
+
+Discover live state in in-pane mode with:
 
 ```bash
-herdr session list
 herdr workspace list
 herdr tab list --workspace "$HERDR_WORKSPACE_ID"
 herdr pane current --current
@@ -90,29 +125,31 @@ herdr pane list --workspace "$HERDR_WORKSPACE_ID"
 herdr agent list
 ```
 
-Outside a session, use `herdr workspace list` and `herdr pane list --workspace <id>` with an explicit workspace ID instead of the injected variables.
+Use the corresponding session-prefixed commands and returned explicit IDs in external mode.
 
 Creation responses expose the IDs to use next. `workspace create` returns `.result.workspace`, `.result.tab`, and `.result.root_pane`. `tab create` returns `.result.tab` and `.result.root_pane`. `pane split` returns the new pane as `.result.pane`.
 
 ## Start and coordinate an agent
 
-Default to a sibling pane in the current tab and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location. Outside a session, ask the user which session and workspace should receive the new work, or use the session named by the user and an explicit workspace ID from its list output.
+Default to a sibling pane in the selected workspace and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location.
 
-Honor a direction requested by the user. Otherwise inspect the caller pane (inside a session):
+Honor a direction requested by the user. Otherwise inspect the target pane. In in-pane mode this can be:
 
 ```bash
 herdr pane layout --pane "$HERDR_PANE_ID"
 ```
 
-Outside a session, inspect the target pane by explicit ID instead.
+In external mode, use the selected session and an explicit pane ID.
 
-Split a wide pane to the right and a narrow or tall pane down. Avoid repeated same-direction splits that create unusably narrow columns or short rows. Keep the user's focus in the calling pane and explicitly preserve the caller's working directory:
+Split a wide pane to the right and a narrow or tall pane down. Avoid repeated same-direction splits that create unusably narrow columns or short rows. Keep user focus unchanged and explicitly preserve the working directory:
 
 ```bash
-herdr pane split --current --direction right --cwd "$PWD" --no-focus
+herdr pane split --pane <pane-id> --direction right --cwd "$PWD" --no-focus
 ```
 
-Replace `right` with `down` when appropriate. Read the new pane ID from `.result.pane.pane_id`.
+In external mode, prefix that command with global `--session <exact-name>`. Replace `right` with `down` when appropriate. Read the new pane ID from `.result.pane.pane_id`.
+
+For any external background creation, use `--no-focus` and provide an explicit `--cwd`. Do not let omitted defaults select a focused target or an unintended directory.
 
 An available shell pane must be at its interactive prompt, with the shell itself in the foreground and no foreground command, editor, or agent running. Start a supported agent in that pane with a useful unique name:
 
@@ -120,13 +157,13 @@ An available shell pane must be at its interactive prompt, with the shell itself
 herdr agent start reviewer --kind codex --pane <returned-pane-id>
 ```
 
-Use the kind requested by the user. Run `herdr agent` to inspect the installed kind list and options. Pass native agent arguments only after `--`:
+In external mode, retain global `--session <exact-name>`. Use the kind requested by the user. Run the relevant `agent` help in the selected controller mode to inspect the installed kind list and options. Pass native agent arguments only after `--`:
 
 ```bash
 herdr agent start reviewer --kind codex --pane <returned-pane-id> -- <agent-args...>
 ```
 
-`agent start` returns only after Herdr detects the expected agent in the same pane and considers it ready for interactive input. It defaults to a 30-second startup timeout.
+A successful `agent start` returns only after Herdr detects the expected agent in the same pane and considers it ready for interactive input. If the agent is blocked during startup, the command returns `agent_not_ready` immediately but keeps the name available for `agent read` and `agent send-keys`. Wait until the agent becomes idle before prompting it. Startup defaults to a 30-second timeout.
 
 Submit work through the agent surface:
 
@@ -134,7 +171,7 @@ Submit work through the agent surface:
 herdr agent prompt reviewer "Review the current diff and report only actionable findings." --wait --timeout 120000
 ```
 
-`agent prompt` atomically submits text and encoded Enter while honoring the pane's live bracketed-paste mode. For normal agent work, `--wait` is enough: it waits for the first settled `idle`, `done`, or `blocked` state. Do not repeat those defaults with `--until`.
+In external mode, retain global `--session <exact-name>` and use the unique live agent name or its explicit pane ID. `agent prompt` honors the pane's live bracketed-paste mode and sends text followed by encoded Enter after a short delay. It rejects an agent already waiting at an approval or question dialog with `agent_blocked` before sending any input. Inspect the blocked UI and ask the user before answering it. For normal agent work, `--wait` is enough: it waits for the first settled `idle`, `done`, or `blocked` state. Do not repeat those defaults with `--until`.
 
 A prompt sent from a non-working state must produce an observed lifecycle change within five seconds. Otherwise Herdr returns `agent_prompt_stalled` instead of waiting indefinitely. This wait tracks lifecycle state, not an individual turn; if the agent is already working, completion of the active turn may satisfy it.
 
@@ -160,17 +197,17 @@ herdr agent get reviewer
 herdr agent read reviewer --source recent-unwrapped --lines 120
 ```
 
-If a wait fails or returns `blocked`, inspect `agent get` and `agent read` before deciding what input to send. Use the pane surface only when raw terminal control is intentional.
+In external mode, retain global `--session <exact-name>` on all of these commands. If a wait fails or returns `blocked`, inspect `agent get` and `agent read` before deciding what input to send. Use the pane surface only when raw terminal control is intentional.
 
 ## Run an ordinary command in another pane
 
-Create a sibling pane with the same geometry rule, preserve the caller's working directory, and keep user focus unchanged:
+Create a sibling pane with the same geometry rule, preserve the working directory, and keep user focus unchanged:
 
 ```bash
-herdr pane split --current --direction right --cwd "$PWD" --no-focus
+herdr pane split --pane <pane-id> --direction right --cwd "$PWD" --no-focus
 ```
 
-Read the new pane ID from `.result.pane.pane_id`, then run and inspect the command:
+In external mode, retain global `--session <exact-name>`. Read the new pane ID from `.result.pane.pane_id`, then run and inspect the command with that explicit ID:
 
 ```bash
 herdr pane run <returned-pane-id> "just test"
@@ -196,9 +233,10 @@ After that failed read, ask the agent to write its complete response as Markdown
 ## Safety and coordination rules
 
 - Use `--no-focus` for background work unless the user asked to switch context.
-- Inside a session use `--current`, an explicit pane ID, or a unique agent name. Outside a session always use an explicit workspace ID, tab ID, pane ID, or unique agent name. Never rely on another client's focused pane.
+- Use an explicit pane ID or a unique agent name. In-pane mode may use `--current` for the calling pane; external mode must not.
+- In external mode, keep global `--session <exact-name>` and explicit targets on every targetable command.
 - Parse IDs from JSON responses. Do not derive them from sidebar order or examples.
-- Do not close workspaces, tabs, panes, or sessions you did not create unless the user explicitly asked.
+- Never close a user workspace, tab, pane, session, or agent without an explicit request.
 - Never run `herdr server stop` from an active session unless the user explicitly intends to stop the server and its pane processes.
 - Never kill the main Herdr process. Use named test sessions for experiments that need an isolated server.
 - CLI server errors are JSON on stderr with exit status 1. CLI syntax errors exit with status 2.
