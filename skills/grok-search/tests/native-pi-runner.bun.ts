@@ -17,7 +17,7 @@ function resultValue(result: ToolResult): unknown {
   return JSON.parse(result.content[0]?.text ?? "null");
 }
 
-test("Pi ExtensionRunner loads and executes the three Grok tools", async () => {
+test("Pi ExtensionRunner loads only the X search and fetch tools", async () => {
   const root = mkdtempSync(join(tmpdir(), "grok-search-pi-runner-"));
   const loader = new DefaultResourceLoader({
     cwd: pluginRoot,
@@ -84,15 +84,14 @@ test("Pi ExtensionRunner loads and executes the three Grok tools", async () => {
 
     const search = session.getToolDefinition("grok_search");
     const fetch = session.getToolDefinition("grok_fetch");
-    const prompt = session.getToolDefinition("grok_prompt");
     expect(search).toBeDefined();
     expect(fetch).toBeDefined();
-    expect(prompt).toBeDefined();
+    expect(session.getToolDefinition("grok_prompt")).toBeUndefined();
 
-    if (!prompt) throw new Error("Pi did not register grok_prompt");
-    const result = await prompt.execute(
+    if (!search) throw new Error("Pi did not register grok_search");
+    const result = await search.execute(
       "native-call",
-      { prompt: "Reply exactly OK" },
+      { query: "Recent posts" },
       new AbortController().signal,
       undefined,
       runner.createContext(),

@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "grok-search",
   "version": "0.1.0",
-  "description": "Expose Grok X search, web search, post fetching, and inference as native Pi and OMP tools.",
+  "description": "Expose X/Twitter search and post fetching through native Grok tools for Pi and OMP.",
   "author": {
     "name": "emo-eth",
     "url": "https://github.com/emo-eth"
@@ -11,7 +11,6 @@
   "keywords": [
     "grok",
     "x search",
-    "web search",
     "agent tools"
   ]
 }

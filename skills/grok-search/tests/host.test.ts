@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildFetchArgs,
-  buildPromptArgs,
   buildSearchArgs,
   installGrokTools,
   runGrokCli,
@@ -50,11 +49,31 @@ for (const [name, adapter] of [
   ["Pi", grokSearchPiExtension],
   ["OMP", grokSearchOmpExtension],
 ] as const) {
-  test(`${name} registers the three native Grok tools`, () => {
+  test(`${name} registers only X search and fetch tools`, () => {
     const host = new Host();
     adapter(host);
-    assert.deepEqual([...host.tools.keys()], ["grok_search", "grok_fetch", "grok_prompt"]);
+    assert.deepEqual([...host.tools.keys()], ["grok_search", "grok_fetch"]);
     for (const tool of host.tools.values()) assert.ok(tool.parameters);
+
+    const schema = host.tools.get("grok_search")?.parameters;
+    if (typeof schema !== "object" || schema === null || !("properties" in schema)) {
+      throw new Error("grok_search has no parameter schema");
+    }
+    const properties = schema.properties;
+    if (typeof properties !== "object" || properties === null) {
+      throw new Error("grok_search has no properties");
+    }
+    assert.deepEqual(Object.keys(properties), [
+      "query",
+      "response",
+      "handles",
+      "excludeHandles",
+      "from",
+      "to",
+      "images",
+      "videos",
+      "model",
+    ]);
   });
 }
 
@@ -70,7 +89,6 @@ test("grok_search defaults to source mode and forwards X filters and cancellatio
 
   const value = await host.tools.get("grok_search")?.execute("call-1", {
     query: "Recent posts",
-    source: "x",
     handles: ["@one", "@two"],
     from: "2026-08-01",
     images: true,
@@ -98,42 +116,26 @@ test("grok_search defaults to source mode and forwards X filters and cancellatio
   assert.deepEqual(resultValue(value), RESULT);
 });
 
-test("search argument construction keeps source-specific interfaces honest", () => {
+test("search argument construction always targets X", () => {
   assert.deepEqual(buildSearchArgs({
-    query: "Current release",
-    source: "web",
+    query: "Current reactions",
     response: "answer",
-    allowDomains: ["github.com"],
+    excludeHandles: ["@noise"],
   }), [
-    "web",
-    "Current release",
+    "x",
+    "Current reactions",
     "--json",
-    "--allow-domain",
-    "github.com",
-  ]);
-
-  assert.deepEqual(buildSearchArgs({ query: "Check both", source: "both" }), [
-    "ask",
-    "Check both",
-    "--json",
-    "--brief",
+    "--exclude-handle",
+    "@noise",
   ]);
 
   assert.throws(
-    () => buildSearchArgs({ query: "Bad", source: "web", handles: ["@one"] }),
-    /X filters require source=x/,
-  );
-  assert.throws(
-    () => buildSearchArgs({ query: "Bad", source: "x", allowDomains: ["example.com"] }),
-    /web domain filters require source=web/,
-  );
-  assert.throws(
-    () => buildSearchArgs({ query: "Bad", source: "x", handles: ["@one"], excludeHandles: ["@two"] }),
+    () => buildSearchArgs({ query: "Bad", handles: ["@one"], excludeHandles: ["@two"] }),
     /cannot be combined/,
   );
 });
 
-test("fetch and prompt map to the existing CLI without shell interpolation", () => {
+test("fetch maps to the X CLI without shell interpolation", () => {
   assert.deepEqual(buildFetchArgs({
     url: "https://x.com/user/status/123",
     model: "grok-test",
@@ -143,17 +145,6 @@ test("fetch and prompt map to the existing CLI without shell interpolation", () 
     "--json",
     "--model",
     "grok-test",
-  ]);
-
-  assert.deepEqual(buildPromptArgs({
-    prompt: "Reply exactly OK",
-    system: "Be terse",
-  }), [
-    "prompt",
-    "Reply exactly OK",
-    "--json",
-    "--system",
-    "Be terse",
   ]);
 });
 

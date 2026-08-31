@@ -1,28 +1,66 @@
 ---
 name: grok-search
-description: Search X (Twitter) and the web live, fetch tweets/threads, and run plain Grok inference via xAI's API on a SuperGrok / X Premium+ subscription (grok CLI OAuth, its own login, or XAI_API_KEY). Use when the user asks to search Twitter/X, find tweets or posts, check what people are saying about something, fetch a tweet or thread by URL, gather raw X sources for synthesis, or wants fresher web results than a normal search tool.
+description: Search X (Twitter) live and fetch X posts or threads through native Grok tools backed by xAI. Use when the user asks to find tweets/posts, inspect an X URL, search a handle, gather reactions on X, or collect raw X sources. This skill is X-only: it does not provide web search or general Grok inference.
 ---
 
 # grok-search
 
-X (Twitter) search, web search, post fetching, and plain Grok inference
-through xAI's Responses API. Search runs server-side on xAI (`x_search` /
-`web_search` tools) and returns cited results -- no browser or scraping.
+Search and fetch content from X/Twitter through xAI's server-side `x_search`.
+No browser or scraping.
 
-## Native tools
+## Agent contract
 
-When the host exposes them, use the native tools instead of invoking the CLI:
+Use only these native tools:
 
 | Tool | Use for |
 | --- | --- |
-| `grok_search` | X, web, or combined search; defaults to raw `sources` for the calling model to synthesize |
-| `grok_fetch` | One X post or thread by URL |
-| `grok_prompt` | Plain Grok inference without search |
+| `grok_search` | Search X posts, profiles, threads, reactions, and trends |
+| `grok_fetch` | Fetch one X post or thread by URL |
+
+This skill is only for X/Twitter. Use the normal web-search tool for the web
+and the active model for ordinary inference. The bundled Python script is the
+tools' implementation and an authentication utility; do not invoke it directly
+for agent work.
+
+If the native tools are unavailable, report that the Grok extension needs
+installation or a full host restart. Do not fall back to the CLI.
 
 The tools return structured JSON with `model`, `answer`, `citations`, and
-`degraded`. They execute the bundled CLI without a shell, share its credentials
-and quota, and forward host cancellation to the request process. `auth`,
-`login`, `logout`, and `models` remain CLI-only administration.
+`degraded`. Each call consumes Grok subscription quota or xAI API credits.
+
+## `grok_search`
+
+`query` is a natural-language question about X content. The tool always searches
+X; there is no source selector.
+
+- `response: "sources"` (default): raw posts for the calling model to synthesize.
+- `response: "answer"`: Grok synthesizes from X search.
+- `handles` / `excludeHandles`: include or exclude up to ten X handles; mutually
+  exclusive.
+- `from` / `to`: strict `YYYY-MM-DD` post window.
+- `images` / `videos`: let Grok inspect post media.
+- `model`: optional xAI model override.
+
+Prefer `sources`, batch related questions, and use the default fast model.
+
+## `grok_fetch`
+
+Pass one X or Twitter post URL. The result includes verbatim post text, author,
+timestamp, quoted posts, media notes, and the full thread when available.
+
+## Code mode
+
+OMP eval exposes the same tools as `tool.grok_search(...)` and
+`tool.grok_fetch(...)`. Code mode does not add web search or plain Grok
+inference.
+
+## Trust
+
+Cited URLs are ground truth; Grok's prose is synthesis. When narrowed search
+returns `degraded: true`, broaden the date window or remove handle filters
+before trusting the answer.
+
+## Installation
 
 The same directory is an installable Pi and OMP package:
 
@@ -31,90 +69,7 @@ pi install ~/.agents/skills/grok-search
 omp plugin install ~/.agents/skills/grok-search
 ```
 
-If the native tools are unavailable, use `scripts/grok-search.py` inside this
-skill directory (python3, stdlib only, executable). Invocation, first match
-wins:
-
-1. `~/.agents/skills/grok-search/scripts/grok-search.py` (the standard
-   `npx skills` universal install location).
-2. `scripts/grok-search.py` resolved relative to this SKILL.md, wherever
-   your harness installed it.
-
-Copy-paste examples:
-
-```sh
-grok-search.py x "what are people saying about <topic>? summarize with links" --from 2026-08-01
-grok-search.py x "reactions to <event>" --brief --from 2026-08-10   # raw sources, you synthesize
-grok-search.py x "latest post from @someuser, text and URL" --handle @someuser
-grok-search.py fetch https://x.com/someuser/status/123456789
-grok-search.py web "current <library> release version" --allow-domain github.com
-grok-search.py ask "did <event> actually happen? check X and the web"
-grok-search.py prompt "one-off question for Grok" --system "You are terse."
-cat notes.md | grok-search.py prompt -                              # '-' reads stdin
-```
-
-## Commands
-
-| Command | Use for |
-| --- | --- |
-| `x "<question>"` | X/Twitter posts, profiles, threads, reactions, trends |
-| `fetch <post-url>` | One specific X post or thread, quoted verbatim with author + timestamp |
-| `web "<question>"` | Live web search (same subscription) |
-| `ask "<question>"` | Free-form; Grok picks X search and/or web search itself |
-| `prompt "<text>"` | Plain Grok inference, no search tools (`--system` supported) |
-| `models` | List models this credential can use, with context sizes |
-| `auth` | Show every available credential and which one is active |
-| `login` / `logout` | This script's own OAuth sign-in/out (only needed without the grok CLI) |
-
-Search commands accept `--json` (structured: `answer`, `citations`,
-`degraded`), `--model <id>` (default `grok-4-fast`; see `models` for the
-catalog -- note xAI may serve an alias, e.g. `grok-4-fast` resolves to a
-current fast model), `--timeout <seconds>` (default 180; typical calls
-return in 4-25s), and `--max-citations N` (markdown cap, default 10,
-`0` = unlimited; `--json` always carries the full deduplicated list).
-Query arguments accept `-` to read from stdin.
-
-## `--brief`: cheap sources, smart synthesis
-
-`x`, `web`, and `ask` take `--brief`: Grok returns ONLY a raw source list
-(one line per post: `@handle (date): "verbatim text" -- URL`) with no
-synthesis. Use this when the calling model should do the reasoning and
-Grok should only gather -- it burns fewer subscription tokens per call and
-gives you verbatim post text instead of Grok's summary. Default mode is
-better when you want a one-shot answer.
-
-Subscription quota is limited (per-account, not per-key). To conserve it:
-prefer `--brief` + the default fast model for gathering, batch related
-questions into one query, and reach for a heavier `--model` only when the
-one-shot synthesis genuinely matters.
-
-## `x` filters
-
-- `--handle @user` (repeatable, max 10): only posts from these accounts.
-- `--exclude-handle @user` (repeatable, max 10): exclude these accounts.
-  Cannot be combined with `--handle`.
-- `--from YYYY-MM-DD` / `--to YYYY-MM-DD`: post date window.
-- `--images` / `--videos`: let Grok read media in posts.
-
-## `web` filters
-
-- `--allow-domain example.com` / `--block-domain example.com` (repeatable,
-  mutually exclusive).
-
-## Writing good queries
-
-Queries are natural-language questions, not keyword strings. Ask for what
-you actually want in the answer ("One post, text and URL", "summarize the
-main criticisms with links") -- Grok composes the reply, so instruct it
-like a researcher.
-
-## Trust and degraded results
-
-Cited URLs are the ground truth; the prose is Grok's synthesis. When
-narrowing filters are active and **no citations** come back, the CLI warns
-(or sets `"degraded": true` in `--json`): the answer likely came from model
-memory, not live posts. Broaden the date window or drop handle filters and
-retry before trusting it.
+A newly installed or updated OMP extension requires a full process restart.
 
 ## Auth model
 

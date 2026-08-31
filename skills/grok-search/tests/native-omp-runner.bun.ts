@@ -20,7 +20,7 @@ function resultValue(result: ToolResult): unknown {
   return JSON.parse(result.content[0]?.text ?? "null");
 }
 
-test("OMP ExtensionRunner loads and executes the three Grok tools", async () => {
+test("OMP ExtensionRunner loads only the X search and fetch tools", async () => {
   const root = mkdtempSync(join(tmpdir(), "grok-search-omp-runner-"));
   const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
   const fakePython = join(root, "fake-python");
@@ -92,14 +92,13 @@ test("OMP ExtensionRunner loads and executes the three Grok tools", async () => 
 
     const search = session.getToolByName("grok_search");
     const fetch = session.getToolByName("grok_fetch");
-    const prompt = session.getToolByName("grok_prompt");
     expect(search).toBeDefined();
     expect(fetch).toBeDefined();
-    expect(prompt).toBeDefined();
+    expect(session.getToolByName("grok_prompt")).toBeUndefined();
 
-    const result = await prompt?.execute(
+    const result = await search?.execute(
       "native-call",
-      { prompt: "Reply exactly OK" },
+      { query: "Recent posts" },
       new AbortController().signal,
     ) as unknown as ToolResult;
     expect(resultValue(result)).toEqual(expected);

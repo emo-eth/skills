@@ -30,7 +30,6 @@ export type RuntimeHost = {
 
 type SearchInput = {
   query: string;
-  source: "x" | "web" | "both";
   response?: "sources" | "answer";
   handles?: string[];
   excludeHandles?: string[];
@@ -38,8 +37,6 @@ type SearchInput = {
   to?: string;
   images?: boolean;
   videos?: boolean;
-  allowDomains?: string[];
-  blockDomains?: string[];
   model?: string;
 };
 
@@ -48,11 +45,6 @@ type FetchInput = {
   model?: string;
 };
 
-type PromptInput = {
-  prompt: string;
-  system?: string;
-  model?: string;
-};
 
 const SCRIPT_PATH = fileURLToPath(new URL("../scripts/grok-search.py", import.meta.url));
 const PROCESS_TIMEOUT_MS = 195_000;
@@ -70,8 +62,8 @@ export function installGrokTools(
 
   host.registerTool({
     name: "grok_search",
-    label: "Search with Grok",
-    description: "Search X, the web, or both through xAI. Each call consumes Grok quota. The default sources response returns raw material for the calling model to synthesize; answer asks Grok to synthesize.",
+    label: "Search X with Grok",
+    description: "Search X/Twitter posts, profiles, threads, reactions, and trends through xAI. This tool searches X only, never the web. Each call consumes Grok quota. The default sources response returns raw material for the calling model to synthesize.",
     parameters: SEARCH_SCHEMA,
     execute: async (...args: unknown[]) => {
       const input = toolInput<SearchInput>(args);
@@ -90,16 +82,6 @@ export function installGrokTools(
     },
   });
 
-  host.registerTool({
-    name: "grok_prompt",
-    label: "Prompt Grok",
-    description: "Run plain Grok inference without live X or web search. Use grok_search for current or source-backed information. Each call consumes Grok quota.",
-    parameters: PROMPT_SCHEMA,
-    execute: async (...args: unknown[]) => {
-      const input = toolInput<PromptInput>(args);
-      return textResult(await runner(buildPromptArgs(input), { signal: toolSignal(args) }));
-    },
-  });
 }
 
 export async function runGrokCli(
@@ -147,11 +129,6 @@ export async function runGrokCli(
 
 export function buildSearchArgs(input: SearchInput): string[] {
   const query = requiredText(input.query, "query");
-  const source = input.source;
-  if (source !== "x" && source !== "web" && source !== "both") {
-    throw new Error("source must be x, web, or both");
-  }
-
   const response = input.response ?? "sources";
   if (response !== "sources" && response !== "answer") {
     throw new Error("response must be sources or answer");
@@ -159,36 +136,18 @@ export function buildSearchArgs(input: SearchInput): string[] {
 
   const handles = stringList(input.handles, "handles");
   const excludedHandles = stringList(input.excludeHandles, "excludeHandles");
-  const allowedDomains = stringList(input.allowDomains, "allowDomains");
-  const blockedDomains = stringList(input.blockDomains, "blockDomains");
-  const hasXFilters = handles.length > 0 || excludedHandles.length > 0 || input.from !== undefined || input.to !== undefined || input.images === true || input.videos === true;
-  const hasWebFilters = allowedDomains.length > 0 || blockedDomains.length > 0;
-
   if (handles.length > 0 && excludedHandles.length > 0) {
     throw new Error("handles and excludeHandles cannot be combined");
   }
-  if (allowedDomains.length > 0 && blockedDomains.length > 0) {
-    throw new Error("allowDomains and blockDomains cannot be combined");
-  }
-  if (source !== "x" && hasXFilters) {
-    throw new Error("X filters require source=x");
-  }
-  if (source !== "web" && hasWebFilters) {
-    throw new Error("web domain filters require source=web");
-  }
 
-  const command = source === "both" ? "ask" : source;
-  const args = [command, query, "--json"];
+  const args = ["x", query, "--json"];
   if (response === "sources") args.push("--brief");
-
   for (const handle of handles) args.push("--handle", handle);
   for (const handle of excludedHandles) args.push("--exclude-handle", handle);
   if (input.from !== undefined) args.push("--from", requiredText(input.from, "from"));
   if (input.to !== undefined) args.push("--to", requiredText(input.to, "to"));
   if (input.images === true) args.push("--images");
   if (input.videos === true) args.push("--videos");
-  for (const domain of allowedDomains) args.push("--allow-domain", domain);
-  for (const domain of blockedDomains) args.push("--block-domain", domain);
   appendModel(args, input.model);
   return args;
 }
@@ -199,12 +158,6 @@ export function buildFetchArgs(input: FetchInput): string[] {
   return args;
 }
 
-export function buildPromptArgs(input: PromptInput): string[] {
-  const args = ["prompt", requiredText(input.prompt, "prompt"), "--json"];
-  if (input.system !== undefined) args.push("--system", requiredText(input.system, "system"));
-  appendModel(args, input.model);
-  return args;
-}
 
 function appendModel(args: string[], model: string | undefined): void {
   if (model !== undefined) args.push("--model", requiredText(model, "model"));
@@ -279,19 +232,16 @@ function textResult(value: GrokResult): { content: Array<{ type: "text"; text: s
 const SEARCH_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["query", "source"],
+  required: ["query"],
   properties: {
-    query: { type: "string", minLength: 1, description: "Natural-language search question." },
-    source: { type: "string", enum: ["x", "web", "both"], description: "Where Grok searches. both lets Grok use X and web search." },
-    response: { type: "string", enum: ["sources", "answer"], default: "sources", description: "sources returns raw material for the calling model; answer asks Grok to synthesize." },
-    handles: { type: "array", maxItems: 10, items: { type: "string", minLength: 1 }, description: "Only X posts from these handles; source must be x." },
-    excludeHandles: { type: "array", maxItems: 10, items: { type: "string", minLength: 1 }, description: "Exclude these X handles; source must be x." },
-    from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Earliest X post date in YYYY-MM-DD; source must be x." },
-    to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Latest X post date in YYYY-MM-DD; source must be x." },
-    images: { type: "boolean", description: "Let Grok inspect images in X posts; source must be x." },
-    videos: { type: "boolean", description: "Let Grok inspect videos in X posts; source must be x." },
-    allowDomains: { type: "array", items: { type: "string", minLength: 1 }, description: "Restrict web search to these domains; source must be web." },
-    blockDomains: { type: "array", items: { type: "string", minLength: 1 }, description: "Exclude these domains from web search; source must be web." },
+    query: { type: "string", minLength: 1, description: "Natural-language question about content on X/Twitter." },
+    response: { type: "string", enum: ["sources", "answer"], default: "sources", description: "sources returns raw X material for the calling model; answer asks Grok to synthesize from X." },
+    handles: { type: "array", maxItems: 10, items: { type: "string", minLength: 1 }, description: "Only X posts from these handles." },
+    excludeHandles: { type: "array", maxItems: 10, items: { type: "string", minLength: 1 }, description: "Exclude these X handles." },
+    from: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Earliest X post date in YYYY-MM-DD." },
+    to: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Latest X post date in YYYY-MM-DD." },
+    images: { type: "boolean", description: "Let Grok inspect images in X posts." },
+    videos: { type: "boolean", description: "Let Grok inspect videos in X posts." },
     model: { type: "string", minLength: 1, description: "Optional xAI model override." },
   },
 } as const;
@@ -306,13 +256,3 @@ const FETCH_SCHEMA = {
   },
 } as const;
 
-const PROMPT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["prompt"],
-  properties: {
-    prompt: { type: "string", minLength: 1, description: "Prompt sent to Grok without search tools." },
-    system: { type: "string", minLength: 1, description: "Optional system prompt." },
-    model: { type: "string", minLength: 1, description: "Optional xAI model override." },
-  },
-} as const;

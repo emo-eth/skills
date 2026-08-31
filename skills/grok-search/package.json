@@ -10,8 +10,7 @@
     "pi-package",
     "omp-package",
     "grok",
-    "x-search",
-    "web-search"
+    "x-search"
   ],
   "pi": {
     "extensions": [
