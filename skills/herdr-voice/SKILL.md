@@ -1,45 +1,37 @@
 ---
 name: herdr-voice
-description: "Control Herdr from a Codex realtime voice task, using exact named-session CLI control by default and a Codex pane relay only when direct control is unavailable."
+description: "Delegate Herdr control from a Codex realtime voice task to one OMP delegate that manages Herdr agents. The voice task only delegates and never controls Herdr directly."
 ---
 
 # Herdr voice control
 
-Prefer direct external Herdr CLI control. Use a Codex process inside a Herdr pane only as a fallback. Do not patch Herdr, Codex, Pi, or OMP to establish either path.
+The voice task never controls Herdr itself and never manages task subagents. It only delegates: spin up one OMP session, hand it the whole Herdr request, and relay its result. Do not patch Herdr, Codex, Pi, or OMP to establish this path.
 
-Before control, read the installed `herdr` skill completely and preserve its authorization and safety boundaries. Never close a user workspace, tab, pane, session, or agent without an explicit request.
+## Delegate handoff
 
-## Direct setup
-
-1. Do not claim the voice task is inside Herdr, and do not set or fake `HERDR_ENV`.
-2. Run `herdr session list --json` only to discover exact session names. Select the intended exact name.
-3. Put global `--session <exact-name>` before the command group on every later Herdr command.
-4. Discover workspace IDs and unique live agent names with session-scoped list commands. For every command that accepts a workspace, pane, or agent target, provide an explicit workspace ID, pane ID, or unique live agent name.
-
-Never use `--current`, omit an optional target, or rely on UI focus or focused-state fallback. For background creation, use `--no-focus` and provide an explicit working directory.
-
-## Fallback relay setup
-
-Use this only when direct external control is unavailable.
-
-1. Start Codex in a Herdr pane and send any first message. That first message creates an addressable Codex task.
-2. Discover the new task and send it the Herdr work. If direct thread messaging is blocked because the live Codex CLI owns the writer, queue the message:
+1. Keep the user's Herdr request verbatim. The explicit user request is the delegate's only authorization; do not add Herdr work the user did not ask for.
+2. Spin up one OMP delegate and hand it the entire job, including any subagent management it needs:
 
    ```bash
-   codex queue --thread <thread-uuid-or-exact-name> --message "<work>"
+   omp -p "Use the installed herdr skill for this explicit user request: <request verbatim>. Read the skill completely before any control and preserve its authorization and safety boundaries. Manage any subagents you need yourself. Report the final result."
    ```
 
-3. Before any Herdr control, the relay reads the installed `herdr` skill completely and verifies:
+3. Read the delegate's printed final output and relay it to the user. That output is the authoritative result.
+4. Send follow-up Herdr work and answers to the delegate's questions to the same session instead of spawning another:
 
    ```bash
-   test "${HERDR_ENV:-}" = 1
+   omp -p -c "<follow-up request or answer verbatim>"
    ```
 
-After the relay restarts, send any first message in the replacement Codex session, then rediscover that replacement task before sending more work.
+## Voice boundaries
+
+- Never run `herdr` commands from the voice task, never set or fake `HERDR_ENV`, and never claim the voice task is inside Herdr.
+- Never split the Herdr work, track subtask state, or spawn, supervise, or tear down subagents from the voice task. The OMP delegate owns all of that.
+- Hand the whole request to one delegate. Spawning parallel Herdr managers is the delegate's decision, never the voice task's.
+- If `omp` cannot start or the delegate fails, report that to the user. Direct Herdr control from the voice task is not a fallback.
 
 ## Verification
 
-- Direct mode: use the selected session to list workspaces, then inspect one intended workspace or pane with its explicit ID. Accept the actual Herdr CLI JSON as the result.
-- Relay mode: use `read_thread` to confirm that the relay read the Herdr skill, verified `HERDR_ENV=1`, and returned the requested CLI result.
-- Treat `read_thread` content and actual CLI results as authoritative. A task list or status label can be stale while the live CLI still works.
-- Do not use screen capture for setup unless the current visible state is genuinely required.
+- Accept the delegate's printed final output as the result and relay it without re-deriving or re-checking it through Herdr commands.
+- When the delegate reports a blocked approval or question, relay it to the user and send the user's answer back to the same delegate.
+- If the delegate's report is stale or contradicts the user's observation, send the discrepancy to the same delegate rather than inspecting Herdr directly.
