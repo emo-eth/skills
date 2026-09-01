@@ -184,10 +184,11 @@ agents. Native workflow validation accepted an operations routine. TypeScript
 checking and 84 focused tests pass. Contract, research, boundaries, and live
 evidence: `docs/log/2026-08-30-pi-bots.md` [verified-live].
 
-An analysis-only Hermes/Pi assessment recommends optional Hermes Bot coordination over Pi RPC; no bridge exists.
-Verdict, effort, spike, and open questions: `docs/log/2026-08-31-hermes-pi-hybrid.md`.
+The older analysis-only Hermes/Pi bridge assessment remains useful for RPC and state boundaries but is superseded as a recommendation; no bridge exists. `docs/log/2026-08-31-hermes-pi-hybrid.md`.
 
 An OMP v18.0.11 source, SDK, in-repository native-runner, and live RPC audit confirms OMP can be the first programmable Bot execution kernel, not the durable control plane or required UI. Recommendation: independent Bot specs, daemon, message/work state, and TUI over an isolated OMP SDK worker adapter; OMP Task agents and IRC remain execution plumbing. Contracts, harness comparison, protocol, gaps, and effort: `docs/log/2026-08-31-omp-bot-feasibility.md`.
+
+Current official-source research confirms Grok Bot uses a vendor-controlled persistent cloud VM while Hermes can run the full Bot stack locally on user-owned macOS hardware. The next decision gate is an isolated current-Hermes coding-and-coordination trial; OMP-only is the controlled fallback and a permanent Hermes/OMP hybrid is disfavored. Raw dossier: `docs/research/2026-09-01-hermes-harness-and-bot-mode.md`. Decision brief: `docs/summaries/2026-09-01-personal-agent-harness-decision.md`.
 
 ## Standing constraints
 
@@ -218,9 +219,10 @@ An OMP v18.0.11 source, SDK, in-repository native-runner, and live RPC audit con
 | Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 98 Node tests, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
 | Hard update restart | none yet | `plugins/hard-update-restart/` | `npm run check`, 13 Node tests, `herdr plugin link`, command-palette action discovery, interactive confirmation/cancellation and active-agent wait smokes, isolated Herdr 0.8.2 server replacement, and detached outside-session update smoke | verified-live |
 | Plugin updater | `docs/log/2026-08-30-plugin-updater.md` | `plugins/plugin-updater/` | strict `tsc`, 20 Node tests, live Herdr 0.8.2 classification/refusal/cancel/selective-update/popup/self-update smokes documented in the log | verified-live |
-| Persistent Pi domain bots | `docs/log/2026-08-30-pi-bots.md` | `plugins/pi-bots/` | strict TypeScript check, 73 focused tests, live chief-of-staff → research peer delegation with owner state and scoped memory writes, and native operations-workflow validation | verified-live |
-| Hermes/Pi Bot hybrid | `docs/log/2026-08-31-hermes-pi-hybrid.md` | proposed `pi --mode rpc` bridge; no implementation | source inspection plus independent Kimi K3 and GLM-5.3-Flash architecture reviews | proposed |
+| Persistent Pi domain bots | `docs/log/2026-08-30-pi-bots.md` | `plugins/pi-bots/` | strict TypeScript check, 84 focused tests, live chief-of-staff → research peer delegation with owner state and scoped memory writes, and native operations-workflow validation | verified-live |
+| Hermes/Pi Bot hybrid | `docs/log/2026-08-31-hermes-pi-hybrid.md` | proposed `pi --mode rpc` bridge; superseded as recommendation, no implementation | source inspection plus independent Kimi K3 and GLM-5.3-Flash architecture reviews | proposed-superseded |
 | OMP Bot runtime feasibility | `docs/log/2026-08-31-omp-bot-feasibility.md` | proposed harness-neutral Bot specs/core/TUI plus isolated OMP SDK worker adapter; no implementation | installed OMP v18.0.11 source and SDK, in-repository native runner, Pi SDK comparison, and live `rpc-ui` state/UI-frame smoke | proposed |
+| Personal agent harness decision | `docs/research/2026-09-01-hermes-harness-and-bot-mode.md`, `docs/summaries/2026-09-01-personal-agent-harness-decision.md` | isolated current-Hermes local-only trial proposed; no migration | current official Hermes/Grok Bot docs and Hermes source at `58472d8`; local Hermes 0.20.4 version check; existing Pi/OMP live receipts | researched |
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |

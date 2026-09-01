@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed and unimplemented. This assessment recommends a reversible integration experiment; it does not make Hermes a required dependency or change the current Pi Bots runtime. No runtime or skill code changed in this analysis session.
+Proposed and unimplemented. Its RPC and state-authority analysis remains useful, but its recommendation is superseded by the current local-Hermes comparison in `docs/summaries/2026-09-01-personal-agent-harness-decision.md`, which advances a local-only Hermes trial before any hybrid bridge. No runtime or skill code changed in this analysis session.
 
 ## Problem
 
