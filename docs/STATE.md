@@ -116,19 +116,7 @@ The pinned Pi 0.84.1 host loaded and executed the command through RPC and
 rendered the expected one-line widget in an interactive TUI smoke. Evidence
 is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
 
-The repository now also contains `plugins/no-code-comments/`, a native Pi,
-OMP, and Hermes write-boundary extension. The Pi/OMP adapter strips prose
-comments from `write`, replacement and patch `edit`, hashline, and `ast_edit`
-payloads. The Hermes adapter under `hermes/` uses `tool_request` middleware for
-`write_file` and both `patch` modes, plus a `pre_tool_call` fail-closed gate for
-unsupported code extensions. It also covers nested `hermes_tools` writes from
-`execute_code`; arbitrary Python or shell filesystem writes remain outside the
-tool boundary. Focused TypeScript, Node, Python, package, Plugin Doctor, native
-OMP ExtensionRunner, isolated Hermes dispatch, and Hermes code-mode checks
-pass. OMP is installed live; the Hermes adapter is source/isolated-host
-verified but not enabled in the live default profile. The exact enforcement
-boundary is in `docs/log/2026-08-24-no-code-comments.md`, and the broader port
-triage is in `docs/log/2026-08-28-hermes-extension-porting.md` [verified-live].
+The repository also contains `plugins/no-code-comments/`, a native Pi, OMP, and Hermes write-boundary extension that is currently uninstalled from every harness: OMP's copy was removed with `omp plugin uninstall`, the chezmoi sync script no longer installs it, and Pi and Hermes never had it registered live. The 0.3.0 source remains dormant and corrected: the Pi/OMP adapter strips prose comments from `write`, replacement and patch `edit`, hashline, and `ast_edit` payloads, and the Hermes adapter rewrites `write_file` and both `patch` modes through `tool_request` middleware. Unrecognized extensions, including markdown and all of its derivatives, now pass through untouched instead of blocking the write, a scheme-adjacent slash guard keeps URLs in JSX text intact, the preserved-directive list covers pragma, nosec, isort, shellcheck, vim, region, biome-ignore, deno-lint, swiftlint, nolint, noinspection, clang-format, and markdownlint directives, and the Hermes fail-closed pre_tool_call gate was removed. Arbitrary Python or shell filesystem writes remain outside the tool boundary. The boundary history is in `docs/log/2026-08-24-no-code-comments.md`, the port triage in `docs/log/2026-08-28-hermes-extension-porting.md`, and the uninstall record in `docs/log/2026-08-31-no-code-comments-uninstall.md` [verified-focused].
 
 The repository now also publishes `skills/advisor-profiles/` and
 `plugins/advisor-profiles/` for named, switchable advisor roles across OMP,
@@ -237,7 +225,7 @@ A source-level OMP v18.0.11 feasibility audit confirms OMP can be the first Bot 
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
 | Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 4 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus screenshot-matching interactive TUI smoke | verified-live |
-| Comment-free code writes | `docs/log/2026-08-24-no-code-comments.md`, `docs/log/2026-08-28-hermes-extension-porting.md` | `plugins/no-code-comments/` including `hermes/` | `npm run check`, 6 Node tests, native OMP runner, 6 Python tests, Hermes Plugin Doctor, isolated direct dispatch, nested `execute_code` write, and package dry run | verified-live |
+| Comment-free code writes | `docs/log/2026-08-24-no-code-comments.md`, `docs/log/2026-08-31-no-code-comments-uninstall.md` | `plugins/no-code-comments/` at 0.3.0, uninstalled from every harness; fail-open passthrough for markdown, derivatives, and unknown extensions; scheme-adjacent slash guard; expanded directive preservation; Hermes pre_tool_call gate removed | `npm run check`, 8 Node tests, native OMP runner, 8 Python tests, and `omp plugin uninstall` verification | verified-focused |
 | Advisor profiles | `skills/advisor-profiles/SKILL.md`, `docs/log/2026-08-29-advisor-profiles.md` | `plugins/advisor-profiles/` with Pi and Hermes adapters; OMP uses its native runtime | TypeScript check, 41 Node tests, 79 Python tests, package dry run, Hermes Plugin Doctor, native OMP status, interactive Pi status, and isolated real-model Hermes pass review | verified-live |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata, and an effect-based trigger with no recurrence, ownership, severity, or known-fix gate | documented |

@@ -140,7 +140,7 @@ function stripDelimited(
       index += 1;
       continue;
     }
-    if (content.startsWith(lineOpen, index)) {
+    if (content.startsWith(lineOpen, index) && !(index > 0 && content[index - 1] === ":")) {
       const end = content.indexOf("\n", index);
       const stop = end < 0 ? content.length : end;
       const raw = content.slice(index, stop);
@@ -211,14 +211,14 @@ function isDirective(raw: string, path: string, zeroBasedLine: number): boolean 
   const value = raw.trim();
   if (zeroBasedLine === 0 && value.startsWith("#!")) return true;
   if (zeroBasedLine <= 1 && /^#.*(?:coding\s*[:=]|-\*-\s*coding\s*:)/iu.test(value)) return true;
-  if (/^#\s*(?:type\s*:|noqa\b|pyright\b|mypy\b|ruff\b|pylint\b|fmt\s*:)/iu.test(value)) return true;
+  if (/^#\s*(?:type\s*:|noqa\b|nosec\b|pyright\b|mypy\b|ruff\b|pylint\b|fmt\s*:|pragma\b|isort\b|flake8\b|shellcheck\b|vim\b|region\b|endregion\b)/iu.test(value)) return true;
   if (/^\/\/\/\s*<(?:reference|amd-module|amd-dependency)\b/iu.test(value)) return true;
   if (/^\/\/[#@]\s*(?:sourceMappingURL|sourceURL)=/u.test(value)) return true;
-  if (/^\/\/\s*(?:@ts-(?:ignore|expect-error|nocheck|check)\b|eslint-|prettier-ignore\b|c8\s+ignore\b|istanbul\s+ignore\b)/iu.test(value)) return true;
+  if (/^\/\/\s*(?:#\s*(?:region|endregion)\b|@ts-(?:ignore|expect-error|nocheck|check)\b|eslint-|biome-ignore\b|deno-lint\b|swiftlint\b|nolint\b|noinspection\b|clang-format\b|prettier-ignore\b|c8\s+ignore\b|istanbul\s+ignore\b)/iu.test(value)) return true;
   if (/^\/\/\s*(?:go:|\+build\b|line\b|swift-tools-version\s*:)/iu.test(value)) return true;
   if (/^\/\*\s*(?:@jsx\b|@jsxFrag\b|@jsxImportSource\b|@flow\b|#__PURE__|@__PURE__|eslint\b|prettier-ignore\b|istanbul\s+ignore\b)/iu.test(value)) return true;
   if (/^<!--\s*\[(?:if|endif)\b/iu.test(value)) return true;
-  if (/^<!--\s*(?:svelte:|vue:)/iu.test(value)) return true;
+  if (/^<!--\s*(?:svelte:|vue:|markdownlint\b|stylelint\b|prettier-ignore\b)/iu.test(value)) return true;
   if (path.toLowerCase().endsWith(".sql") && /^--\s*(?:liquibase|changeset|rollback|flyway:)/iu.test(value)) return true;
   return false;
 }

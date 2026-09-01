@@ -8,7 +8,7 @@ from pathlib import Path
 HERMES_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERMES_DIR))
 
-from strip_comments import NO_CODE_COMMENTS_PROMPT, block_reason, rewrite_tool_args, strip_code_comments
+from strip_comments import NO_CODE_COMMENTS_PROMPT, rewrite_tool_args, strip_code_comments
 
 
 class StripCommentsTests(unittest.TestCase):
@@ -81,12 +81,51 @@ class StripCommentsTests(unittest.TestCase):
         self.assertIn("+const b = '/* literal */';", rewritten)
         self.assertEqual(len(rewritten.splitlines()), len(patch.splitlines()))
 
-    def test_blocks_unsupported_code_extension_with_comment_syntax(self):
-        args = {"path": "example.xyzlang", "content": "value // prose"}
-        result = rewrite_tool_args("write_file", args)
-        self.assertTrue(result.block)
-        self.assertRegex(result.reason or "", r"cannot safely classify")
-        self.assertEqual(block_reason("write_file", args), result.reason)
+    def test_passes_markdown_derivatives_and_unknown_extensions_through(self):
+        markdown = "\n".join(("# Heading", "", "<!-- note -->", "- item with # hash", ""))
+        for path in ("README.md", "docs/guide.mdx", "report.qmd", "notes.rmd", "example.xyzlang"):
+            result = rewrite_tool_args("write_file", {"path": path, "content": markdown})
+            self.assertFalse(result.block)
+            self.assertIsNone(result.args)
+            self.assertEqual(result.removed, 0)
+            self.assertEqual(strip_code_comments(markdown, path).content, markdown)
+
+    def test_keeps_scheme_adjacent_slashes_in_jsx_text(self):
+        source = "render(<a>https://example.com/path</a>); // prose\n"
+        result = strip_code_comments(source, "view.tsx")
+        self.assertEqual(result.removed, 1)
+        self.assertIn("https://example.com/path", result.content)
+        self.assertNotIn("prose", result.content)
+
+    def test_preserves_tooling_directives_across_families(self):
+        shell = "\n".join((
+            "# shellcheck disable=SC2086",
+            "# pragma: no cover",
+            "x = 1  # nosec B101",
+            "y = 2  # isort: off",
+            "",
+        ))
+        self.assertEqual(strip_code_comments(shell, "run.sh").removed, 0)
+
+        app = "\n".join((
+            "// biome-ignore lint/suspicious/noExplicitAny: needed",
+            "//nolint:gosec",
+            "// swiftlint:disable:next force_try",
+            "//#region init",
+            "//#endregion",
+            "const a = 1; // gone",
+            "",
+        ))
+        result = strip_code_comments(app, "app.ts")
+        self.assertEqual(result.removed, 1)
+        self.assertIn("biome-ignore", result.content)
+        self.assertIn("nolint:gosec", result.content)
+        self.assertIn("swiftlint:disable", result.content)
+        self.assertIn("#region init", result.content)
+        self.assertNotIn("gone", result.content)
+
+        page = "<!-- markdownlint-disable MD033 -->\n<div>x</div>\n"
+        self.assertEqual(strip_code_comments(page, "page.html").removed, 0)
 
 
 class RegistrationTests(unittest.TestCase):
@@ -119,14 +158,11 @@ class RegistrationTests(unittest.TestCase):
 
         ctx = Context()
         module.register(ctx)
-        self.assertEqual([call[0] for call in ctx.calls], ["prompt", "middleware", "hook", "command"])
+        self.assertEqual([call[0] for call in ctx.calls], ["prompt", "middleware", "command"])
         middleware = ctx.calls[1][1][1]
         rewritten = middleware("write_file", {"path": "x.py", "content": "x = 1 # prose"})
         self.assertEqual(rewritten["args"]["content"], "x = 1")
-        hook = ctx.calls[2][1][1]
-        blocked = hook("write_file", {"path": "x.unknown", "content": "x // prose"})
-        self.assertEqual(blocked["action"], "block")
-        command = ctx.calls[3][2]["handler"]
+        command = ctx.calls[2][2]["handler"]
         self.assertEqual(command(""), NO_CODE_COMMENTS_PROMPT)
 
 

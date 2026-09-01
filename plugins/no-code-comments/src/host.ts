@@ -46,7 +46,6 @@ export function rewriteToolCall(event: any): Rewrite {
 function rewriteWrite(input: Record<string, unknown>): Rewrite {
   if (typeof input.path !== "string" || typeof input.content !== "string") return { removed: 0 };
   const result = stripCodeComments(input.content, input.path);
-  if (!result.supported && hasLikelyComment(input.content)) return unsupported(input.path);
   if (result.content === input.content) return { removed: 0 };
   return { input: { ...input, content: result.content }, removed: result.removed };
 }
@@ -54,7 +53,6 @@ function rewriteWrite(input: Record<string, unknown>): Rewrite {
 function rewriteEdit(input: Record<string, unknown>): Rewrite {
   if (typeof input.path === "string" && typeof input.new_string === "string") {
     const result = stripCodeComments(input.new_string, input.path);
-    if (!result.supported && hasLikelyComment(input.new_string)) return unsupported(input.path);
     if (result.content === input.new_string) return { removed: 0 };
     return { input: { ...input, new_string: result.content }, removed: result.removed };
   }
@@ -90,7 +88,6 @@ function rewriteAstEdit(input: Record<string, unknown>): Rewrite {
   const ops = input.ops.map(op => {
     if (!isRecord(op) || typeof op.out !== "string") return op;
     const result = stripCodeComments(op.out, samplePath);
-    if (!result.supported && hasLikelyComment(op.out)) blocked = unsupported(paths.join(", "));
     removed += result.removed;
     return result.content === op.out ? op : { ...op, out: result.content };
   });
@@ -118,7 +115,6 @@ function stripPatchInput(value: string): Rewrite {
       index += 1;
     }
     const result = stripCodeComments(bodies.join("\n"), currentPath);
-    if (!result.supported && hasLikelyComment(bodies.join("\n"))) return unsupported(currentPath);
     const rewritten = result.content.split("\n");
     if (rewritten.length !== bodies.length) return { block: true, reason: `No-code-comments could not safely preserve patch line structure for ${currentPath}. Retry with comment-free code.`, removed };
     for (let offset = 0; offset < rewritten.length; offset += 1) lines[start + offset] = `+${rewritten[offset]}`;
@@ -140,17 +136,6 @@ function isAddedLine(line: string): boolean {
   return line.startsWith("+") && !line.startsWith("+++");
 }
 
-function unsupported(path: string): Rewrite {
-  return {
-    block: true,
-    reason: `No-code-comments cannot safely classify comments for ${path}. Retry using a supported code extension or write comment-free content.`,
-    removed: 0,
-  };
-}
-
-function hasLikelyComment(content: string): boolean {
-  return /(^|\s)(?:\/\/|\/\*|#|--|<!--)/mu.test(content);
-}
 
 function requireHost(host: unknown): Host {
   if (!isRecord(host) || typeof host.on !== "function") throw new Error("No-code-comments requires the Pi/OMP on hook");
