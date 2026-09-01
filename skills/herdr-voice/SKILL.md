@@ -13,7 +13,7 @@ The voice task never controls Herdr itself and never manages task subagents. It 
 2. Spin up one OMP delegate and hand it the entire job, including any subagent management it needs:
 
    ```bash
-   omp -p "Use the installed herdr skill for this explicit user request: <request verbatim>. Read the skill completely before any control and preserve its authorization and safety boundaries. Manage any subagents you need yourself. Report the final result."
+   omp -p "For this explicit Herdr request: <request verbatim>. First run herdr --skill and follow its complete output before any control. If it refuses because this delegate is outside a Herdr pane, report that refusal without attempting external control. Manage any subagents you need yourself. Report the final result."
    ```
 
 3. Read the delegate's printed final output and relay it to the user. That output is the authoritative result.
