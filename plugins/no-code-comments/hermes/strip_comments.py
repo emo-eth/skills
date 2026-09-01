@@ -28,7 +28,6 @@ _FAMILY_BY_EXTENSION = {
     ".lhs": "haskell",
 }
 _SPECIAL_NAMES = {name: "hash" for name in ("Dockerfile", "Makefile", "Rakefile", "Gemfile")}
-_LIKELY_COMMENT = re.compile(r"(^|\s)(?://|/\*|#|--|<!--)", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -71,11 +70,6 @@ def rewrite_tool_args(tool_name: str, args: dict[str, Any]) -> RewriteResult:
     return RewriteResult()
 
 
-def block_reason(tool_name: str, args: dict[str, Any]) -> str | None:
-    result = rewrite_tool_args(tool_name, args)
-    return result.reason if result.block else None
-
-
 def _rewrite_write(args: dict[str, Any]) -> RewriteResult:
     path = args.get("path")
     content = args.get("content")
@@ -107,8 +101,6 @@ def _rewrite_patch(args: dict[str, Any]) -> RewriteResult:
 
 def _rewrite_field(args: dict[str, Any], field: str, value: str, path: str) -> RewriteResult:
     result = strip_code_comments(value, path)
-    if not result.supported and _LIKELY_COMMENT.search(value):
-        return _unsupported(path)
     if result.content == value:
         return RewriteResult()
     updated = dict(args)
@@ -135,8 +127,6 @@ def _strip_patch_input(value: str) -> RewriteResult:
             index += 1
         source = "\n".join(bodies)
         result = strip_code_comments(source, current_path)
-        if not result.supported and _LIKELY_COMMENT.search(source):
-            return _unsupported(current_path)
         rewritten = result.content.split("\n")
         if len(rewritten) != len(bodies):
             return RewriteResult(
@@ -157,11 +147,6 @@ def _is_added_line(line: str) -> bool:
     return line.startswith("+") and not line.startswith("+++")
 
 
-def _unsupported(path: str) -> RewriteResult:
-    return RewriteResult(
-        block=True,
-        reason=f"No-code-comments cannot safely classify comments for {path}. Retry using a supported code extension or write comment-free content.",
-    )
 
 
 def _family_for(path: str) -> str | None:
@@ -265,7 +250,7 @@ def _strip_delimited(content: str, path: str, line_open: str, block_open: str, b
                 in_regex = False
             index += 1
             continue
-        if content.startswith(line_open, index):
+        if content.startswith(line_open, index) and not (index > 0 and content[index - 1] == ":"):
             end = content.find("\n", index)
             stop = len(content) if end < 0 else end
             raw = content[index:stop]
@@ -325,14 +310,14 @@ def _is_directive(raw: str, path: str, zero_based_line: int) -> bool:
     if zero_based_line <= 1 and re.match(r"^#.*(?:coding\s*[:=]|-\*-\s*coding\s*:)", value, re.IGNORECASE):
         return True
     patterns = (
-        r"^#\s*(?:type\s*:|noqa\b|pyright\b|mypy\b|ruff\b|pylint\b|fmt\s*:)",
+        r"^#\s*(?:type\s*:|noqa\b|nosec\b|pyright\b|mypy\b|ruff\b|pylint\b|fmt\s*:|pragma\b|isort\b|flake8\b|shellcheck\b|vim\b|region\b|endregion\b)",
         r"^///\s*<(?:reference|amd-module|amd-dependency)\b",
         r"^//[#@]\s*(?:sourceMappingURL|sourceURL)=",
-        r"^//\s*(?:@ts-(?:ignore|expect-error|nocheck|check)\b|eslint-|prettier-ignore\b|c8\s+ignore\b|istanbul\s+ignore\b)",
+        r"^//\s*(?:#\s*(?:region|endregion)\b|@ts-(?:ignore|expect-error|nocheck|check)\b|eslint-|biome-ignore\b|deno-lint\b|swiftlint\b|nolint\b|noinspection\b|clang-format\b|prettier-ignore\b|c8\s+ignore\b|istanbul\s+ignore\b)",
         r"^//\s*(?:go:|\+build\b|line\b|swift-tools-version\s*:)",
         r"^/\*\s*(?:@jsx\b|@jsxFrag\b|@jsxImportSource\b|@flow\b|#__PURE__|@__PURE__|eslint\b|prettier-ignore\b|istanbul\s+ignore\b)",
         r"^<!--\s*\[(?:if|endif)\b",
-        r"^<!--\s*(?:svelte:|vue:)",
+        r"^<!--\s*(?:svelte:|vue:|markdownlint\b|stylelint\b|prettier-ignore\b)",
     )
     if any(re.match(pattern, value, re.IGNORECASE) for pattern in patterns):
         return True

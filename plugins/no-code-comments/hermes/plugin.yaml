@@ -1,10 +1,8 @@
 name: no-code-comments
-version: "0.2.0"
+version: "0.3.0"
 description: Deterministically strips prose comments from Hermes code-writing tool inputs while preserving semantic directives.
 author: emo-eth
 kind: standalone
-provides_hooks:
-  - pre_tool_call
 tags:
   - code-quality
   - enforcement

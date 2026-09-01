@@ -76,11 +76,46 @@ test("rewrites hashline and unified patch additions while preserving structure",
   assert.equal(rewritten.split("\n").length, hashline.split("\n").length);
 });
 
-test("fails closed for an unsupported code extension with comment syntax", () => {
-  const result = rewriteToolCall({
-    toolName: "write",
-    input: { path: "example.xyzlang", content: "value // prose" },
-  });
-  assert.equal(result.block, true);
-  assert.match(result.reason ?? "", /cannot safely classify/u);
+test("passes markdown, markdown derivatives, and unknown extensions through untouched", () => {
+  const markdown = ["# Heading", "", "<!-- note -->", "- item with # hash", ""].join("\n");
+  for (const path of ["README.md", "docs/guide.mdx", "report.qmd", "notes.rmd", "example.xyzlang"]) {
+    const result = rewriteToolCall({ toolName: "write", input: { path, content: markdown } });
+    assert.equal(result.block, undefined);
+    assert.equal(result.removed, 0);
+    assert.equal(result.input, undefined);
+    assert.equal(stripCodeComments(markdown, path).content, markdown);
+  }
+});
+
+test("keeps scheme-adjacent slashes in JSX text while stripping prose", () => {
+  const input = "render(<a>https://example.com/path</a>); // prose\n";
+  const result = stripCodeComments(input, "view.tsx");
+  assert.equal(result.removed, 1);
+  assert.match(result.content, /https:\/\/example\.com\/path/u);
+  assert.doesNotMatch(result.content, /prose/u);
+});
+
+test("preserves tooling directives across families", () => {
+  const shell = ["# shellcheck disable=SC2086", "# pragma: no cover", "x = 1  # nosec B101", "y = 2  # isort: off", ""].join("\n");
+  assert.equal(stripCodeComments(shell, "run.sh").removed, 0);
+
+  const ts = [
+    "// biome-ignore lint/suspicious/noExplicitAny: needed",
+    "//nolint:gosec",
+    "// swiftlint:disable:next force_try",
+    "//#region init",
+    "//#endregion",
+    "const a = 1; // gone",
+    "",
+  ].join("\n");
+  const result = stripCodeComments(ts, "app.ts");
+  assert.equal(result.removed, 1);
+  assert.match(result.content, /biome-ignore/u);
+  assert.match(result.content, /nolint:gosec/u);
+  assert.match(result.content, /swiftlint:disable/u);
+  assert.match(result.content, /#region init/u);
+  assert.doesNotMatch(result.content, /gone/u);
+
+  const html = "<!-- markdownlint-disable MD033 -->\n<div>x</div>\n";
+  assert.equal(stripCodeComments(html, "page.html").removed, 0);
 });

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .strip_comments import NO_CODE_COMMENTS_PROMPT, block_reason, rewrite_tool_args
+from .strip_comments import NO_CODE_COMMENTS_PROMPT, rewrite_tool_args
 
 
 def _rewrite(tool_name: str, args: dict, **kwargs):
@@ -17,12 +17,6 @@ def _rewrite(tool_name: str, args: dict, **kwargs):
     }
 
 
-def _block_unsupported(tool_name: str, args: dict, **kwargs):
-    del kwargs
-    reason = block_reason(tool_name, args)
-    if reason:
-        return {"action": "block", "message": reason}
-    return None
 
 
 def _show_policy(raw_args: str) -> str:
@@ -39,7 +33,6 @@ def register(ctx) -> None:
         max_chars=500,
     )
     ctx.register_middleware("tool_request", _rewrite)
-    ctx.register_hook("pre_tool_call", _block_unsupported)
     ctx.register_command(
         "no-code-comments",
         handler=_show_policy,
