@@ -187,7 +187,7 @@ evidence: `docs/log/2026-08-30-pi-bots.md` [verified-live].
 An analysis-only Hermes/Pi assessment recommends optional Hermes Bot coordination over Pi RPC; no bridge exists.
 Verdict, effort, spike, and open questions: `docs/log/2026-08-31-hermes-pi-hybrid.md`.
 
-A source-level OMP v18.0.11 feasibility audit confirms OMP can be the first Bot executor and human UI host, but its Agent Hub and IRC remain process-global live-run infrastructure rather than a durable Bot control plane. Recommendation, verified runtime contracts, concrete message/work protocol, UI requirements, gaps, and effort: `docs/log/2026-08-31-omp-bot-feasibility.md`.
+An OMP v18.0.11 source, SDK, in-repository native-runner, and live RPC audit confirms OMP can be the first programmable Bot execution kernel, not the durable control plane or required UI. Recommendation: independent Bot specs, daemon, message/work state, and TUI over an isolated OMP SDK worker adapter; OMP Task agents and IRC remain execution plumbing. Contracts, harness comparison, protocol, gaps, and effort: `docs/log/2026-08-31-omp-bot-feasibility.md`.
 
 ## Standing constraints
 
@@ -220,7 +220,7 @@ A source-level OMP v18.0.11 feasibility audit confirms OMP can be the first Bot 
 | Plugin updater | `docs/log/2026-08-30-plugin-updater.md` | `plugins/plugin-updater/` | strict `tsc`, 20 Node tests, live Herdr 0.8.2 classification/refusal/cancel/selective-update/popup/self-update smokes documented in the log | verified-live |
 | Persistent Pi domain bots | `docs/log/2026-08-30-pi-bots.md` | `plugins/pi-bots/` | strict TypeScript check, 73 focused tests, live chief-of-staff → research peer delegation with owner state and scoped memory writes, and native operations-workflow validation | verified-live |
 | Hermes/Pi Bot hybrid | `docs/log/2026-08-31-hermes-pi-hybrid.md` | proposed `pi --mode rpc` bridge; no implementation | source inspection plus independent Kimi K3 and GLM-5.3-Flash architecture reviews | proposed |
-| OMP Bot feasibility | `docs/log/2026-08-31-omp-bot-feasibility.md` | proposed harness-neutral Bot core plus OMP adapter and UI; no implementation | installed OMP v18.0.11 source contract and live `rpc-ui` state/UI-frame smoke | proposed |
+| OMP Bot runtime feasibility | `docs/log/2026-08-31-omp-bot-feasibility.md` | proposed harness-neutral Bot specs/core/TUI plus isolated OMP SDK worker adapter; no implementation | installed OMP v18.0.11 source and SDK, in-repository native runner, Pi SDK comparison, and live `rpc-ui` state/UI-frame smoke | proposed |
 | Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
 | OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
 | Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
