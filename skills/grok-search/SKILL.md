@@ -1,6 +1,6 @@
 ---
 name: grok-search
-description: Search X (Twitter) live and fetch X posts or threads through native Grok tools backed by xAI. Use when the user asks to find tweets/posts, inspect an X URL, search a handle, gather reactions on X, or collect raw X sources. This skill is X-only: it does not provide web search or general Grok inference.
+description: 'Search X (Twitter) live and fetch X posts or threads through native Grok tools backed by xAI. Use when the user asks to find tweets/posts, inspect an X URL, search a handle, gather reactions on X, or collect raw X sources. This skill is X-only: it does not provide web search or general Grok inference.'
 ---
 
 # grok-search
