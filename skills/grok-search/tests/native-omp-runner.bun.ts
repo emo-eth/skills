@@ -20,17 +20,29 @@ function resultValue(result: ToolResult): unknown {
   return JSON.parse(result.content[0]?.text ?? "null");
 }
 
-test("OMP ExtensionRunner loads only the X search and fetch tools", async () => {
+test("OMP ExtensionRunner loads only the X search, fetch, and auth tools", async () => {
   const root = mkdtempSync(join(tmpdir(), "grok-search-omp-runner-"));
   const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
   const fakePython = join(root, "fake-python");
-  const expected = {
+  const searchResult = {
+    kind: "search",
     model: "grok-test",
     answer: "native tool result",
     citations: [],
     degraded: false,
+    warnings: [],
   };
-  writeFileSync(fakePython, `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(expected))});\n`);
+  const authStatus = {
+    kind: "auth_status",
+    authenticated: false,
+    source: null,
+    refreshable: false,
+    state: "missing",
+  };
+  writeFileSync(
+    fakePython,
+    `#!/usr/bin/env node\nconst search = ${JSON.stringify(searchResult)};\nconst auth = ${JSON.stringify(authStatus)};\nprocess.stdout.write(JSON.stringify(process.argv.includes("auth") ? auth : search));\n`,
+  );
   chmodSync(fakePython, 0o755);
   const previousPython = process.env.GROK_SEARCH_PYTHON;
   process.env.GROK_SEARCH_PYTHON = fakePython;
@@ -81,7 +93,6 @@ test("OMP ExtensionRunner loads only the X search and fetch tools", async () => 
         getContextUsage: () => undefined,
         waitForIdle: async () => undefined,
         newSession: async () => ({ cancelled: true }),
-        branch: async () => ({ cancelled: true }),
         navigateTree: async () => ({ cancelled: true }),
         compact: async () => undefined,
         switchSession: async () => ({ cancelled: true }),
@@ -89,19 +100,29 @@ test("OMP ExtensionRunner loads only the X search and fetch tools", async () => 
       },
     );
     await runner.emit({ type: "session_start" });
-
     const search = session.getToolByName("grok_search");
     const fetch = session.getToolByName("grok_fetch");
+    const auth = session.getToolByName("grok_auth");
     expect(search).toBeDefined();
     expect(fetch).toBeDefined();
+    expect(auth).toBeDefined();
     expect(session.getToolByName("grok_prompt")).toBeUndefined();
+    expect(session.getToolByName("grok_web_search")).toBeUndefined();
+    expect(session.getToolByName("grok_ask")).toBeUndefined();
 
     const result = await search?.execute(
       "native-call",
       { query: "Recent posts" },
       new AbortController().signal,
     ) as unknown as ToolResult;
-    expect(resultValue(result)).toEqual(expected);
+    expect(resultValue(result)).toEqual(searchResult);
+
+    const authResult = await auth?.execute(
+      "native-auth",
+      { action: "status" },
+      new AbortController().signal,
+    ) as unknown as ToolResult;
+    expect(resultValue(authResult)).toEqual(authStatus);
   } finally {
     await session.dispose();
     if (previousPython === undefined) delete process.env.GROK_SEARCH_PYTHON;

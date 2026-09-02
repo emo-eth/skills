@@ -1,103 +1,98 @@
 ---
 name: grok-search
-description: 'Search X (Twitter) live and fetch X posts or threads through native Grok tools backed by xAI. Use when the user asks to find tweets/posts, inspect an X URL, search a handle, gather reactions on X, or collect raw X sources. This skill is X-only: it does not provide web search or general Grok inference.'
+description: 'Search X (Twitter) live and fetch exact X posts, threads, and Articles through native Grok tools backed by xAI. Use when the user asks to find posts, inspect an X URL, search a handle, gather representative reactions, or recover authored X content. This skill is X-only: it does not provide web search or general Grok inference.'
 ---
 
 # grok-search
 
-Search and fetch content from X/Twitter through xAI's server-side `x_search`.
-No browser or scraping.
+Live X awareness through xAI's server-side `x_search`. No browser, scraping, general web search, or plain Grok inference.
 
 ## Agent contract
 
-Use only these native tools:
+Use the native tools. Do not expose or invoke the bundled Python implementation during agent work.
 
 | Tool | Use for |
 | --- | --- |
-| `grok_search` | Search X posts, profiles, threads, reactions, and trends |
-| `grok_fetch` | Fetch one X post or thread by URL |
+| `grok_search` | Bounded live-X discovery, representative reactions, and synthesis |
+| `grok_fetch` | Faithful retrieval of one X post, thread position, or X Article |
+| `grok_auth` | Inspect authorization or run the human-approved device flow |
 
-This skill is only for X/Twitter. Use the normal web-search tool for the web
-and the active model for ordinary inference. The bundled Python script is the
-tools' implementation and an authentication utility; do not invoke it directly
-for agent work.
+Each search or fetch returns structured JSON with recoverable X citations, a degradation signal, and warnings. Treat cited URLs as ground truth. Treat Grok prose as synthesis.
 
-If the native tools are unavailable, report that the Grok extension needs
-installation or a full host restart. Do not fall back to the CLI.
+## Search
 
-The tools return structured JSON with `model`, `answer`, `citations`, and
-`degraded`. Each call consumes Grok subscription quota or xAI API credits.
+Use `grok_search` for discovery.
 
-## `grok_search`
+- `response: "sources"` is the default. It asks for source-like X evidence so the calling model can synthesize.
+- `response: "answer"` asks Grok to synthesize the evidence.
+- `depth: "quick"` is the default bounded search.
+- `depth: "deep"` requests broader representative agreement, disagreement, corrections, and uncertainty. It is not exhaustive and must not be described as popularity measurement.
+- `handles` and `excludeHandles` accept up to ten handles and are mutually exclusive.
+- `from` and `to` are strict `YYYY-MM-DD` post dates.
+- `images` and `videos` enable media understanding.
 
-`query` is a natural-language question about X content. The tool always searches
-X; there is no source selector.
+Prefer one well-scoped query over repeated tiny calls. If `degraded` is true, state the limitation. Do not turn sparse or conflicting evidence into consensus, sentiment percentages, or “X thinks.”
 
-- `response: "sources"` (default): raw posts for the calling model to synthesize.
-- `response: "answer"`: Grok synthesizes from X search.
-- `handles` / `excludeHandles`: include or exclude up to ten X handles; mutually
-  exclusive.
-- `from` / `to`: strict `YYYY-MM-DD` post window.
-- `images` / `videos`: let Grok inspect post media.
-- `model`: optional xAI model override.
+## Fetch
 
-Prefer `sources`, batch related questions, and use the default fast model.
+Use `grok_fetch` for one HTTPS `x.com` or `twitter.com` content URL.
 
-## `grok_fetch`
+- `content: "anchor"` is the default. Return the exact requested post or X Article, its metadata, quoted or parent context needed to understand it, links, and media.
+- `content: "authored"` requests the full recoverable authored unit, such as the author's surrounding thread.
+- `discussion: true` adds representative replies and quote reactions separately from authored content. It is never exhaustive or a popularity ranking.
 
-Pass one X or Twitter post URL. The result includes verbatim post text, author,
-timestamp, quoted posts, media notes, and the full thread when available.
+For an X Article, the anchor text contains the title and full recoverable body. If the requested object cannot be verified from live X evidence, report it unavailable. Never reconstruct deleted or inaccessible content from memory, quote fragments, or speculation.
 
-## Code mode
+## Authentication recovery
 
-OMP eval exposes the same tools as `tool.grok_search(...)` and
-`tool.grok_fetch(...)`. Code mode does not add web search or plain Grok
-inference.
+Authorization can happen after installation and is re-resolved for every action.
 
-## Trust
+When a content tool returns `auth_required`:
 
-Cited URLs are ground truth; Grok's prose is synthesis. When narrowed search
-returns `degraded: true`, broaden the date window or remove handle filters
-before trusting the answer.
+1. Offer one action: connect Grok with xAI's device authorization.
+2. Start only after the user approves by calling `grok_auth` with `action: "start_device"`.
+3. Present the returned verification URL and user code.
+4. After the user confirms approval, call `grok_auth` with `action: "complete_device"` and the returned session.
+5. Retry the original content request.
+
+Do not tell the user to run a script or locate a credential file. Do not start authorization without approval.
+
+Credential preference is deterministic:
+
+1. Supported host-provided xAI subscription OAuth.
+2. Grok CLI subscription OAuth.
+3. Plugin-owned subscription OAuth.
+4. `XAI_API_KEY` only when no subscription credential exists.
+
+A subscription authorization failure or exhausted subscription quota never falls through to billed API access. Explicit API-key use is available only through the standalone administrative CLI's `--credential-source api-key` option.
+
+`grok_auth` exposes only non-secret state. Device codes, access tokens, refresh tokens, and API keys never appear in tool output or command arguments. Plugin-owned refresh rotation is serialized and persisted atomically.
+
+## Failures
+
+Keep operational failures distinct:
+
+- `auth_required`: offer device authorization.
+- `auth_expired`: retry through the host's refreshed subscription when available; otherwise offer authorization.
+- `host_oauth_unavailable`: host subscription OAuth exists but the host could not delegate it because a higher-priority host credential is active. Do not use billed API access or start another login; ask the user to remove the host credential override.
+- `subscription_quota_exhausted`: report that subscription access is unavailable. Do not switch to billed API access.
+- `api_rate_limited`: explicit or sole API-key access is unavailable.
+- `outcome_unknown`: the request may have reached xAI; do not retry automatically.
+- `degraded: true`: live X evidence was absent or incomplete; state exactly what is missing.
+
+Do not invent pagination, hidden completeness, deleted-post forensics, or source provenance.
 
 ## Installation
 
-The same directory is an installable Pi and OMP package:
+The directory is an installable Pi and OMP package:
 
 ```sh
 pi install ~/.agents/skills/grok-search
 omp plugin install ~/.agents/skills/grok-search
 ```
 
-A newly installed or updated OMP extension requires a full process restart.
+A newly installed or updated native extension may require one host restart. Authorization and token rotation do not.
 
-## Auth model
+## Code mode
 
-Credential preference order (see `auth` for live state):
-
-1. `XAI_API_KEY` env var (pay-as-you-go API billing).
-2. The standalone `grok` CLI's OAuth token in `~/.grok/auth.json`
-   (SuperGrok / X Premium+ subscription). The grok CLI owns that token's
-   lifecycle: its refresh token is single-use, so this script never spends
-   it -- on expiry or 401/403-unauthenticated it runs a minimal
-   `grok --no-auto-update -p` call so the CLI rotates its own tokens, then
-   re-reads them.
-3. This script's own OAuth login: `grok-search.py login` (loopback PKCE
-   against auth.x.ai, same public client as the grok CLI). Tokens live in
-   `~/.config/grok-search/auth.json` (mode 600) with self-managed refresh
-   and rotation. Use this on machines without the grok CLI installed.
-
-If no credential exists anywhere, tell the user to run `grok login` (if
-they have the grok CLI) or `grok-search.py login`, or set `XAI_API_KEY`.
-
-## Gotchas
-
-- Latency is seconds, not milliseconds: 4-25s typical, more for complex
-  synthesis. Leave the default timeout alone.
-- Date filters are strict `YYYY-MM-DD`; malformed dates fail fast
-  client-side (xAI would otherwise burn the call and answer from memory).
-- Citation URLs often come back as `https://x.com/i/status/<id>` -- they
-  resolve to the post regardless of handle. The CLI deduplicates the
-  handle and `/i/` forms of the same post.
-- Each call spends the user's Grok subscription quota (or API credits when
-  `XAI_API_KEY` is set). Batch questions into one query where sensible.
+OMP eval exposes the same tools as `tool.grok_search(...)`, `tool.grok_fetch(...)`, and `tool.grok_auth(...)`. Code mode does not add web search or plain Grok inference.
