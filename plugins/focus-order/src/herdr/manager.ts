@@ -1,6 +1,7 @@
 import readline from "node:readline";
 
 import { focusTab, listAgents } from "./client.ts";
+import { splitManagerInput } from "./manager-input.ts";
 import {
   addOrMoveToEnd,
   addOrMoveWorktreeToEnd,
@@ -398,7 +399,9 @@ async function runInputLoop(handle: (input: string) => Promise<boolean>): Promis
     process.stdin.resume();
     try {
       for await (const chunk of process.stdin) {
-        if (!(await handle(String(chunk)))) break;
+        for (const input of splitManagerInput(String(chunk))) {
+          if (!(await handle(input))) return;
+        }
       }
     } finally {
       process.stdin.setRawMode(false);

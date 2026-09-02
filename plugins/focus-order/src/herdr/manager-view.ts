@@ -2,6 +2,7 @@ import {
   agentLabel,
   identityFor,
   identityKey,
+  orderedAgents,
   rankOf,
   worktreeKey,
   worktreeRankOf,
@@ -50,15 +51,16 @@ export function renderManager(
   if (helpOpen) return renderHelp(state, safeHeight);
 
   const activeAgents = selection.section === "agents";
-  const ordered = activeAgents ? agents : worktrees;
+  const rankedAgents = orderedAgents(state, agents);
+  const ordered = activeAgents ? rankedAgents : worktrees;
   const keys = activeAgents
-    ? agents.map((agent) => identityKey(identityFor(agent)))
+    ? rankedAgents.map((agent) => identityKey(identityFor(agent)))
     : worktrees.map((row) => worktreeKey(row.identity));
   const selectedIndex = selection.key === undefined ? 0 : Math.max(0, keys.indexOf(selection.key));
-  const widths = activeAgents ? agentColumnWidths(agents) : undefined;
+  const widths = activeAgents ? agentColumnWidths(rankedAgents) : undefined;
   const worktreeWidths = activeAgents ? undefined : worktreeColumnWidths(worktrees);
   const lines = activeAgents
-    ? agents.map((agent) => renderAgentRow(state, agent, widths!))
+    ? rankedAgents.map((agent) => renderAgentRow(state, agent, widths!))
     : worktrees.map((row) => renderWorktreeRow(state, row, worktreeWidths!));
   const list = visibleRows(lines, selectedIndex, offsets[selection.section], managerViewport(safeHeight));
   const title = activeAgents ? "Agents" : "Worktrees";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { identityFor, identityKey } from "../src/shared/identity.ts";
+import { identityFor, identityKey, orderedAgents } from "../src/shared/identity.ts";
 import { renderManager, type ManagerWorktreeRow } from "../src/herdr/manager-view.ts";
 import type { AgentSnapshot, FocusOrderState } from "../src/shared/types.ts";
 
@@ -72,6 +72,47 @@ describe("manager view", () => {
     assert.match(output, /e guard/);
   });
 
+  it("renders ranked agents in the same order used by selection navigation", () => {
+    const agents = Array.from({ length: 20 }, (_, index) => agent(index));
+    const first = agents[19];
+    const second = agents[2];
+    assert.ok(first);
+    assert.ok(second);
+    const rankedState = state({
+      ordered_agents: [
+        { identity: identityFor(first), label: first.agent },
+        { identity: identityFor(second), label: second.agent },
+      ],
+    });
+    const firstOutput = plain(renderManager(
+      rankedState,
+      agents,
+      [],
+      { section: "agents", key: identityKey(identityFor(first)) },
+      "Ready",
+      false,
+      { agents: 0, worktrees: 0 },
+      16,
+    ));
+    const secondOutput = plain(renderManager(
+      rankedState,
+      agents,
+      [],
+      { section: "agents", key: identityKey(identityFor(second)) },
+      "Ready",
+      false,
+      { agents: 0, worktrees: 0 },
+      16,
+    ));
+    const firstRows = firstOutput.split("\n").filter((line) => /agent-\d+/.test(line));
+    const secondRows = secondOutput.split("\n").filter((line) => /agent-\d+/.test(line));
+
+    assert.doesNotMatch(firstOutput, /more above/);
+    assert.match(firstRows[0] ?? "", /^> .*agent-19/);
+    assert.match(secondRows[0] ?? "", /^  .*agent-19/);
+    assert.match(secondRows[1] ?? "", /^> .*agent-2/);
+  });
+
   it("shows the checkout basename as the worktree name", () => {
     const row: ManagerWorktreeRow = {
       identity: { kind: "worktree", value: "/Users/example/focus-mode" },
@@ -98,7 +139,7 @@ describe("manager view", () => {
 
   it("keeps a selected item visible when the list is longer than the popup", () => {
     const agents = Array.from({ length: 20 }, (_, index) => agent(index));
-    const selected = agents.at(-1);
+    const selected = orderedAgents(state(), agents).at(-1);
     assert.ok(selected);
     const output = renderManager(
       state(),
