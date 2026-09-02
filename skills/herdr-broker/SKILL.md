@@ -1,6 +1,6 @@
 ---
 name: herdr-broker
-description: "Route spoken or typed Herdr requests to the Herdr voice broker. Use when the user mentions Herdr, Herder, header, or any transcription of Herdr, the voice broker, or broker workstreams, or asks to start, run, check, message, update, or cancel delegated work. Executes only $HOME/.local/bin/voicebroker; never omp, never direct herdr, never a subagent."
+description: "Route spoken or typed requests about Herdr voice-broker work: the user references Herdr (any transcription, e.g. Herder or header), the voice broker, or a broker workstream, and asks to start, check, message, update, or cancel that delegated work. Do not use for generic start/check/run requests with no broker context. Executes only $HOME/.local/bin/voicebroker; never omp, never direct herdr, never a subagent."
 ---
 
 # Herdr broker voice routing
@@ -24,15 +24,15 @@ Every request maps to exactly one verb. Always pass `--json` and read the JSON o
 ### delegate
 
 ```bash
-$HOME/.local/bin/voicebroker delegate --title "<short title>" --prompt "<the user's request, verbatim>" --json
+$HOME/.local/bin/voicebroker delegate "<short title>" --prompt "<the user's request, verbatim>" --json
 ```
 
-Optional `--priority 0-4` (default 2). The reply is `{"id":"ws_...","title":...,"priority":...,"state":"queued"}`. Delegation is asynchronous: the workstream is queued and the returned ID is the whole result. Tell the user the ID immediately and stop — never wait for the manager, never poll for completion. Completion arrives later through `updates` or a later `status` request.
+Title is the first positional argument; do not use a `--title` flag. Optional `--priority 0-4` (default 2; values outside 0-4 are rejected before anything is created). The reply is `{"id":"ws_...","title":...,"priority":...,"state":"queued"}`. Delegation is asynchronous: the workstream is queued and the returned ID is the whole result. Tell the user the ID immediately and stop — never wait for the manager, never poll for completion. Completion arrives later through `updates` or a later `status` request.
 
 ### message
 
 ```bash
-$HOME/.local/bin/voicebroker message --workstream <id> --body "<text, verbatim>" --json
+$HOME/.local/bin/voicebroker message <id> --body "<text, verbatim>" --json
 ```
 
 Reply: `{"id":...,"state":...,"delivered":true|false}`. Report the new state and whether the message was delivered.
@@ -59,7 +59,7 @@ Reply: `{"events":[...],"cursor":N}`. Save `cursor` and pass it as `--after` nex
 ### cancel
 
 ```bash
-$HOME/.local/bin/voicebroker cancel --workstream <id> [--reason "<why>"] --json
+$HOME/.local/bin/voicebroker cancel <id> [--reason "<why>"] --json
 ```
 
 Reply: `{"id":...,"state":...}`. Confirm the new state to the user.
@@ -86,6 +86,7 @@ Within the voice conversation, remember every workstream ID the user touched or 
 
 ## Errors and boundaries
 
-- Report command failures exactly: quote the CLI's stderr text and say the command failed. Never paraphrase into a guess, never retry silently, never claim success.
+- IDs and flags are positional exactly as templated: the workstream ID is the first argument to `message`, `status`, and `cancel`; there is no `--workstream` or `--title` in the templates. Follow the templates literally.
+- Report command failures exactly. Server rejections come back as JSON on stdout with exit 1: `{"error":{"code":"not_found","message":"workstream <id> not found"}}` for an unknown ID — quote the `message` verbatim. Client usage mistakes print one plain line on stderr with exit 2, e.g. `--priority must be an integer`, `priority must be between 0 and 4`, `--after must be >= 0`. Never paraphrase into a guess, never retry silently, never claim success.
 - Wrapper errors like `env file not readable`, `env file has no supervisor token`, or `release CLI missing` mean the deployment is broken; relay the message verbatim. Do not edit the wrapper, its env file, or broker config from the voice task.
 - Never run `herdr`, never set or fake `HERDR_ENV`, never claim to be inside Herdr, never spawn subagents, never call `omp`.
