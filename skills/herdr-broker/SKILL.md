@@ -7,7 +7,7 @@ description: "Route spoken or typed requests about Herdr voice-broker work: the 
 
 This skill is the sole voice route for broker work. Run `$HOME/.local/bin/voicebroker` directly in the shell. Never invoke `omp`, never run `herdr` commands yourself, never spawn a subagent for broker work, and never patch Herdr, Codex, Pi, or OMP to establish another path. There is no OMP or direct-Herdr fallback: if the broker CLI fails, report the error exactly and stop.
 
-The wrapper already has network access and targets the broker at `http://127.0.0.1:7749` by default; do not try to fix connectivity by switching tools.
+The wrapper targets the broker at `http://127.0.0.1:7749` by default. If it reports a network error, relay that error exactly; do not switch tools.
 
 ## Five operations
 
