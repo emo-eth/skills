@@ -422,7 +422,7 @@ def _auth_failure(code: int, detail: str) -> bool:
 def _api_request(path: str, payload: dict | None, args: argparse.Namespace) -> dict:
     bearer, source = _resolve_credential(args)
     body = json.dumps(payload).encode() if payload is not None else None
-    refreshed = False
+    failed_sources: set[str] = set()
     while True:
         request = urllib.request.Request(
             f"{API_BASE}{path}",
@@ -445,16 +445,22 @@ def _api_request(path: str, payload: dict | None, args: argparse.Namespace) -> d
                 raw = error.read().decode("utf-8", "replace")[:2000]
             except OSError:
                 raw = ""
-            if not refreshed and source in {"grok-cli", "plugin-oauth"} and _auth_failure(error.code, raw):
-                refreshed = True
-                if _refresh_source(source, bearer):
-                    bearer, source = _resolve_credential(args, allow_refresh=False)
-                    continue
+            if source in {"grok-cli", "plugin-oauth"} and _auth_failure(error.code, raw):
+                current_source = source
+                if current_source not in failed_sources:
+                    failed_sources.add(current_source)
+                    if _refresh_source(current_source, bearer):
+                        bearer, source = _resolve_credential(
+                            args,
+                            allow_refresh=False,
+                            excluded_sources=frozenset(failed_sources - {current_source}),
+                        )
+                        continue
                 try:
                     bearer, source = _resolve_credential(
                         args,
                         allow_refresh=False,
-                        excluded_sources=frozenset({source}),
+                        excluded_sources=frozenset(failed_sources),
                     )
                 except GrokError:
                     pass
@@ -658,26 +664,26 @@ def _auth_status() -> dict:
     host_token = os.environ.get("GROK_SEARCH_HOST_OAUTH_TOKEN", "").strip()
     if host_token:
         return {"kind": "auth_status", "authenticated": True, "source": "host-xai", "refreshable": True, "state": "valid"}
-    issues: list[tuple[str, str]] = []
+    issues: list[tuple[str, str, bool]] = []
     cli_state, cli = _read_grok_cli_token()
     if cli_state == "valid" and cli is not None:
         if not _token_expired(str(cli.get("expires_at") or "")):
             return {"kind": "auth_status", "authenticated": True, "source": "grok-cli", "refreshable": True, "state": "valid"}
-        issues.append(("grok-cli", "expired"))
+        issues.append(("grok-cli", "expired", True))
     elif cli_state == "malformed":
-        issues.append(("grok-cli", "malformed"))
+        issues.append(("grok-cli", "malformed", False))
     own_state, own = _read_own_tokens()
     if own_state == "valid" and own is not None:
         if not _token_expired(str(own.get("expires_at") or "")):
             return {"kind": "auth_status", "authenticated": True, "source": "plugin-oauth", "refreshable": bool(own.get("refresh_token")), "state": "valid"}
-        issues.append(("plugin-oauth", "expired"))
+        issues.append(("plugin-oauth", "expired", bool(own.get("refresh_token"))))
     elif own_state in {"malformed", "unrefreshable"}:
-        issues.append(("plugin-oauth", own_state))
+        issues.append(("plugin-oauth", own_state, False))
     if os.environ.get("GROK_SEARCH_BLOCK_API_KEY") == "1":
         return {"kind": "auth_status", "authenticated": False, "source": "host-xai", "refreshable": True, "state": "unavailable"}
     if issues:
-        source, state = issues[0]
-        return {"kind": "auth_status", "authenticated": False, "source": source, "refreshable": False, "state": state}
+        source, state, refreshable = issues[0]
+        return {"kind": "auth_status", "authenticated": False, "source": source, "refreshable": refreshable, "state": state}
     if os.environ.get("XAI_API_KEY", "").strip():
         return {"kind": "auth_status", "authenticated": True, "source": "env", "refreshable": False, "state": "valid"}
     return {"kind": "auth_status", "authenticated": False, "source": None, "refreshable": False, "state": "missing"}

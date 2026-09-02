@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -178,6 +179,89 @@ class AuthContractTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "host_oauth_unavailable")
         self.assertEqual(status["source"], "host-xai")
         self.assertEqual(status["state"], "unavailable")
+
+    def test_expired_subscription_status_preserves_refreshability(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "grok").mkdir()
+            (root / "grok" / "auth.json").write_text(json.dumps({
+                "xai": {
+                    "key": "expired-cli-token",
+                    "expires_at": "2000-01-01T00:00:00Z",
+                },
+            }))
+            cli_status = self.run_auth(root)
+        self.assertEqual(cli_status["state"], "expired")
+        self.assertTrue(cli_status["refreshable"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "search").mkdir()
+            store = root / "search" / "auth.json"
+            store.write_text(json.dumps({
+                "access_token": "expired-plugin-token",
+                "refresh_token": "plugin-refresh-token",
+                "expires_at": "2000-01-01T00:00:00Z",
+            }))
+            os.chmod(store, 0o600)
+            plugin_status = self.run_auth(root)
+        self.assertEqual(plugin_status["state"], "expired")
+        self.assertTrue(plugin_status["refreshable"])
+
+    def test_rotated_cli_rejection_falls_through_to_plugin_oauth(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original = (RUNTIME.GROK_AUTH_PATH, RUNTIME.OWN_HOME, RUNTIME.OWN_AUTH_PATH, RUNTIME.OWN_LOCK_PATH)
+            RUNTIME.GROK_AUTH_PATH = root / "grok" / "auth.json"
+            RUNTIME.OWN_HOME = root / "search"
+            RUNTIME.OWN_AUTH_PATH = root / "search" / "auth.json"
+            RUNTIME.OWN_LOCK_PATH = root / "search" / "auth.lock"
+            RUNTIME.GROK_AUTH_PATH.parent.mkdir()
+            RUNTIME.GROK_AUTH_PATH.write_text(json.dumps({"xai": {"key": "cli-old"}}))
+            RUNTIME.OWN_HOME.mkdir()
+            RUNTIME.OWN_AUTH_PATH.write_text(json.dumps({
+                "access_token": "plugin-token",
+                "refresh_token": "plugin-refresh",
+            }))
+            os.chmod(RUNTIME.OWN_AUTH_PATH, 0o600)
+            authorizations: list[str] = []
+            outcomes: list[object] = [
+                RUNTIME.urllib.error.HTTPError("https://api.x.ai", 401, "Unauthorized", {}, io.BytesIO(b"{}")),
+                RUNTIME.urllib.error.HTTPError("https://api.x.ai", 401, "Unauthorized", {}, io.BytesIO(b"{}")),
+                io.BytesIO(b'{"ok": true}'),
+            ]
+
+            def fake_urlopen(request, timeout):
+                authorizations.append(request.get_header("Authorization"))
+                outcome = outcomes.pop(0)
+                if isinstance(outcome, Exception):
+                    raise outcome
+                return outcome
+
+            def fake_refresh(source, _bearer):
+                self.assertEqual(source, "grok-cli")
+                RUNTIME.GROK_AUTH_PATH.write_text(json.dumps({"xai": {"key": "cli-new"}}))
+                return True
+
+            try:
+                with mock.patch.dict(os.environ, {"XAI_API_KEY": "billed-key"}, clear=False), mock.patch.object(
+                    RUNTIME.urllib.request,
+                    "urlopen",
+                    side_effect=fake_urlopen,
+                ), mock.patch.object(RUNTIME, "_refresh_source", side_effect=fake_refresh):
+                    value = RUNTIME._api_request(
+                        "/models",
+                        None,
+                        SimpleNamespace(credential_source="auto", timeout=1),
+                    )
+            finally:
+                RUNTIME.GROK_AUTH_PATH, RUNTIME.OWN_HOME, RUNTIME.OWN_AUTH_PATH, RUNTIME.OWN_LOCK_PATH = original
+        self.assertEqual(value, {"ok": True})
+        self.assertEqual(authorizations, [
+            "Bearer cli-old",
+            "Bearer cli-new",
+            "Bearer plugin-token",
+        ])
 
 
 if __name__ == "__main__":
