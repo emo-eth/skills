@@ -73,7 +73,7 @@ skills/
 - Anything **in the lock** came from the recorded source and stays theirs unless this file names an explicit ownership override; never copy it into this repo otherwise.
 - Skills **not in the lock** are candidates to publish here only when you actually authored them. A documented ownership override is the only exception. Watch for manually installed or chezmoi-copied skills that are still someone else's work; a skill written in another author's idiom, or one that tells you to run *their* setup command, is theirs even if it isn't in the lock.
 
-- **Herdr ownership override:** this repository owns and publishes `skills/herdr/` even when legacy lock metadata points to `herdrdev/herdr`. Before editing or publishing it, and periodically during routine skill maintenance, compare the stable upstream source at `herdrdev/herdr:skills/herdr/SKILL.md`. Port applicable CLI and safety changes when upstream changed; leave the local file alone when it did not. Preserve this repository's external-controller and `herdr-voice` contracts.
+- **Herdr ownership override:** this repository owns and publishes `skills/herdr/` even when legacy lock metadata points to `herdrdev/herdr`. Before editing or publishing it, and periodically during routine skill maintenance, compare the stable upstream source at `herdrdev/herdr:skills/herdr/SKILL.md`. Port applicable CLI and safety changes when upstream changed; leave the local file alone when it did not. Preserve this repository's external-controller and `herdr-broker` voice-routing contracts.
 
 ## Renaming a skill (e.g. dropping a prefix)
 
