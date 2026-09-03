@@ -125,6 +125,11 @@ corrections.
   principle.
 - **Capture promised, not run** — "I'll record that later." Fix: the pass
   is part of the round; a round is not done until step 7.
+- **Endless fix rounds** — rounds spent fixing a draft that should have
+  converged. Fix: prevention, not remedy. Drafts arrive self-contained and
+  complete (glossary first, every claim assessable), so one round is the
+  norm and two is the hard bound. There is no third round: a draft that
+  fails twice gets rewritten, not re-reviewed.
 - **Reconstructed rationale** — answering "why did we decide X" from
   memory when the log has no entry. Fix: say the log has no entry, check
   `.context/` snapshots and git history, and capture going forward —
