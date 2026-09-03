@@ -50,7 +50,7 @@ Completion criterion: choose the lightest mode that will answer the user. Block 
 
 ### 2. Run The North-Star Interview
 
-Read enough local context to avoid asking questions the repo already answers, but keep the interview at product level. Ask one blocking question at a time and wait for the answer. Prefer concrete choices when possible. Probe understanding, not just requirements: a successful interview leaves the user able to explain the product back, not merely a document that captures it.
+Read enough local context to avoid asking questions the repo already answers, but keep the interview at product level. Ask all currently known blocking questions in one compact batch, then wait for the answers before asking another batch. Do not serialize independent questions one per turn. Prefer concrete choices when possible. Probe understanding, not just requirements: a successful interview leaves the user able to explain the product back, not merely a document that captures it.
 
 Pressure-test every important behavior with negative probes:
 
