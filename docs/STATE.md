@@ -6,190 +6,50 @@ Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enfor
 
 ## Where we are
 
-Current phase: v1 turn-limit mode implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time plus phase-specific action guidance, enforce the selected expiry policy, and support `/wallclock turn-limit <duration>` plus `/wallclock set <duration>`. Normal deadline contracts remain active after terminal settlement, count down to zero, remain expired and enforced until `/wallclock stop`, and turn-limit contracts remain active, arm after terminal settlement, and reset the owner deadline at the next normal user message. Steering messages keep the current deadline; child deadlines are not extended by owner turn resets.
+Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. The native `/wallclock` command accepts an optional `start`, defaults an omitted policy to `block-new`, and submits an optional trailing prompt only after activation; idle use starts a turn and active use steers it. The host status display recalculates from the current clock once per second. OMP supports inline batch delegation: a parent can choose any number of independent task items, the host validates the full batch, creates one assignment per item, bounds each child by the parent's hard deadline, and correlates each child by batch index. Running child actions are aborted at child or parent expiry even when the parent policy is `block-new`; child admission fails closed without a tested abort seam. Nested delegation remains deferred. The adapters also recognize explicit `/do-it-now` and `/wrap-it-up` skill invocations and apply a fixed two-minute host guard.
 
 The package is installed and enabled in the normal local OMP profile from the wall-clock plugin checkout. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
 Native wall-clock contracts started by an explicit `/wallclock` command or
-`wallclock_start` use terminal settlement for lifecycle handling. Normal
-deadline contracts remain active after settlement and stay visible after
-expiry until `/wallclock stop`. `turn-limit` contracts stay active after
-settlement and start their next owner window at the next normal user message;
-steering messages do not reset or extend that window. Expiry stays enforced
-through the current turn, and active child work retains its own deadline.
-Evidence is in the focused controller and host tests plus the Pi and OMP
-native runner tests.
+`wallclock_start` clear after terminal agent settlement: Pi's
+`agent_settled` or OMP's terminal `agent_end`. Expired contracts remain active
+through continuations, and cleanup waits for active child work before stopping.
+A normal follow-up does not need `/wallclock stop`. Evidence is in
+`docs/log/2026-08-13-wall-clock-self-clear.md`.
 
-The current package includes persisted-state validation with mode and
-configured-duration fields, assignment and report contracts, report-linked
-plan revisions, and skill-only Agent Plugin discovery. The root `mcp.json`,
-standalone MCP server, and MCP tests were removed under D42 because OMP
-enumerated both MCP and native copies of the wall-clock operations even though
-MCP could not enforce activation. Native Pi and OMP tools are now the sole
-operation catalog.
-Nested assignment limits are specified but not implemented in
-`proposals/wall-clock/nested-assignment-limits.md`; that future data shape is
-now version 5 and still requires separate user sign-off.
-
-An OMP task child spawned when no wall-clock contract was invoked stays
-outside wall-clock coordination. An uncorrelated child lifecycle fails closed
-only when a listener can identify an active parent contract; inactive or
-unidentified ordinary lifecycle events remain transparent. The host-level
-event-bus regression and native OMP `TaskTool` runner cover this boundary.
-The native Pi runner separately verifies that an inactive parent admits a
-`subagent` proposal and an independent inactive child session executes a real
-`read`. This covers the Pi adapter boundary without claiming a model-backed
-`pi-subagents` process smoke, which still requires configured Pi credentials.
+The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement. Nested assignment limits are specified but not implemented in `proposals/wall-clock/nested-assignment-limits.md`; the proposed version 4 data shape requires user sign-off before implementation.
 
 Known child-test boundary: the native OMP `TaskTool` tests set `async.enabled` to false, while OMP 17.2.15 defaults it to true. The nested-assignment proposal makes a one-level background-child characterization test its first gate. Current synchronous child evidence must not be presented as proof of normal background-task behavior.
-
-Turn-summary v1 is now on `main` at `plugins/turn-summary/`. Native Pi and OMP adapters append one fixed end-of-turn reminder through the `context` seam; `/summary on|off` uses the optional native command seam. The package has no model calls, UI, or MCP surface. Installed local profiles are enabled, and the dated package and live-host evidence is in `docs/log/2026-08-13-turn-summary.md`.
 
 Deferred: Codex and Claude activation [D10] until an open, tested enforcement seam exists; Claude proprietary systems; provider-specific remote cancellation; and a portable visual dashboard. Revisit D10 when v1 host support is scoped and revisit the last two when provider or user-interface requirements become active. From the vibe round: lost-chat recovery via session-history search [D27] and loop-duration recording [D28], revisit triggers in `docs/DECISIONS.md`. The full contract remains in `docs/prds/2026-08-11-wall-clock/prd.md`.
 
 Codex support finding: current Codex hooks make a narrower `block-new` adapter technically possible for covered local tools, but no supported abort-running or universal tool boundary was found. The package-local copy is `plugins/wall-clock/CODEX-SUPPORT.md`; the dated research record and required smoke-test evidence are in `docs/log/2026-08-12-codex-support-finding.md`; v0 activation remains deferred under D10.
 
-The repository now also publishes `skills/initiative-standup/SKILL.md`, a user-invoked standup for recent cross-project initiatives that do not need Linear tickets. It starts with a Memex session ledger across Memex-supported indexed agent sources and repositories, then uses full transcripts and named artifacts to derive initiatives [documented]. On this device, Memex indexes its supported local agent sources, but it does not index OMP sessions; the `nicosuave.memex` Herdr plugin is installed and its refresh action succeeded on 2026-08-12 [verified-live]. These are supporting local integrations, not wall-clock enforcement.
+The repository now also publishes `skills/initiative-standup/SKILL.md`, a user-invoked standup for recent cross-project initiatives that do not need Linear tickets. It starts with a Memex session ledger across indexed agent sources and repositories, then uses full transcripts and named artifacts to derive initiatives [documented]. On this device, Memex indexes local agent history and the `nicosuave.memex` Herdr plugin is installed; its refresh action succeeded on 2026-08-12 [verified-live]. These are supporting local integrations, not wall-clock enforcement.
 The repository now also publishes `skills/understand/SKILL.md`, a user-invoked workflow for building a working model before changing or delegating work. It uses a coverage map, evidence tiers, a gap sweep, teach-back, and a bounded delegation gate; it is documented but not yet field-tested.
-The repository now also publishes `skills/scope-decision-form/SKILL.md`, a six-field investigation-close form (Goal / What we learned / Decision / One next action / Done when / Do not do). Use it to turn the end of research or a scope discussion into one decision and one next action, with tagged evidence and a visible finish line.
-The repository now also publishes `skills/omp-plugin-iteration/SKILL.md`, a model-invoked workflow for changing an OMP runtime plugin, pushing the exact checkout to `main`, reinstalling it into an OMP profile, and separating installed-source verification from live-process verification. The user restarts OMP after installation; the agent owns reinstall.
-The repository now publishes `plugins/grok-search/` v0.2 as an X-only native Pi and OMP plugin aligned to the approved north star in `docs/prds/2026-09-02-grok-search/vibe.md`. The native catalog is exactly `grok_search`, `grok_fetch`, and `grok_auth`; general web search and plain Grok inference are outside this extension. The former `SKILL.md` discovery surface and `npx skills` distribution path were removed because the native tool names, descriptions, and schemas are the authoritative agent interface.
-`grok_search` supports quick or deep bounded live-X discovery, source-first or Grok-synthesized responses, handle and date filters, media understanding, recoverable citations, and explicit degradation when no live evidence is returned. `grok_fetch` returns a structured anchor or full authored unit for an X post, thread, or X Article, with separately provenanced parent, quote, link, media, reply, and quote-reaction context. Discussion is representative rather than exhaustive; inaccessible source content fails closed instead of being reconstructed.
-Authentication is resolved on every action in subscription-first order: supported host xAI OAuth, Grok CLI OAuth, plugin-owned OAuth, then `XAI_API_KEY` only when no subscription credential exists. Subscription expiry or quota failure never falls through to billed API access. Host credentials are delegated through the child environment rather than arguments; plugin refresh is locked and atomically persisted. `grok_auth` exposes non-secret status plus a staged, agent-operated device flow whose start action requires human approval.
-Focused evidence for v0.2: strict TypeScript compilation, 26 Node host tests, 20 Python contract tests, and real Pi 0.84.1 and OMP 17.2.15 native-runner execution. Five independent correctness, security, performance, content-contract, and auth-contract reviewers found and verified fixes for all material findings; their final post-fix verdicts were clean. A post-audit correction preserves truthful refreshability for expired subscription credentials and lets a twice-rejected rotated source fall through to the next subscription without exposing billed API access. A fresh OMP 18.1.4 RPC process loaded exactly `grok_auth`, `grok_search`, and `grok_fetch`. Before authorization, status returned `missing` and both content tools returned structured `auth_required` results. After the user authorized Grok, another fresh process resolved a valid, refreshable `host-xai` subscription; a broadened quick source search through `grok-4-fast` returned three live citations with `degraded: false`, and fetching the exact cited URL `https://x.com/i/status/2094908449398071318` returned a verified post with canonical author URL, timestamp, verbatim text, and video metadata with `degraded: false`. A fetch against a synthesized non-citation URL failed closed before the exact cited URL succeeded, preserving the recoverable-evidence contract. The plugin-only cutover at `aa03612` moved the package to `plugins/grok-search/`, removed the repository and globally installed skill plus its lock entry, and relinked the default OMP profile to `/Users/emo/dev/skills/plugins/grok-search`. A final fresh OMP process exposed all three native tools, omitted `skill:grok-search` from available commands, and executed `grok_auth` successfully with the valid `host-xai` subscription [verified-live].
-The approved vibe remains the upstream product contract. The shipped vertical slice intentionally omits deleted-content forensics, exhaustive discussion, account selection, and hypothetical pagination; these omissions preserve the vibe's truthfulness and bounded-scope requirements rather than weakening them.
-The repository now publishes an OMP/Pi port of Lauren Tan's pstack at upstream
-`cursor/plugins` commit `799151d91b6e12ee7dbd09f708eec108d7de9b3b`.
-All 45 upstream skills and the `pstack-runtime` host adapter live only under
-`skills/pstack/<skill-name>/`; none occupy the root of `skills/`. Source
-discovery and installation use `npx skills --full-depth`, which keeps the
-repository grouped while installing each child by its unchanged skill name.
-`tdd` and `teach` remain `pstack-tdd` and `pstack-teach`. The updated
-multi-phase planner includes its executable shape checker. `make-bot-ui`
-supports an existing Grok Bot webhook while failing closed on Cursor-only
-routine creation and secret-request cards. Bundled install scripts register
-`poteto-agent` and `comment-sicko` with both OMP and Pi. Role maps live at
-`~/.config/pstack/omp-agents.json` and `~/.config/pstack/pi-agents.json`.
-The PR watcher, orchestrator, licenses, and all prior host adaptations remain
-distributed with their owning skills.
-A fresh OMP process executed both registered agents. Pi's RPC registry loaded
-the four gateway skills and its subagent doctor discovered both user agents;
-Pi model execution remains unexercised because this device has no configured
-Pi model credential.
+The repository now also includes `plugins/skiterate/`, the command-only Agent Plugins package named by D36 for V7's in-the-moment skill notes. It registers `/skiterate` in Pi 0.84.1 and OMP 17.2.15, appends one Markdown-prefixed JSON record to `SKITERATE_PATH` or `~/SKITERATE.md`, and records datetime, repository identity, worktree, branch or detached commit, cwd, host agent, model, note, and explicit or detected skill [verified-live]. Both hosts expose native command registration and lifecycle events; neither exposes a dedicated last-invoked-skill field, so adapters parse Pi skill blocks and OMP skill-prompt markers/details. The capability gate, GAPs, and clean OMP proof are in `docs/log/2026-08-13-skiterate.md`.
 
+`docs/vibe.md` is the repo-level philosophy contract (progress through sifting: fast filter passes, few crystallization stages, deliverable breakdown, symbiotic understanding, recorded judgment, timed loops, in-the-moment friction logs, plus a companion turn-receipt clause). Three review rounds are applied and captured (36 + 8 + 1 items, D20-D35, with D22 and D26 superseded), answers in `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md`. Review rounds are closed at the user's direction under the two-round bound [D34]; formal approval stays pending and the user edits directly instead. The vibe is the source of truth; skills and the artifact chain are downstream facets [D30, D33]. Proposals are in `docs/log/2026-08-13-sieve-vibe.md` (the user declined to review it; it stands as session minutes). Defaults taken at close-out: the receipt clause stays inside vibe.md. The ticketize/standup overlap audit ran in herdr worktree w2C and is at `docs/log/2026-08-13-ticketize-standup-overlap.md`: standup does not replace lc-ticketize; the verdict is keep-and-revise (explicit deliverable/sub-ticket shape [D31], a stated boundary against standup's daily delta, one canonical ticket contract instead of the two drift-prone copies, a named owner for parent-close aggregation, and no claim to own understanding measurement). Open gaps the audit named: no skill owns the pre-ticketize understanding check, the parent-close handoff, the branch-closure-to-standup transfer, or one shared sub-ticket data shape. The skill-scoped notes proposal (P4) is now implemented as `plugins/skiterate/`, the command-only package named by D36; capability and live evidence are in `docs/log/2026-08-13-skiterate.md`. The name remains provisional pending any rename. Receipt delivery is also a plugin, staged [D37]: v1 succinct per-turn reminder via the wall-clock turn-context seam, v2 collapsible above-the-fold UI, v3 companion model; the global-instruction route is dropped. One provisional rule: D35.
 
-The repository now also publishes `skills/rubber-stamp-travel-field-note/`, a model-invoked image-editing procedure that preserves each source travel/place photo on the left of an independent 4:3 poster and generates a small simplified multicolor rubber-stamp memory on warm paper at right. The bundled prompt reference carries the composition, material, typography, exclusion, and validation contract. Codex 0.142.5 built-in `$imagegen` was verified through the active ChatGPT subscription by generating and inspecting a 1448×1086 Venice poster with exact requested text [verified-live].
+The downstream revision landed on `sieve-vibe` (2026-08-13, user suspended the push-to-main-immediately rule for this iteration; the branch carries skill edits not yet on main): lc-north-star declares the chain a downstream facet of the vibe with stage and fix-round discipline [D30, D29, D34], its interview now probes understanding [D32], and its quality gates reject prescriptive vibes [D20]; the vibe template's `Means:` field is now `Example:`; `docs/lifecycle.md` declares the vibe upstream of the artifact chain; lc-ticketize requires deliverable tickets with enumerated sub-tickets [D31]; lc-review-capture names endless fix rounds a failure mode [D34]; lc-project-state's AGENTS.md wiring points at `docs/vibe.md` when present. branch-closure and lc-phase-tracker were checked and already align. The improved lc-north-star gates were run against `docs/vibe.md` itself: pass on all gates (details in the session).
 
-The repository now owns and publishes `skills/herdr/SKILL.md` with inherited in-pane control and exact-session external control, plus `skills/herdr-broker/SKILL.md` for voice broker routing: the voice task maps ordinary speech (including transcription variants like "Herder") to exactly five supervisor verbs — `delegate`, `message`, `status`, `updates`, `cancel` — executed directly through `$HOME/.local/bin/voicebroker` with `--json`; vague health checks map to status, delegate returns the queued workstream ID immediately without waiting for the manager, workstream IDs and the updates cursor stay in conversation memory, and there is no OMP, direct-Herdr, or subagent fallback. The Herdr skill is an intentional ownership override of legacy `herdrdev/herdr` lock metadata: maintenance compares the stable upstream skill before local edits or publication and periodically during routine upkeep, porting applicable CLI and safety changes without removing the external-controller or voice contracts. No Herdr, Codex, Pi, or OMP runtime change is required [documented].
+On `ticketize-revision` (2026-08-13), the overlap-audit follow-on gives
+`lc-ticketize` one parent ticket per deliverable with tracked sub-tickets and
+named dependencies, routes unsettled input to `synthesize` or `understand`,
+keeps `standup` on small deltas, uses one canonical ticket contract, and names
+the child-proof handoff to parent close.
 
-`docs/vibe.md` is the repo-level philosophy contract (progress through sifting: fast filter passes, few crystallization stages, deliverable breakdown, symbiotic understanding, recorded judgment, timed loops, in-the-moment friction logs, plus a companion turn-summary clause). Three review rounds are applied and captured (36 + 8 + 1 items, D20-D35, with D22 and D26 superseded), answers in `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md`. Review rounds are closed at the user's direction under the two-round bound [D34]; formal approval stays pending and the user edits directly instead. The vibe is the source of truth; skills and the artifact chain are downstream facets [D30, D33]. Proposals are in `docs/log/2026-08-13-sieve-vibe.md` (the user declined to r…
-
-The direct local token report now lives in `tools/agent-skill-usage.ts` and supports four report harnesses: Claude, Codex, Pi, and OMP. It reads local JSONL logs directly; it does not use Memex for accounting. Claude skill attribution uses native `attributionSkill`. Other harnesses are attributed only when a skill field or `skill://` read appears on the same usage record; earlier user messages and separate tool records do not label later usage. Unlinked usage is `(none)`. Defaults are `~/.claude/projects` or `~/.config/claude/projects`, `~/.codex/sessions`, `~/.pi/agent/sessions`, and `~/.omp/agent/sessions`; environment variables can override each root [verified-focused].
+Both finished fanout branches are merged into `sieve-vibe` (2026-08-13):
+`ticketize-revision` (docs revision above; the merge also restored the
+"merge alone does not close a parent whose proof needs live behavior or a
+measurement" sentence) and `skiterate` (v1 command plugin; package tests 7/7
+reproduced by the orchestrator). The third tree, `turn-receipt`, completed
+v1 with clean-OMP injection evidence, but its worktree is mid-rename to
+`turn-summary` under the user's hands (plugin installed, working tree
+uncommitted). It is not integrated; the tree stays untouched until the user
+says the rename settled.
 
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
-
-The repository now also contains `plugins/focus-order/`, a Herdr plugin that stores ranked agent and worktree identities, focuses the highest-ranked urgent target's tab without stealing focus between equal-ranked agents in the same worktree, or opens a separate attention popup. Manager rendering is separated from input handling and renders agents in the same ranked order used by selection, so it opens on the top row and Up/Down moves between adjacent displayed rows while scrolling keeps the selection visible. Its input decoder expands batched raw-terminal commands and normalizes application-mode arrows, so repeated keypresses are handled individually. It uses one-shot startup and event hooks, an atomic attention-owner marker, and optional Pi and OMP companion adapters. The implementation is verified with TypeScript compilation, 109 Node tests, local Herdr manifest linking, action discovery, and an isolated live Herdr session covering startup, hooks, ranking, focus mode, and modal popup opening; the plugin is published on `main`.
-The repository now also contains `plugins/bug-command/`, a command-only native
-Pi and OMP plugin with five personal log commands: `/bug`, `/fear`, `/journal`,
-`/grasp`, and `/do`. Each command takes
-`[--plugin <name>] [--skill <name>] <note>` and appends one context-rich JSON
-record (repository, worktree, branch, session, turn, recent activity, plugin,
-and skill metadata) to its own home file: `~/BUGS.md`, `~/FEARS.md`,
-`~/JOURNAL.md`, `~/GRASP.md`, or `~/DO.md`, each overridable with
-`BUGS_PATH`, `FEARS_PATH`, `JOURNAL_PATH`, `GRASP_PATH`, or `DO_PATH`. The
-package checks and native OMP runner pass; Pi has package adapter proof. The
-contract and GAPs are in `docs/log/2026-08-14-bug-command.md` and
-`docs/log/2026-08-14-note-commands.md` [verified-focused].
-The repository now also publishes `skills/agent-plugin/SKILL.md`, a
-model-invoked fast path for building native Pi and OMP plugins. It standardizes
-the minimal command or hook contract, shared implementation and thin
-adapters, bounded context records, adapter tests, live-host proof, state
-updates, and main-branch delivery. The original structural check and cold-reader
-attempt are recorded in `docs/log/2026-08-14-agent-plugin-skill.md`; the skill
-was then field-tested by the model-invocable-skills plugin with focused checks
-and live Pi proof [verified-live].
-
-The repository now also contains `plugins/model-invocable-skills/`, a native
-Pi extension that classifies Pi's authoritative loaded skill objects as
-model-invocable or user-only. `/model-invocable-skills` renders the source
-video's one-line themed model-invocable widget; it refreshes before agent runs.
-The pinned Pi 0.84.1 host loaded and executed the command through RPC and
-rendered the expected one-line widget in an interactive TUI smoke. Evidence
-is in `docs/log/2026-08-16-model-invocable-skills.md` [verified-live].
-
-The repository also contains `plugins/no-code-comments/`, a native Pi, OMP, and Hermes write-boundary extension that is currently uninstalled from every harness: OMP's copy was removed with `omp plugin uninstall`, the chezmoi sync script no longer installs it, and Pi and Hermes never had it registered live. The 0.3.0 source remains dormant and corrected: the Pi/OMP adapter strips prose comments from `write`, replacement and patch `edit`, hashline, and `ast_edit` payloads, and the Hermes adapter rewrites `write_file` and both `patch` modes through `tool_request` middleware. Unrecognized extensions, including markdown and all of its derivatives, now pass through untouched instead of blocking the write, a scheme-adjacent slash guard keeps URLs in JSX text intact, the preserved-directive list covers pragma, nosec, isort, shellcheck, vim, region, biome-ignore, deno-lint, swiftlint, nolint, noinspection, clang-format, and markdownlint directives, and the Hermes fail-closed pre_tool_call gate was removed. Arbitrary Python or shell filesystem writes remain outside the tool boundary. The boundary history is in `docs/log/2026-08-24-no-code-comments.md`, the port triage in `docs/log/2026-08-28-hermes-extension-porting.md`, and the uninstall record in `docs/log/2026-08-31-no-code-comments-uninstall.md` [verified-focused].
-
-The repository now also publishes `skills/advisor-profiles/` and
-`plugins/advisor-profiles/` for named, switchable advisor roles across OMP,
-Pi, and Hermes from one OMP-compatible `WATCHDOG.yml`. OMP remains on its
-native multi-advisor runtime and `/advisor` commands. Pi and Hermes add the
-session-scoped `/advisor-profile` surface and run one host-owned structured
-post-turn review per selected advisor; concern/blocker notes produce at most
-one marked correction follow-up, exact notes deduplicate per session, and
-review failures fail open with visible status. Advisor tools remain OMP-only.
-Focused TypeScript and Python suites, package checks, Hermes Plugin Doctor,
-native OMP status, interactive Pi status, and an isolated real-model Hermes
-pass review all succeed. The contract and evidence are in
-`docs/log/2026-08-29-advisor-profiles.md` [verified-live].
-
-The repository now also contains `plugins/hard-update-restart/`, a Herdr plugin
-with two actions that appear in the installed command palette: update Herdr,
-OMP, and Pi, or also update installed OMP plugins and Pi extensions. The
-focused popup requires confirmation, then waits for every recognized agent to
-be `idle` or `done`; `working`, `blocked`, `unknown`, and future unrecognized
-states block progress and are shown with pane, runtime, and working directory.
-The drain requires two consecutive clear checks, runs before OMP/Pi updates and
-again before restart, and Ctrl+C cancels without restarting. A failed preflight
-or in-session update also does not restart Herdr. After those updates succeed,
-a detached helper stops the persistent Herdr server, removes the nested-session
-marker, runs `herdr update` outside the stopped session as Herdr requires,
-starts the replacement server, and waits for it to become ready. If the
-detached Herdr update fails, the helper still restarts the existing server
-before it reports failure. Plugin processes use the server-injected Herdr
-executable only while it still exists and is executable, otherwise they fall
-back to the `herdr` command on PATH; this handles servers that outlive a deleted
-development binary. Restored supported agents then launch the available
-updated runtimes. The current Herdr client closes during the hard restart; the
-user runs `herdr` again to reattach. Herdr plugin updates are not included
-because Herdr 0.8.2 has no plugin-update command. TypeScript checking, 13
-focused tests, manifest linking, action discovery, an interactive cancellation
-smoke, a live active-agent wait/cancel smoke, an isolated named-server hard
-restart, and a detached outside-session update smoke all pass [verified-live].
-
-The repository now also contains `plugins/plugin-updater/`, a Herdr plugin
-that closes that gap: its `check` action classifies every GitHub-managed
-plugin as current, behind, pinned, or error (one `git ls-remote --symref`
-per repo; behind plugins also get a version delta and subdir-scoped
-changed-files preview from the managed checkout), and its `update` action
-opens a confirmation popup that reinstalls only user-approved plugins via
-`herdr plugin install ... --yes`. Updates without an interactive terminal
-are refused, pinned installs are skipped, `min_herdr_version` refusals
-carry an update-Herdr-first hint, and the updater reinstalls itself last
-from a detached helper. It is installed on this machine from
-`emo-eth/skills/plugins/plugin-updater`. TypeScript checking, 20 focused
-tests, live classification of the real plugin set, refusal and cancel
-no-op smokes, a selective live update that preserved config, the
-action-to-popup path, and the detached self-update path all pass
-[verified-live]. Contract and evidence: `docs/log/2026-08-30-plugin-updater.md`.
-
-The repository now also contains `plugins/pi-bots/`, a native Pi extension
-for persistent named bots that own domains. A strict user/project `BOTS.yml`
-roster is atomically mirrored through immutable standard `pi-subagents` agent
-generations so parent, nested child, background, and scheduled processes discover the same
-`bot.<name>` identities. The `bots` tool and `/bots` command add foreground
-routing, live shared context, owner-only provenance records, scoped private
-memory, doctor, and reload; native `pi-subagents` remains the sole runner,
-scheduler, and lifecycle surface. A live chief-of-staff run delegated to the
-research bot, wrote owner state and project memory, and returned through both
-agents. Native workflow validation accepted an operations routine. TypeScript
-checking and 84 focused tests pass. Contract, research, boundaries, and live
-evidence: `docs/log/2026-08-30-pi-bots.md` [verified-live].
-
-The older analysis-only Hermes/Pi bridge assessment remains useful for RPC and state boundaries but is superseded as a recommendation; no bridge exists. `docs/log/2026-08-31-hermes-pi-hybrid.md`.
-
-An OMP v18.0.11 source, SDK, in-repository native-runner, and live RPC audit confirms OMP can be the first programmable Bot execution kernel, not the durable control plane or required UI. Recommendation: independent Bot specs, daemon, message/work state, and TUI over an isolated OMP SDK worker adapter; OMP Task agents and IRC remain execution plumbing. Contracts, harness comparison, protocol, gaps, and effort: `docs/log/2026-08-31-omp-bot-feasibility.md`.
-
-Current official-source research confirms Grok Bot uses a vendor-controlled persistent cloud VM while Hermes can run the full Bot stack locally on user-owned macOS hardware. The next decision gate is an isolated current-Hermes coding-and-coordination trial; OMP-only is the controlled fallback and a permanent Hermes/OMP hybrid is disfavored. Raw dossier: `docs/research/2026-09-01-hermes-harness-and-bot-mode.md`. Decision brief: `docs/summaries/2026-09-01-personal-agent-harness-decision.md`.
 
 ## Standing constraints
 
@@ -197,47 +57,25 @@ Current official-source research confirms Grok Bot uses a vendor-controlled pers
 - Parent and child agents receive measured elapsed-time context at every turn; agents do not estimate task duration. [D5]
 - Pi and OMP are the first enforcement targets; Codex and Claude are package targets only until tested seams exist. [D6]
 - Every activation carries `block-new` or `abort-running`; the native slash command defaults an omitted choice to `block-new`. [D7, D15]
-- `turn-limit` is the persistent per-turn mode; terminal settlement arms the owner contract as explicit persisted `turnState: "armed"`, and the next normal user message starts its window. Steering messages keep the current deadline; child deadlines remain fixed. The `/wallclock turn-limit` command defaults to `block-new`; `abort-running` is explicit and fails closed unless the host proves a provider-abort seam. [D37, D38, D39]
 - `standup` is ticket-centered; `initiative-standup` is the separate path for cross-project work, must start with a Memex session ledger, and must not require or mutate Linear tickets. [documented]
 
 - Compression preserves a working vertical slice and reports gaps honestly. [D8]
-- MCP is optional in the Agent Plugins standard; wall-clock omits it and keeps operations native-only. [D9, D42]
+- MCP is optional and never enforces deadlines. [D9]
 
 ## Topic index
 
 | Topic | Thinking and decisions | Code | Verified by | Tier |
 | --- | --- | --- | --- | --- |
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
-| Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts`, installed OMP single-catalog regression | verified-focused |
-| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, serial Node suite, 7 Bun native-runner tests, Pi and OMP command-line tests, isolated OMP install test, native Pi parent/child and OMP TaskTool child tests, and the dated completion logs | verified-live |
-| Turn summaries | `docs/DECISIONS.md` D39, `docs/vibe.md` companion clause | `plugins/turn-summary/` | `docs/log/2026-08-13-turn-summary.md`, package checks, installed-plugin Pi and OMP live evidence | verified-live |
+| Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
+| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, `npm test` (74 Node tests and 6 Bun native-runner tests), Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and the dated completion logs | verified-live |
 | Nested assignment limits | `proposals/wall-clock/nested-assignment-limits.md` | not implemented | data-shape sign-off and Gate 0 still required | proposed |
+| Skiterate notes | `docs/DECISIONS.md` D36, `docs/vibe.md` V7 | `plugins/skiterate/` | package `npm run check`, `npm test`, and clean OMP 17.2.15 RPC with `SKITERATE_PATH` override | verified-live |
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex session inventory and transcript retrieval, with optional Herdr navigation | `memex index --include-agents` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
 | Understanding before delegation | `skills/understand/SKILL.md` | `skills/understand/SKILL.md` | skill contract inspection and fresh-eyes review | documented |
-| Investigation close form | `skills/scope-decision-form/SKILL.md` | `skills/scope-decision-form/SKILL.md` | field-by-field walkthrough of the blank form and the Apex filled example | documented |
-| Repo philosophy (the sieve) | `docs/vibe.md`, `docs/log/2026-08-13-sieve-vibe.md`, `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md` | not implemented; proposals P1-P5 in the log, P1/P4 reshaped by D31/D24 | Plannotator rounds 1-3 applied (36 + 8 + 1 items, D20-D35); light implementation-example wording approved 2026-08-27; formal approval pending, edits direct | proposed |
-| Direct local token reporting | `tools/agent-skill-usage.ts`, `tools/agent-skill-usage-core.ts` | `fixtures/all-source-skill-usage/`, `tools/agent-skill-usage.test.ts` | focused direct-parser tests and live local Claude, Codex, Pi, and OMP smoke reports; Memex is not used for accounting | verified-focused |
-| Focus order plugin | none yet | `plugins/focus-order/` | `npm run check`, 109 Node tests including ranked render/navigation alignment and batched arrow decoding, `herdr plugin link`, `herdr plugin action list`, and isolated live Herdr focus/modal smoke | verified-live |
-| Hard update restart | none yet | `plugins/hard-update-restart/` | `npm run check`, 13 Node tests, `herdr plugin link`, command-palette action discovery, interactive confirmation/cancellation and active-agent wait smokes, isolated Herdr 0.8.2 server replacement, and detached outside-session update smoke | verified-live |
-| Plugin updater | `docs/log/2026-08-30-plugin-updater.md` | `plugins/plugin-updater/` | strict `tsc`, 20 Node tests, live Herdr 0.8.2 classification/refusal/cancel/selective-update/popup/self-update smokes documented in the log | verified-live |
-| Persistent Pi domain bots | `docs/log/2026-08-30-pi-bots.md` | `plugins/pi-bots/` | strict TypeScript check, 84 focused tests, live chief-of-staff → research peer delegation with owner state and scoped memory writes, and native operations-workflow validation | verified-live |
-| Hermes/Pi Bot hybrid | `docs/log/2026-08-31-hermes-pi-hybrid.md` | proposed `pi --mode rpc` bridge; superseded as recommendation, no implementation | source inspection plus independent Kimi K3 and GLM-5.3-Flash architecture reviews | proposed-superseded |
-| OMP Bot runtime feasibility | `docs/log/2026-08-31-omp-bot-feasibility.md` | proposed harness-neutral Bot specs/core/TUI plus isolated OMP SDK worker adapter; no implementation | installed OMP v18.0.11 source and SDK, in-repository native runner, Pi SDK comparison, and live `rpc-ui` state/UI-frame smoke | proposed |
-| Personal agent harness decision | `docs/research/2026-09-01-hermes-harness-and-bot-mode.md`, `docs/summaries/2026-09-01-personal-agent-harness-decision.md` | isolated current-Hermes local-only trial proposed; no migration | current official Hermes/Grok Bot docs and Hermes source at `58472d8`; local Hermes 0.20.4 version check; existing Pi/OMP live receipts | researched |
-| Personal log commands (bug, fear, journal, grasp, do) | `docs/DECISIONS.md` D40, `docs/log/2026-08-14-bug-command.md`, `docs/log/2026-08-14-note-commands.md` | `plugins/bug-command/` | `npm run check`, 11 Node tests, native OMP runner test, and clean OMP RPC smoke | verified-focused |
-| OMP plugin iteration | `skills/omp-plugin-iteration/SKILL.md` | `skills/omp-plugin-iteration/SKILL.md` | skill structure inspection and pushed-install workflow | documented |
-| Agent plugin builder | `docs/DECISIONS.md` D41, `docs/log/2026-08-14-agent-plugin-skill.md`, `docs/log/2026-08-16-model-invocable-skills.md` | `skills/agent-plugin/SKILL.md` | structural check, cold-reader attempt, then successful model-invocable-skills field test with live Pi proof | verified-live |
-| Skill invocation visibility | `docs/log/2026-08-16-model-invocable-skills.md` | `plugins/model-invocable-skills/` | `npm run check`, 4 Node tests, package dry run, and pinned Pi 0.84.1 RPC plus screenshot-matching interactive TUI smoke | verified-live |
-| Comment-free code writes | `docs/log/2026-08-24-no-code-comments.md`, `docs/log/2026-08-31-no-code-comments-uninstall.md` | `plugins/no-code-comments/` at 0.3.0, uninstalled from every harness; fail-open passthrough for markdown, derivatives, and unknown extensions; scheme-adjacent slash guard; expanded directive preservation; Hermes pre_tool_call gate removed | `npm run check`, 8 Node tests, native OMP runner, 8 Python tests, and `omp plugin uninstall` verification | verified-focused |
-| Advisor profiles | `skills/advisor-profiles/SKILL.md`, `docs/log/2026-08-29-advisor-profiles.md` | `plugins/advisor-profiles/` with Pi and Hermes adapters; OMP uses its native runtime | TypeScript check, 41 Node tests, 79 Python tests, package dry run, Hermes Plugin Doctor, native OMP status, interactive Pi status, and isolated real-model Hermes pass review | verified-live |
+| Repo philosophy (the sieve) | `docs/vibe.md`, `docs/log/2026-08-13-sieve-vibe.md`, `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md` | lc- family revised downstream (lc-north-star, vibe template, lifecycle.md, lc-ticketize, lc-review-capture, lc-project-state) on `sieve-vibe`, unmerged per user direction | Plannotator rounds 1-3 applied (D20-D35); improved north-star gates pass on vibe.md; approval pending, edits direct | proposed |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
-| Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata, and an effect-based trigger with no recurrence, ownership, severity, or known-fix gate | documented |
-| X/Twitter Grok search, fetch, and auth | `docs/prds/2026-09-02-grok-search/vibe.md`, `docs/log/2026-08-28-grok-search-tools.md` | `plugins/grok-search/scripts/grok-search.py`, `scripts/grok_x.py`, `src/` | strict TypeScript check; 26 Node and 20 Python tests; native Pi 0.84.1 and OMP 17.2.15 runners; live `grok-4-fast` search with three citations and exact-citation fetch with verified post and media metadata, both non-degraded; fail-closed synthesized-URL fetch; plugin-only commit `aa03612`; global skill and lock removal; default-profile relink to `plugins/grok-search`; fresh OMP 18.1.4 exact native-tool catalog with no `skill:grok-search` command and valid `host-xai` execution; five-lens adversarial audit | verified-live v0.2 |
-| Grok-search north star | `docs/prds/2026-09-02-grok-search/vibe.md` | v0.2 implements the approved direct-retrieval, representative-discovery, recoverable-evidence, subscription-first, host-delegated, and device-authorization vertical slice | explicit user approval via tailnet Plannotator on 2026-09-02; five-lens contract and preflight audit clean after fixes | approved; verified-focused |
-| OMP/Pi pstack | upstream `cursor/plugins@799151d91b6e12ee7dbd09f708eec108d7de9b3b` | `skills/pstack/` contains 45 upstream skill mappings plus `pstack-runtime`; no pstack skill is rooted directly under `skills/` | 46/46 nested source paths; `npx skills --full-depth` discovery; 57 Bun tests; strict TypeScript check; 46/46 installed in OMP and Pi; fresh OMP poteto-agent and comment-sicko task smokes; fresh Pi RPC skill discovery and two-user-agent doctor discovery; Pi model execution unavailable without a configured credential | verified-live |
-| Rubber-stamp travel field notes | `skills/rubber-stamp-travel-field-note/SKILL.md` | `skills/rubber-stamp-travel-field-note/references/poster-spec.md` | Codex 0.142.5 built-in `$imagegen` subscription smoke; 1448×1086 exact 4:3 output and visual acceptance audit | verified-live |
-| Herdr broker voice routing | `skills/herdr-broker/SKILL.md`, `docs/log/2026-08-30-herdr-voice-delegation.md`, `docs/log/2026-08-30-herdr-skill-management.md` | the voice task maps ordinary speech (including transcription variants like "Herder") to exactly five supervisor verbs — delegate, message, status, updates, cancel — executed directly through `$HOME/.local/bin/voicebroker` with `--json`; vague health checks select status, delegate returns the queued workstream ID immediately, IDs and the updates cursor persist across the conversation, and omp, direct-herdr, and subagent routes are absent | live `voicebroker status --json` against the deployed broker, source structure/frontmatter and no-omp checks, byte-matched global install, and lock provenance; the two dated logs remain superseded historical evidence of the removed OMP delegation route; a fresh-voice field test is still pending | documented |
-| Managed Herdr skill fork | `skills/herdr/SKILL.md`, `docs/log/2026-08-30-herdr-skill-management.md` | local fork of `herdrdev/herdr`'s skill; outside-session control allowed with exact `--session` and explicit IDs from list JSON, no `--current`; lock entry points at this repository and chezmoi `run_z_sync-agent-plugins.sh` reinstalls it on every apply | GitHub-source reinstall, lock entry check, and sync-script install | verified-live |
+| Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
 | Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |

@@ -106,7 +106,13 @@ Add to the top of `AGENTS.md` (create it if absent), so every agent and tool tha
 
 If the repo uses `CLAUDE.md` that `@`-imports `AGENTS.md` (or vice versa), wire the canonical one and let the import carry it.
 
-Completion: `AGENTS.md` carries the three directives at its top.
+When the repo has a philosophy vibe at `docs/vibe.md`, add a fourth directive above the others:
+
+```md
+- If `docs/vibe.md` exists, read it before any process-affecting work (skills, tickets, planning, reviews): it is the source of truth for how work is done here, and every skill and chain is downstream of it.
+```
+
+Completion: `AGENTS.md` carries the three directives at its top (four when a repo vibe exists).
 
 ### 5. Verify — the fresh-chat test
 

@@ -49,10 +49,12 @@ Linear IDs.
 
 Ticketize only what is already understood. Collect: the problem map / plan /
 spec being decomposed, the project's state map (`docs/STATE.md` or equivalent),
-its standing constraints, and any prior art the repo has already verified. If
-no doc states what the work is for, stop — run a synthesis pass first
-(`synthesize`, `lc-north-star`). Ticketing vibes produces "explore this idea"
-tickets, the exact failure this skill exists to prevent.
+its standing constraints and any prior art the repo has already verified.
+If no doc states what the work is for, route to a synthesis or understanding
+pass (`synthesize` or `understand`) first. Ticketize checks that the input is
+settled; it does not measure or ensure user understanding. Ticketing vibes
+produces "explore this idea" tickets, the exact failure this skill exists to
+prevent.
 
 Completion: every input doc is listed; standing constraints and verified prior
 art are noted for step 4.
@@ -69,17 +71,22 @@ every ticket:
 - **Research names its artifact.** "Comparison grid + a pick," "memo with a
   recommendation" — never "explore" or "look into."
 - **Epics split.** A description holding two deliverables is two tickets.
+- **Deliverables get structure.** Use one parent ticket per deliverable. Enumerate
+  and track its known components as sub-tickets. Each child has its own
+  owner-sized output and proof; name dependencies between tickets. When current
+  work only adds setup for the parent outcome, make the setup a child. Keep the
+  parent open until the required child proofs pass. One PR may close multiple
+  child tickets only when each child has its own satisfied proof; a merge alone
+  does not close a parent whose proof still needs live behavior or a
+  measurement. Implement-then-verify is one common split, not a mandate applied
+  to every task. The failure to fight is deliverables that were never broken
+  down at all.
 - **Prior art travels.** When the repo already answers part of a ticket, the
   description says where in one line, so nobody re-researches what's known.
 
-When a parent ticket names an outcome but the current work only adds setup,
-make the setup a child ticket and leave the parent open. One PR may close
-multiple child tickets only when each child has its own satisfied proof needed; a
-merge does not close a parent whose proof still needs live behavior or a
-measurement.
-
 Completion: every ticket has a proof needed, a priority, a type, and one
-deliverable; no research ticket lacks a named artifact.
+owner-sized result; every deliverable has one parent ticket with its known
+sub-tickets and named dependencies; no research ticket lacks a named artifact.
 
 ## 4. Diff against what exists
 
@@ -116,11 +123,21 @@ defined terms survive, defined once.
 
 ## 6. Land it
 
-Deliver three things: the ticket set in destination format; a **back-map**
-(every area of the source thinking → the ticket(s) that cover it, so gaps are
-visible rather than vibes); and the decisions-to-force list for the next
-meeting. When writing to the tracker directly: one test row first, user
-sign-off, then the batch, then re-query the tracker to verify the full set has
+Ticketize takes settled thinking and lands the complete ticket set as three
+things: the ticket set in destination format; a **back-map** (every area of
+the source thinking to the ticket(s) that cover it, so gaps are visible rather
+than vibes); and the decisions-to-force list for the next meeting. `standup`
+proposes only a small daily delta or an explicitly named change; it never
+redoes the whole decomposition.
+
+Ticketize defines each ticket's proof needed; `standup-fanout` or
+`branch-closure` reproduces it; `standup` reports it; and the skill that closes
+the last open child proof (`standup-fanout` in batch mode or `branch-closure`
+in single-branch mode) aggregates child evidence and applies the parent close
+when authorized.
+
+When writing to the tracker directly: one test row first, user sign-off, then
+the batch, then re-query the tracker to verify the full set has
 no duplicates or gaps. If the repo keeps a state map, update it in the same
 commit.
 

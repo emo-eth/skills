@@ -33,6 +33,12 @@ contract for the next; written once, amended deliberately, never edited casually
 vibe.md → PRD → spec → plan → implementation
 ```
 
+This chain is a downstream facet of the repo's philosophy vibe
+(`docs/vibe.md`), which is the source of truth for how work is done here; the
+chain is updated or replaced as that vibe iterates, not the other way around
+[D30]. Stages stay few — three is ideal, four or five in practice [D29] — and
+each contract artifact gets at most two fix rounds, aiming for one [D34].
+
 **2. The record chain** — how what happened survives context death. Append-only
 or continuously re-verified; never "finished."
 

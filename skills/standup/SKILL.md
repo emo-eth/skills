@@ -40,6 +40,9 @@ standup. Say `why this matters`, `how we will prove it`, `open work`, and
 - This is the reporting owner's standup. Report only their work, decisions,
   and blockers. Mention another person's work only when it changes the
   owner's next action; do not create an `Other work` section.
+- `lc-ticketize` owns the complete ticket set from settled thinking. This daily
+  standup proposes only a small delta or an explicitly named change; it never
+  redoes the whole decomposition.
 - Keep the daily plan to three to five results. Each result names its owner,
   why it matters now, the ticket when one exists, the current status, and how
   we will prove it.

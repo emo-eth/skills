@@ -4,6 +4,8 @@
 
 Vibe is not advisory. The PRD is downstream of the vibe and should translate it into observable product requirements. If the finished product violates `vibe.md`, it violates the contract even when the PRD's functional requirements technically pass.
 
+Describe, never prescribe. Definitions and clauses state goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods. A vibe that reads as a procedure is a spec in the wrong document.
+
 ## Vibe Template
 
 ```markdown
@@ -34,7 +36,7 @@ source_material: user ideal-reality dump, conversation, notes, or linked artifac
 ### V1. <Clause Title>
 
 - Promise: [Qualitative behavior that must be true.]
-- Means: [Concrete signs this promise is met.]
+- Example: [One concrete shape this promise can take. An example, not a formula.]
 - Does not mean: [Misreadings or overextensions.]
 - Violation: [Concrete product shape that would break the promise.]
 - Check: [How a reviewer can assess this in the finished product.]
@@ -42,7 +44,7 @@ source_material: user ideal-reality dump, conversation, notes, or linked artifac
 ### V2. <Clause Title>
 
 - Promise:
-- Means:
+- Example:
 - Does not mean:
 - Violation:
 - Check:
@@ -65,6 +67,7 @@ source_material: user ideal-reality dump, conversation, notes, or linked artifac
 Each vibe clause must be:
 
 - Qualitative but assessable.
+- Non-prescriptive: it describes the goal and the feel; any mechanism is a labeled example.
 - Strong enough to reject a technically-correct-but-wrong-feeling implementation.
 - Grounded in use circumstances, not generic positivity.
 - Written without implementation details, libraries, file paths, or UI prescriptions unless the feel contract truly depends on them.
