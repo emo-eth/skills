@@ -684,7 +684,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   host.on("tool_execution_start", async (event, ctx) => {
     await ensureChildCoordination(ctx);
     const scope = actionScopeFor(ctx, event);
-    if (!scope || blockedChildSession(ctx, event)) {
+    if (!scope) {
+      return controller.hasActiveSession()
+        ? { block: true, reason: "Wall-clock requires a stable and valid child lifecycle scope before tool execution" }
+        : undefined;
+    }
+    if (blockedChildSession(ctx, event)) {
       return { block: true, reason: "Wall-clock requires a stable and valid child lifecycle scope before tool execution" };
     }
     const actionId = canonicalActionId(scope, existingActionId(event));
@@ -702,7 +707,9 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     }
     const scope = actionScopeFor(ctx, event);
     if (!scope) {
-      return { block: true, reason: "Wall-clock requires a stable host session identifier before tool execution" };
+      return controller.hasActiveSession()
+        ? { block: true, reason: "Wall-clock requires a stable host session identifier before tool execution" }
+        : undefined;
     }
     const toolName = String(event?.toolName ?? event?.name ?? "unknown");
     if (toolName.toLowerCase() === "yield" && scope.assignmentId) {

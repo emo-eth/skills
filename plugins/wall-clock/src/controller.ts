@@ -43,6 +43,13 @@ export class WallClockController {
     this.store = store;
   }
 
+  hasActiveSession(): boolean {
+    for (const state of this.states.values()) {
+      if (!state.stopped) return true;
+    }
+    return false;
+  }
+
   activate(sessionId: string, input: ActivationInput, plan: PlanItem[] = []): Status {
     requireSessionId(sessionId);
     requireExpiryPolicy(input.expiryPolicy);

@@ -383,6 +383,20 @@ test("inactive host sessions do not change delegation or ordinary tool calls", a
   assert.equal(controller.runningActions("main").length, 0);
 });
 
+test("inactive sessionless hosts do not block ordinary tools", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const event = { toolCallId: "sessionless-read", toolName: "read", input: {} };
+  assert.equal(await host.emit("tool_call", event, undefined), undefined);
+  assert.equal(await host.emit("tool_execution_start", event, undefined), undefined);
+});
+
 test("inactive host sessions do not block ordinary task children", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const coordination = createHostCoordination(controller);

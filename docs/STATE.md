@@ -17,7 +17,32 @@ through continuations, and cleanup waits for active child work before stopping.
 A normal follow-up does not need `/wallclock stop`. Evidence is in
 `docs/log/2026-08-13-wall-clock-self-clear.md`.
 
-The current package includes version 3 state validation, assignment and report contracts, report-linked plan revisions, Agent Plugin discovery, and optional MCP operations. Standalone MCP refuses activation and does not replace or mirror native host enforcement. Nested assignment limits are specified but not implemented in `proposals/wall-clock/nested-assignment-limits.md`; the proposed version 4 data shape requires user sign-off before implementation.
+The current package includes persisted-state validation with mode and
+configured-duration fields, assignment and report contracts, report-linked
+plan revisions, and skill-only Agent Plugin discovery. The root `mcp.json`,
+standalone MCP server, and MCP tests were removed under D42 because OMP
+enumerated both MCP and native copies of the wall-clock operations even though
+MCP could not enforce activation. Native Pi and OMP tools are now the sole
+operation catalog.
+Nested assignment limits are specified but not implemented in
+`proposals/wall-clock/nested-assignment-limits.md`; that future data shape is
+now version 5 and still requires separate user sign-off.
+
+An OMP task child spawned when no wall-clock contract was invoked stays
+outside wall-clock coordination. An uncorrelated child lifecycle fails closed
+only when a listener can identify an active parent contract; inactive or
+unidentified ordinary lifecycle events remain transparent. The host-level
+event-bus regression and native OMP `TaskTool` runner cover this boundary.
+OMP 18.1.4 sessionless RPC processes are also transparent while wall-clock is
+inactive. Tool admission now requires a stable session scope only when the
+controller has an active contract; active contracts still fail closed when
+scope is unavailable. The focused missing-scope regression and a fresh
+`omp --mode rpc --no-session` run both cover this boundary, with native
+`grok_auth` completing successfully after the fix.
+The native Pi runner separately verifies that an inactive parent admits a
+`subagent` proposal and an independent inactive child session executes a real
+`read`. This covers the Pi adapter boundary without claiming a model-backed
+`pi-subagents` process smoke, which still requires configured Pi credentials.
 
 Known child-test boundary: the native OMP `TaskTool` tests set `async.enabled` to false, while OMP 17.2.15 defaults it to true. The nested-assignment proposal makes a one-level background-child characterization test its first gate. Current synchronous child evidence must not be presented as proof of normal background-task behavior.
 
