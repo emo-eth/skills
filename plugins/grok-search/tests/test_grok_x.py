@@ -74,7 +74,7 @@ class FetchContractTests(unittest.TestCase):
         self.assertTrue(degraded)
         self.assertEqual(warnings, ["The requested object could not be verified against live X evidence."])
 
-    def test_verified_fetch_preserves_full_document(self) -> None:
+    def test_anchor_only_authored_fetch_reports_unverified_completeness(self) -> None:
         anchor = {"url": "https://x.com/a/status/1", "text": "verbatim"}
         document = {
             "available": True,
@@ -92,8 +92,10 @@ class FetchContractTests(unittest.TestCase):
         )
         self.assertIs(result["anchor"], anchor)
         self.assertEqual(result["content"], "authored")
-        self.assertEqual(warnings, [])
-        self.assertFalse(degraded)
+        self.assertEqual(warnings, [
+            "The full authored unit was requested but no additional cited author-composed content was recovered, so completeness could not be verified."
+        ])
+        self.assertTrue(degraded)
 
     def test_unrelated_citation_does_not_verify_requested_object(self) -> None:
         document = {
@@ -134,6 +136,156 @@ class FetchContractTests(unittest.TestCase):
         self.assertTrue(result["available"])
         self.assertTrue(degraded)
         self.assertEqual(len(warnings), 2)
+
+    def test_filters_uncited_and_misclassified_expansions(self) -> None:
+        def item(url: str, relation: str, author: str = "@a") -> dict:
+            return {"url": url, "relation": relation, "authorHandle": author}
+
+        anchor = item("https://x.com/a/status/1", "anchor")
+        authored = item("https://x.com/a/status/2", "authored")
+        parent = item("https://x.com/b/status/3", "parent", "@b")
+        reply = item("https://x.com/c/status/4", "reply", "@c")
+        document = {
+            "available": True,
+            "anchor": anchor,
+            "authoredContextAvailable": True,
+            "authoredContext": [
+                authored,
+                item("https://x.com/d/status/5", "authored", "@d"),
+                item("https://x.com/e/status/6", "reply"),
+                item("https://x.com/a/status/7", "authored"),
+                item("https://x.com/a/status/10", "authored", " "),
+                item("https://x.com/a/status/1", "authored"),
+                item("https://x.com/a/status/13", "authored", "@@a"),
+            ],
+            "relatedContext": [
+                parent,
+                item("https://x.com/a/status/8", "authored"),
+                item("https://x.com/a/status/1", "parent", "@b"),
+            ],
+            "discussion": {
+                "included": True,
+                "sampleNotice": "Bounded sample",
+                "viewpoints": [
+                    {
+                        "theme": "Mixed",
+                        "summary": "Some agree and some disagree",
+                        "examples": [
+                            reply,
+                            item("https://x.com/b/status/9", "parent", "@b"),
+                            item("https://x.com/a/status/11", "reply"),
+                            item("https://x.com/d/status/12", "reply", " "),
+                            item("https://x.com/a/status/1", "reply", "@b"),
+                        ],
+                    },
+                    {
+                        "theme": "Unsupported",
+                        "summary": "No examples",
+                        "examples": [],
+                    },
+                ],
+            },
+        }
+        citations = [
+            {"url": value, "title": ""}
+            for value in [
+                "https://x.com/i/status/1",
+                "https://x.com/i/status/2",
+                "https://x.com/i/status/3",
+                "https://x.com/i/status/4",
+                "https://x.com/i/status/5",
+                "https://x.com/i/status/6",
+                "https://x.com/i/status/9",
+                "https://x.com/i/status/13",
+                "https://x.com/i/status/10",
+                "https://x.com/i/status/11",
+                "https://x.com/i/status/12",
+            ]
+        ]
+
+        result, warnings, degraded = grok_x.enforce_live_fetch(
+            document,
+            citations,
+            "https://x.com/a/status/1",
+            "authored",
+            True,
+        )
+
+        self.assertEqual(result["authoredContext"], [authored])
+        self.assertEqual(result["relatedContext"], [parent])
+        self.assertEqual(result["discussion"]["viewpoints"], [{
+            "theme": "Mixed",
+            "summary": "Some agree and some disagree",
+            "examples": [reply],
+        }])
+        self.assertTrue(degraded)
+        self.assertTrue(any("authored context" in warning for warning in warnings))
+        self.assertTrue(any("related context" in warning for warning in warnings))
+        self.assertTrue(any("discussion" in warning for warning in warnings))
+
+    def test_malformed_context_collections_degrade(self) -> None:
+        document = {
+            "available": True,
+            "anchor": {
+                "url": "https://x.com/a/status/1",
+                "relation": "anchor",
+                "authorHandle": "@a",
+            },
+            "authoredContextAvailable": False,
+            "authoredContext": {},
+            "relatedContext": None,
+            "discussion": {"included": False, "sampleNotice": "", "viewpoints": []},
+        }
+        result, warnings, degraded = grok_x.enforce_live_fetch(
+            document,
+            [{"url": "https://x.com/i/status/1", "title": ""}],
+            "https://x.com/a/status/1",
+            "anchor",
+        )
+
+        self.assertEqual(result["authoredContext"], [])
+        self.assertEqual(result["relatedContext"], [])
+        self.assertTrue(degraded)
+        self.assertTrue(any("authored context" in warning for warning in warnings))
+        self.assertTrue(any("related context" in warning for warning in warnings))
+
+    def test_requested_discussion_requires_notice_and_cited_examples(self) -> None:
+        document = {
+            "available": True,
+            "anchor": {
+                "url": "https://x.com/a/status/1",
+                "relation": "anchor",
+                "authorHandle": "@a",
+            },
+            "authoredContextAvailable": False,
+            "authoredContext": [],
+            "relatedContext": [],
+            "discussion": {
+                "included": True,
+                "sampleNotice": " ",
+                "viewpoints": [{
+                    "theme": "Consensus",
+                    "summary": "Everyone agrees",
+                    "examples": [],
+                }],
+            },
+        }
+
+        result, warnings, degraded = grok_x.enforce_live_fetch(
+            document,
+            [{"url": "https://x.com/i/status/1", "title": ""}],
+            "https://x.com/a/status/1",
+            "anchor",
+            True,
+        )
+
+        self.assertEqual(result["discussion"], {
+            "included": False,
+            "sampleNotice": "",
+            "viewpoints": [],
+        })
+        self.assertTrue(degraded)
+        self.assertEqual(warnings, ["Representative discussion was requested but no cited, bounded sample was recovered."])
 
 
 if __name__ == "__main__":

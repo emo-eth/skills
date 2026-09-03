@@ -131,12 +131,14 @@ def build_search_prompt(query: str, sources: bool, depth: str) -> str:
 
 def build_fetch_prompt(url: str, content: str, discussion: bool) -> str:
     authored = (
-        "Return the complete author-composed unit in order, excluding other people's replies from authoredContext."
+        "Return the complete author-composed unit in order, excluding other people's replies from authoredContext. "
+        "Actively search for same-author self-replies or continuations whose conversation includes the anchor; do not treat the anchor alone as evidence that the authored unit is complete."
         if content == "authored"
         else "Return only the anchor as authored content and set authoredContextAvailable when more author-composed content exists."
     )
     discussion_instruction = (
-        "Include a bounded representative discussion showing material interpretations, agreement, disagreement, corrections, and notable reactions. Every viewpoint needs concrete examples. Set sampleNotice to explain that the sample is not exhaustive."
+        "Include a bounded representative discussion showing material interpretations, agreement, disagreement, corrections, and notable reactions. "
+        "Every viewpoint needs concrete examples. Actively retrieve concrete reply or quote-post reaction X objects, cite every returned example, and set sampleNotice to explain that the sample is not exhaustive."
         if discussion
         else "Do not retrieve general replies or quote-post reactions. Set discussion.included false, sampleNotice empty, and viewpoints empty."
     )
@@ -148,6 +150,7 @@ def build_fetch_prompt(url: str, content: str, discussion: bool) -> str:
         "Preserve author handles, display names, timestamps, canonical URLs, links, media types, media URLs, and useful media descriptions. "
         "Put directly referenced parent and quoted posts in relatedContext with their correct relation. "
         f"{authored} {discussion_instruction} "
+        "Only include an X object in authoredContext, relatedContext, or discussion examples when x_search returned that exact object as live evidence so its URL appears in citations. "
         "Never mix replies or quote reactions into the anchor author's words. "
         "If the exact object is inaccessible, set available false, anchor null, all context arrays empty, discussion empty, and state the access failure without reconstructing the object from indirect traces."
     )
@@ -202,6 +205,50 @@ def _unavailable_fetch(url: str, content: str, reason: str) -> dict:
     }
 
 
+def _author_identity(value: object) -> str | None:
+    candidate = str(value or "").strip().removeprefix("@")
+    return candidate.casefold() if re.fullmatch(r"[A-Za-z0-9_]{1,15}", candidate) else None
+
+
+def _empty_discussion() -> dict:
+    return {"included": False, "sampleNotice": "", "viewpoints": []}
+
+
+def _verified_items(
+    values: object,
+    allowed_relations: frozenset[str],
+    cited_identities: set[tuple[str, str]],
+    author_identity: str | None = None,
+    author_mode: str = "any",
+    excluded_identity: tuple[str, str] | None = None,
+) -> tuple[list[dict], bool]:
+    accepted: list[dict] = []
+    rejected = not isinstance(values, list)
+    for value in values if isinstance(values, list) else []:
+        if not isinstance(value, dict):
+            rejected = True
+            continue
+        identity = _x_identity(str(value.get("url") or ""))
+        relation = str(value.get("relation") or "")
+        item_author = _author_identity(value.get("authorHandle"))
+        author_matches = (
+            author_mode == "any"
+            or author_mode == "same" and author_identity is not None and item_author == author_identity
+            or author_mode == "different" and author_identity is not None and item_author is not None and item_author != author_identity
+        )
+        if (
+            identity is None
+            or identity == excluded_identity
+            or identity not in cited_identities
+            or relation not in allowed_relations
+            or not author_matches
+        ):
+            rejected = True
+            continue
+        accepted.append(value)
+    return accepted, rejected
+
+
 def enforce_live_fetch(
     document: dict,
     citations: list[dict],
@@ -230,21 +277,80 @@ def enforce_live_fetch(
         reason = "No live X citation verified the requested object."
         warnings.append("The requested object could not be verified against live X evidence.")
         return _unavailable_fetch(url, content, reason), warnings, True
-    if document.get("available") is not True or anchor is None:
+    if document.get("available") is not True or not isinstance(anchor, dict):
         reason = str(document.get("failureReason") or "The requested X object is inaccessible.")
         warnings.append(reason)
         return _unavailable_fetch(url, content, reason), warnings, True
-    if (
-        content == "authored"
-        and document.get("authoredContextAvailable") is True
-        and not document.get("authoredContext")
-    ):
-        warnings.append("The full authored unit was requested but additional authored content was not recovered.")
+
+    anchor["relation"] = "anchor"
+    author_identity = _author_identity(anchor.get("authorHandle"))
+    authored, rejected_authored = _verified_items(
+        document.get("authoredContext"),
+        frozenset({"authored"}),
+        cited_identities,
+        author_identity,
+        "same",
+        anchor_identity,
+    )
+    if authored:
+        document["authoredContextAvailable"] = True
+    document["authoredContext"] = authored if content == "authored" else []
+    if rejected_authored:
+        warnings.append("The authored context contained uncited or misclassified items and was reduced to cited same-author content.")
+
+    related, rejected_related = _verified_items(
+        document.get("relatedContext"),
+        frozenset({"parent", "quote"}),
+        cited_identities,
+        excluded_identity=anchor_identity,
+    )
+    document["relatedContext"] = related
+    if rejected_related:
+        warnings.append("The related context contained uncited or misclassified items and was reduced to cited parent and quote content.")
+
+    if content == "authored" and not document.get("authoredContext"):
+        warnings.append(
+            "The full authored unit was requested but no additional cited author-composed content was recovered, so completeness could not be verified."
+        )
+
     discussion = document.get("discussion")
-    if discussion_requested and (
+    if not discussion_requested:
+        document["discussion"] = _empty_discussion()
+    elif (
         not isinstance(discussion, dict)
         or discussion.get("included") is not True
-        or not discussion.get("viewpoints")
+        or not str(discussion.get("sampleNotice") or "").strip()
+        or not isinstance(discussion.get("viewpoints"), list)
     ):
-        warnings.append("Representative discussion was requested but no discussion sample was recovered.")
+        document["discussion"] = _empty_discussion()
+        warnings.append("Representative discussion was requested but no cited, bounded sample was recovered.")
+    else:
+        viewpoints: list[dict] = []
+        rejected_discussion = False
+        for viewpoint in discussion["viewpoints"]:
+            if not isinstance(viewpoint, dict):
+                rejected_discussion = True
+                continue
+            examples, rejected_examples = _verified_items(
+                viewpoint.get("examples"),
+                frozenset({"reply", "quote_reaction"}),
+                cited_identities,
+                author_identity,
+                "different",
+                anchor_identity,
+            )
+            theme = str(viewpoint.get("theme") or "").strip()
+            summary = str(viewpoint.get("summary") or "").strip()
+            if not theme or not summary or not examples:
+                rejected_discussion = True
+                continue
+            rejected_discussion = rejected_discussion or rejected_examples
+            viewpoints.append({**viewpoint, "examples": examples})
+        if not viewpoints:
+            document["discussion"] = _empty_discussion()
+            warnings.append("Representative discussion was requested but no cited, bounded sample was recovered.")
+        else:
+            document["discussion"] = {**discussion, "viewpoints": viewpoints}
+            if rejected_discussion:
+                warnings.append("The discussion contained uncited or misclassified examples and was reduced to cited reply and quote-reaction evidence.")
     return document, warnings, bool(warnings)

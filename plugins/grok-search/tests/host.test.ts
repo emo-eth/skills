@@ -23,11 +23,19 @@ import type {
 import grokSearchOmpExtension from "../src/omp.ts";
 import grokSearchPiExtension from "../src/pi.ts";
 
+type ToolApprovalDecision = "read" | "write" | "exec" | {
+  tier: "read" | "write" | "exec";
+  reason?: string;
+  override?: boolean;
+  policy?: "allow" | "deny" | "prompt";
+};
+
 type ToolDefinition = {
   name: string;
   label: string;
   description: string;
   parameters: unknown;
+  approval?: ToolApprovalDecision | ((input: unknown) => ToolApprovalDecision);
   execute: (...args: unknown[]) => unknown;
 };
 
@@ -56,7 +64,11 @@ const SEARCH_RESULT: GrokSearchResult = {
 const FETCH_RESULT: GrokFetchResult = {
   kind: "fetch",
   model: "grok-4-fast",
-  citations: [{ title: "Anchor post", url: "https://x.com/author/status/10" }],
+  citations: [
+    { title: "Anchor post", url: "https://x.com/author/status/10" },
+    { title: "Quoted post", url: "https://x.com/other/status/11" },
+    { title: "Reply", url: "https://x.com/fan/status/12" },
+  ],
   degraded: false,
   warnings: ["Discussion is a sampled view, not an exhaustive reply set."],
   retrieval: {
@@ -218,6 +230,30 @@ for (const [name, adapter] of [
     assert.deepEqual(auth?.parameters, AUTH_SCHEMA);
   });
 }
+
+test("host adapters apply the correct approval boundary", () => {
+  const pi = new Host();
+  const omp = new Host();
+  grokSearchPiExtension(pi);
+  grokSearchOmpExtension(omp);
+
+  assert.equal(pi.tools.get("grok_search")?.approval, undefined);
+  assert.equal(pi.tools.get("grok_fetch")?.approval, undefined);
+  assert.equal(pi.tools.get("grok_auth")?.approval, undefined);
+  assert.equal(omp.tools.get("grok_search")?.approval, "read");
+  assert.equal(omp.tools.get("grok_fetch")?.approval, "read");
+  const approval = omp.tools.get("grok_auth")?.approval;
+  assert.equal(typeof approval, "function");
+  if (typeof approval !== "function") throw new Error("OMP grok_auth approval is not dynamic");
+  assert.equal(approval({ action: "status" }), "read");
+  assert.deepEqual(approval({ action: "start_device" }), {
+    tier: "write",
+    reason: "Start Grok device authorization",
+    override: true,
+    policy: "prompt",
+  });
+  assert.equal(approval({ action: "complete_device" }), "write");
+});
 
 test("installGrokTools requires the native registerTool seam", () => {
   assert.throws(() => installGrokTools({}), /native registerTool seam/);
@@ -418,6 +454,51 @@ test("grok_auth parses status and device payloads and passes tool errors through
   );
 });
 
+test("Pi-style device authorization requires host confirmation", async () => {
+  let calls = 0;
+  const runner: GrokRunner = async () => {
+    calls += 1;
+    return DEVICE_AUTHORIZATION;
+  };
+  const host = new Host();
+  installGrokTools(host, { runner });
+  const auth = host.tools.get("grok_auth");
+
+  assert.deepEqual(payloadValue(await auth?.execute("missing-ui", { action: "start_device" })), {
+    kind: "error",
+    code: "authorization_cancelled",
+    message: "Grok device authorization requires explicit human approval.",
+    source: null,
+  });
+  assert.deepEqual(
+    payloadValue(await auth?.execute(
+      "denied",
+      { action: "start_device" },
+      undefined,
+      undefined,
+      { ui: { confirm: async () => false } },
+    )),
+    {
+      kind: "error",
+      code: "authorization_cancelled",
+      message: "Grok device authorization requires explicit human approval.",
+      source: null,
+    },
+  );
+  assert.equal(calls, 0);
+  assert.deepEqual(
+    payloadValue(await auth?.execute(
+      "approved",
+      { action: "start_device" },
+      undefined,
+      undefined,
+      { ui: { confirm: async () => true } },
+    )),
+    DEVICE_AUTHORIZATION,
+  );
+  assert.equal(calls, 1);
+});
+
 test("content tools parse structured payloads and pass tool errors through unthrown", async () => {
   const payloads: unknown[] = [SEARCH_RESULT, FETCH_RESULT, TOOL_ERROR, { ...SEARCH_RESULT, kind: "fetch" }];
   const runner: GrokRunner = async () => payloads.shift();
@@ -429,7 +510,7 @@ test("content tools parse structured payloads and pass tool errors through unthr
     SEARCH_RESULT,
   );
   assert.deepEqual(
-    payloadValue(await host.tools.get("grok_fetch")?.execute("call-2", { url: "https://x.com/a/status/1" })),
+    payloadValue(await host.tools.get("grok_fetch")?.execute("call-2", { url: "https://x.com/author/status/10" })),
     FETCH_RESULT,
   );
   assert.deepEqual(
@@ -439,6 +520,91 @@ test("content tools parse structured payloads and pass tool errors through unthr
   await assert.rejects(
     host.tools.get("grok_search")?.execute("call-4", { query: "Q" }),
     /response kind must be search/,
+  );
+});
+
+test("fetch payloads reject contradictory or unsupported expansion provenance", async () => {
+  const wrongUnavailable = structuredClone(FETCH_RESULT);
+  wrongUnavailable.citations = [];
+  wrongUnavailable.degraded = true;
+  wrongUnavailable.retrieval = {
+    requestedUrl: "https://x.com/other/status/99",
+    content: "anchor",
+    available: false,
+    contentKind: "unknown",
+    failureReason: "Unavailable",
+    anchor: null,
+    authoredContextAvailable: false,
+    authoredContext: [],
+    relatedContext: [],
+    discussion: { included: false, sampleNotice: "", viewpoints: [] },
+  };
+  const wrongAnchor = structuredClone(FETCH_RESULT);
+  wrongAnchor.retrieval.requestedUrl = "https://x.com/other/status/99";
+  wrongAnchor.retrieval.anchor!.url = "https://x.com/other/status/99";
+  wrongAnchor.citations = [{ title: "Wrong anchor", url: "https://x.com/other/status/99" }];
+  const misclassified = structuredClone(FETCH_RESULT);
+  misclassified.retrieval.authoredContext = [{
+    ...misclassified.retrieval.anchor!,
+    relation: "reply",
+    url: "https://x.com/other/status/13",
+    authorHandle: "@other",
+  }];
+  misclassified.citations.push({ title: "Other reply", url: "https://x.com/other/status/13" });
+  const uncited = structuredClone(FETCH_RESULT);
+  uncited.citations = [uncited.citations[0]!];
+  const selfDiscussion = structuredClone(FETCH_RESULT);
+  selfDiscussion.retrieval.discussion.viewpoints[0]!.examples[0]!.authorHandle = "@author";
+  const repeatedAnchor = structuredClone(FETCH_RESULT);
+  repeatedAnchor.retrieval.relatedContext[0]!.url = repeatedAnchor.retrieval.anchor!.url;
+  const emptyAuthor = structuredClone(FETCH_RESULT);
+  emptyAuthor.retrieval.content = "authored";
+  emptyAuthor.retrieval.authoredContext = [{
+    ...emptyAuthor.retrieval.anchor!,
+    relation: "authored",
+    url: "https://x.com/author/status/13",
+    authorHandle: " ",
+  }];
+  emptyAuthor.citations.push({ title: "Continuation", url: "https://x.com/author/status/13" });
+  const unbounded = structuredClone(FETCH_RESULT);
+  unbounded.retrieval.discussion.sampleNotice = " ";
+  const payloads = [wrongUnavailable, wrongAnchor, misclassified, uncited, selfDiscussion, repeatedAnchor, emptyAuthor, unbounded];
+  const runner: GrokRunner = async () => payloads.shift();
+  const host = new Host();
+  installGrokTools(host, { runner });
+  const fetch = host.tools.get("grok_fetch");
+
+  await assert.rejects(
+    fetch?.execute("wrong-unavailable", { url: "https://x.com/author/status/10" }),
+    /requested X object/,
+  );
+  await assert.rejects(
+    fetch?.execute("wrong-anchor", { url: "https://x.com/author/status/10" }),
+    /requested X object/,
+  );
+  await assert.rejects(
+    fetch?.execute("misclassified", { url: "https://x.com/author/status/10" }),
+    /authoredContext/,
+  );
+  await assert.rejects(
+    fetch?.execute("uncited", { url: "https://x.com/author/status/10" }),
+    /not cited/,
+  );
+  await assert.rejects(
+    fetch?.execute("self-discussion", { url: "https://x.com/author/status/10" }),
+    /discussion.*anchor author/,
+  );
+  await assert.rejects(
+    fetch?.execute("repeated-anchor", { url: "https://x.com/author/status/10" }),
+    /relatedContext.*anchor/,
+  );
+  await assert.rejects(
+    fetch?.execute("empty-author", { url: "https://x.com/author/status/10" }),
+    /authoredContext.*author/,
+  );
+  await assert.rejects(
+    fetch?.execute("unbounded", { url: "https://x.com/author/status/10" }),
+    /sample notice/,
   );
 });
 
@@ -473,6 +639,7 @@ test("content tools delegate only typed Pi xAI OAuth from the execution context"
         return { auth: { apiKey: "host-oauth-token" }, source: "OAuth" };
       },
     },
+    ui: { confirm: async () => true },
   };
   const host = new Host();
   installGrokTools(host, { runner });
@@ -604,7 +771,7 @@ test("content tools without an execution context run without a host credential",
   installGrokTools(host, { runner });
 
   await host.tools.get("grok_search")?.execute("call-1", { query: "Q" });
-  await host.tools.get("grok_fetch")?.execute("call-2", { url: "https://x.com/a/status/1" });
+  await host.tools.get("grok_fetch")?.execute("call-2", { url: "https://x.com/author/status/10" });
   await host.tools.get("grok_auth")?.execute("call-3", { action: "status" });
   assert.deepEqual(runnerCalls, [
     { hostCredential: undefined },

@@ -95,12 +95,22 @@ export type GrokRunner = (
   options: { signal?: AbortSignal; hostCredential?: string; blockApiKey?: boolean },
 ) => Promise<unknown>;
 
+type ToolApprovalDecision = "read" | "write" | "exec" | {
+  tier: "read" | "write" | "exec";
+  reason?: string;
+  override?: boolean;
+  policy?: "allow" | "deny" | "prompt";
+};
+
+type ToolApproval = ToolApprovalDecision | ((input: unknown) => ToolApprovalDecision);
+
 export type RuntimeHost = {
   registerTool?: (definition: {
     name: string;
     label: string;
     description: string;
     parameters: unknown;
+    approval?: ToolApproval;
     execute: (...args: unknown[]) => unknown;
   }) => void;
 };
@@ -142,6 +152,12 @@ type ToolExecutionContext = {
   model?: HostModel;
 };
 
+type ToolUserContext = {
+  ui?: {
+    confirm?: (title: string, message: string) => Promise<boolean>;
+  };
+};
+
 type SearchInput = {
   query: string;
   response?: "sources" | "answer";
@@ -180,19 +196,20 @@ const X_HOSTS: Record<string, true> = {
 
 export function installGrokTools(
   host: RuntimeHost,
-  options: { runner?: GrokRunner } = {},
+  options: { runner?: GrokRunner; consent?: "context" | "approval" } = {},
 ): void {
   if (typeof host?.registerTool !== "function") {
     throw new Error("grok-search requires the host's native registerTool seam");
   }
 
   const runner = options.runner ?? runGrokCli;
-
+  const consent = options.consent ?? "context";
   host.registerTool({
     name: "grok_search",
     label: "Search X with Grok",
     description: "Search live X posts, sources, reactions, narratives, and sentiment. Use quick depth for ordinary context and deep depth for broad, high-stakes, or fast-moving questions. Sources mode returns evidence for the calling agent; answer mode asks Grok for bounded X-native synthesis. Never use this tool for the general web.",
     parameters: SEARCH_SCHEMA,
+    approval: consent === "approval" ? "read" : undefined,
     execute: async (...args: unknown[]) => {
       const input = toolInput<SearchInput>(args);
       return textResult(await runContentTool(runner, buildSearchArgs(input), args, "search"));
@@ -204,6 +221,7 @@ export function installGrokTools(
     label: "Fetch X content",
     description: "Faithfully retrieve a specific X post, authored thread, or X Article. Anchor content is the default. Request authored content for the complete author-composed unit and discussion for representative replies and quote-post reactions. Parent, quote, link, and media context retain provenance.",
     parameters: FETCH_SCHEMA,
+    approval: consent === "approval" ? "read" : undefined,
     execute: async (...args: unknown[]) => {
       const input = toolInput<FetchInput>(args);
       return textResult(await runContentTool(runner, buildFetchArgs(input), args, "fetch"));
@@ -213,11 +231,20 @@ export function installGrokTools(
   host.registerTool({
     name: "grok_auth",
     label: "Connect Grok",
-    description: "Inspect Grok authentication or run a consent-gated device login. Call start_device only after the user explicitly approves login. Present its verification URL and code, wait for the user to approve in a browser, call complete_device with the returned session, then retry the original Grok request.",
+    description: "Inspect Grok authentication or run a consent-gated device login. start_device requests explicit host approval before contacting xAI. Present its verification URL and code, wait for browser approval, call complete_device with the returned session, then retry the original Grok request.",
     parameters: AUTH_SCHEMA,
+    approval: consent === "approval" ? authApproval : undefined,
     execute: async (...args: unknown[]) => {
       const input = toolInput<AuthInput>(args);
       const signal = toolSignal(args);
+      if (input.action === "start_device" && consent === "context" && !await confirmDeviceAuthorization(args)) {
+        return textResult({
+          kind: "error",
+          code: "authorization_cancelled",
+          message: "Grok device authorization requires explicit human approval.",
+          source: null,
+        });
+      }
       const hostAuth = input.action === "status"
         ? await resolveHostOAuth(args, signal)
         : {};
@@ -337,12 +364,48 @@ export function buildAuthArgs(input: AuthInput): string[] {
   throw new Error("action must be status, start_device, or complete_device");
 }
 
+function authApproval(input: unknown): ToolApprovalDecision {
+  if (typeof input === "object" && input !== null && "action" in input) {
+    if (input.action === "status") return "read";
+    if (input.action === "start_device") {
+      return {
+        tier: "write",
+        reason: "Start Grok device authorization",
+        override: true,
+        policy: "prompt",
+      };
+    }
+  }
+  return "write";
+}
+
+async function confirmDeviceAuthorization(args: unknown[]): Promise<boolean> {
+  const context = args.find((candidate) => (
+    candidate
+    && typeof candidate === "object"
+    && "ui" in candidate
+    && candidate.ui
+    && typeof candidate.ui === "object"
+    && "confirm" in candidate.ui
+    && typeof candidate.ui.confirm === "function"
+  )) as ToolUserContext | undefined;
+  try {
+    return await context?.ui?.confirm?.(
+      "Connect Grok?",
+      "Start xAI device authorization for Grok Search?",
+    ) === true;
+  } catch {
+    return false;
+  }
+}
+
 async function runContentTool(
   runner: GrokRunner,
   cliArgs: string[],
   toolArgs: unknown[],
   expected: "search" | "fetch",
 ): Promise<GrokResult | GrokToolError> {
+  const requestedUrl = expected === "fetch" ? cliArgs[1] : undefined;
   const signal = toolSignal(toolArgs);
   const hostAuth = await resolveHostOAuth(toolArgs, signal);
   let value = await runner(cliArgs, {
@@ -350,7 +413,7 @@ async function runContentTool(
     hostCredential: hostAuth.credential,
     blockApiKey: hostAuth.subscriptionPresent === true && hostAuth.credential === undefined ? true : undefined,
   });
-  let parsed = parseContentPayload(value, expected);
+  let parsed = parseContentPayload(value, expected, requestedUrl);
   if (
     parsed.kind === "error"
     && parsed.code === "auth_expired"
@@ -360,13 +423,13 @@ async function runContentTool(
     const refreshed = await resolveHostOAuth(toolArgs, signal, true);
     if (refreshed.credential !== undefined && refreshed.credential !== hostAuth.credential) {
       value = await runner(cliArgs, { signal, hostCredential: refreshed.credential });
-      parsed = parseContentPayload(value, expected);
+      parsed = parseContentPayload(value, expected, requestedUrl);
       if (!(parsed.kind === "error" && parsed.code === "auth_expired" && parsed.source === "host-xai")) {
         return parsed;
       }
     }
     value = await runner(cliArgs, { signal, blockApiKey: true });
-    parsed = parseContentPayload(value, expected);
+    parsed = parseContentPayload(value, expected, requestedUrl);
   }
   return parsed;
 }
@@ -457,18 +520,7 @@ function requiredText(value: unknown, name: string): string {
 
 function xUrl(value: unknown): string {
   const text = requiredText(value, "url");
-  let parsed: URL;
-  try {
-    parsed = new URL(text);
-  } catch {
-    throw new Error("url must be an absolute X or Twitter URL");
-  }
-  const contentPath = parsed.pathname.includes("/status/") || parsed.pathname.startsWith("/i/article/");
-  if (
-    parsed.protocol !== "https:"
-    || X_HOSTS[parsed.hostname.toLowerCase()] !== true
-    || !contentPath
-  ) {
+  if (xIdentity(text) === undefined) {
     throw new Error("url must be an HTTPS X or Twitter post or Article URL");
   }
   return text;
@@ -482,11 +534,17 @@ function stringList(value: unknown, name: string): string[] {
   return value;
 }
 
-function parseContentPayload(value: unknown, expected: "search" | "fetch"): GrokResult | GrokToolError {
+function parseContentPayload(
+  value: unknown,
+  expected: "search" | "fetch",
+  requestedUrl?: string,
+): GrokResult | GrokToolError {
   const record = objectValue(value, "response");
   if (record.kind === "error") return parseToolError(record);
   if (record.kind !== expected) throw new Error(`response kind must be ${expected}`);
-  return expected === "search" ? parseSearchResult(record) : parseFetchResult(record);
+  return expected === "search"
+    ? parseSearchResult(record)
+    : parseFetchResult(record, requiredText(requestedUrl, "requested fetch url"));
 }
 
 function parseSearchResult(record: Record<string, unknown>): GrokSearchResult {
@@ -500,14 +558,17 @@ function parseSearchResult(record: Record<string, unknown>): GrokSearchResult {
   };
 }
 
-function parseFetchResult(record: Record<string, unknown>): GrokFetchResult {
+function parseFetchResult(record: Record<string, unknown>, requestedUrl: string): GrokFetchResult {
+  const citations = citationsValue(record.citations);
+  const retrieval = retrievalValue(record.retrieval);
+  assertRetrievalProvenance(retrieval, citations, requestedUrl);
   return {
     kind: "fetch",
     model: stringValue(record.model, "model"),
-    citations: citationsValue(record.citations),
+    citations,
     degraded: booleanValue(record.degraded, "degraded"),
     warnings: stringsValue(record.warnings, "warnings"),
-    retrieval: retrievalValue(record.retrieval),
+    retrieval,
   };
 }
 
@@ -614,6 +675,113 @@ function discussionValue(value: unknown): XDiscussion {
     sampleNotice: stringValue(record.sampleNotice, "discussion.sampleNotice"),
     viewpoints,
   };
+}
+
+function assertRetrievalProvenance(
+  retrieval: XRetrieval,
+  citations: GrokCitation[],
+  requestedUrl: string,
+): void {
+  const requestedIdentity = xIdentity(requestedUrl);
+  if (requestedIdentity === undefined || xIdentity(retrieval.requestedUrl) !== requestedIdentity) {
+    throw new Error("fetch response does not match the requested X object");
+  }
+  if (!retrieval.available) {
+    if (
+      retrieval.anchor !== null
+      || retrieval.authoredContext.length > 0
+      || retrieval.relatedContext.length > 0
+      || retrieval.discussion.included
+      || retrieval.discussion.viewpoints.length > 0
+    ) {
+      throw new Error("unavailable retrieval must not contain source content");
+    }
+    return;
+  }
+  if (retrieval.anchor === null) throw new Error("available retrieval requires an anchor");
+  const anchorIdentity = xIdentity(retrieval.anchor.url);
+  if (anchorIdentity !== requestedIdentity) {
+    throw new Error("fetch response does not match the requested X object");
+  }
+  const citedIdentities = new Set(citations.map((citation) => xIdentity(citation.url)).filter((identity) => identity !== undefined));
+  assertCitedItem(retrieval.anchor, "anchor", new Set(["anchor"]), citedIdentities);
+  const anchorAuthor = authorIdentity(retrieval.anchor.authorHandle);
+  if (retrieval.content === "anchor" && retrieval.authoredContext.length > 0) {
+    throw new Error("anchor retrieval must not include authoredContext");
+  }
+  for (const item of retrieval.authoredContext) {
+    assertCitedItem(item, "authoredContext", new Set(["authored"]), citedIdentities);
+    const itemAuthor = authorIdentity(item.authorHandle);
+    if (xIdentity(item.url) === anchorIdentity) {
+      throw new Error("authoredContext must not repeat the anchor");
+    }
+    if (anchorAuthor === undefined || itemAuthor === undefined || itemAuthor !== anchorAuthor) {
+      throw new Error("authoredContext author is invalid or does not match the anchor author");
+    }
+  }
+  for (const item of retrieval.relatedContext) {
+    assertCitedItem(item, "relatedContext", new Set(["parent", "quote"]), citedIdentities);
+    if (xIdentity(item.url) === anchorIdentity) {
+      throw new Error("relatedContext must not repeat the anchor");
+    }
+  }
+  if (!retrieval.discussion.included) {
+    if (retrieval.discussion.sampleNotice !== "" || retrieval.discussion.viewpoints.length > 0) {
+      throw new Error("excluded discussion must be empty");
+    }
+    return;
+  }
+  requiredText(retrieval.discussion.sampleNotice, "discussion sample notice");
+  if (retrieval.discussion.viewpoints.length === 0) {
+    throw new Error("included discussion requires viewpoints");
+  }
+  for (const [index, viewpoint] of retrieval.discussion.viewpoints.entries()) {
+    requiredText(viewpoint.theme, `discussion viewpoint ${index} theme`);
+    requiredText(viewpoint.summary, `discussion viewpoint ${index} summary`);
+    if (viewpoint.examples.length === 0) {
+      throw new Error(`discussion viewpoint ${index} requires cited examples`);
+    }
+    for (const item of viewpoint.examples) {
+      assertCitedItem(item, `discussion viewpoint ${index}`, new Set(["reply", "quote_reaction"]), citedIdentities);
+      const itemAuthor = authorIdentity(item.authorHandle);
+      if (xIdentity(item.url) === anchorIdentity) {
+        throw new Error(`discussion viewpoint ${index} must not repeat the anchor`);
+      }
+      if (anchorAuthor === undefined || itemAuthor === undefined || itemAuthor === anchorAuthor) {
+        throw new Error(`discussion viewpoint ${index} must not contain the anchor author`);
+      }
+    }
+  }
+}
+
+function assertCitedItem(
+  item: XItem,
+  name: string,
+  relations: Set<XItem["relation"]>,
+  citedIdentities: Set<string>,
+): void {
+  if (!relations.has(item.relation)) throw new Error(`${name} relation is invalid`);
+  const identity = xIdentity(item.url);
+  if (identity === undefined || !citedIdentities.has(identity)) throw new Error(`${name} item is not cited`);
+}
+
+function authorIdentity(value: string): string | undefined {
+  const candidate = value.trim().replace(/^@/, "");
+  return /^[A-Za-z0-9_]{1,15}$/.test(candidate) ? candidate.toLowerCase() : undefined;
+}
+
+function xIdentity(value: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== "https:" || X_HOSTS[parsed.hostname.toLowerCase()] !== true) return undefined;
+  const status = parsed.pathname.match(/\/status\/(\d+)/);
+  if (status !== null) return `status:${status[1]}`;
+  const article = parsed.pathname.match(/^\/i\/article\/(\d+)/);
+  return article === null ? undefined : `article:${article[1]}`;
 }
 
 function citationsValue(value: unknown): GrokCitation[] {
