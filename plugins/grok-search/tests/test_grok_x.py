@@ -45,6 +45,24 @@ class FetchContractTests(unittest.TestCase):
         self.assertIn("Every viewpoint needs concrete examples", prompt)
         self.assertIn("Never mix replies", prompt)
 
+    def test_status_authored_prompt_runs_targeted_same_author_search(self) -> None:
+        prompt = grok_x.build_fetch_prompt("https://x.com/a/status/123", "authored", False)
+        self.assertIn("conversation_id:123 from:<actual handle>", prompt)
+        self.assertIn("separately encountered and cited", prompt)
+
+    def test_status_discussion_prompt_runs_targeted_reaction_searches(self) -> None:
+        prompt = grok_x.build_fetch_prompt("https://x.com/a/status/123", "anchor", True)
+        self.assertIn("quoted_tweet_id:123", prompt)
+        self.assertIn("in_reply_to_status_id:123", prompt)
+        self.assertIn("relation quote_reaction", prompt)
+
+    def test_article_prompt_omits_status_query_operators(self) -> None:
+        prompt = grok_x.build_fetch_prompt("https://x.com/i/article/123", "authored", True)
+        self.assertNotIn("conversation_id:", prompt)
+        self.assertNotIn("quoted_tweet_id:", prompt)
+        self.assertNotIn("in_reply_to_status_id:", prompt)
+
+
     def test_response_schema_preserves_provenance_and_article_kind(self) -> None:
         response_format = grok_x.fetch_response_format()
         schema = response_format["format"]["schema"]
@@ -96,6 +114,39 @@ class FetchContractTests(unittest.TestCase):
             "The full authored unit was requested but no additional cited author-composed content was recovered, so completeness could not be verified."
         ])
         self.assertTrue(degraded)
+
+    def test_duplicate_anchor_in_authored_context_is_normalized_without_degradation(self) -> None:
+        anchor = {"url": "https://x.com/a/status/1", "text": "anchor", "authorHandle": "@a"}
+        continuation = {
+            "url": "https://x.com/a/status/2",
+            "text": "continuation",
+            "relation": "authored",
+            "authorHandle": "@a",
+        }
+        document = {
+            "available": True,
+            "anchor": anchor,
+            "authoredContextAvailable": True,
+            "authoredContext": [
+                {**anchor, "relation": "authored"},
+                continuation,
+            ],
+            "relatedContext": [],
+            "discussion": {"included": False, "sampleNotice": "", "viewpoints": []},
+        }
+        result, warnings, degraded = grok_x.enforce_live_fetch(
+            document,
+            [
+                {"url": "https://x.com/i/status/1", "title": ""},
+                {"url": "https://x.com/i/status/2", "title": ""},
+            ],
+            "https://x.com/a/status/1",
+            "authored",
+        )
+        self.assertEqual(result["authoredContext"], [continuation])
+        self.assertEqual(warnings, [])
+        self.assertFalse(degraded)
+
 
     def test_unrelated_citation_does_not_verify_requested_object(self) -> None:
         document = {

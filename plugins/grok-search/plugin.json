@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "grok-search",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Expose live X discovery, faithful X content retrieval, and human-approved Grok authorization through native Pi and OMP tools.",
   "author": {
     "name": "emo-eth",

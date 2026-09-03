@@ -130,18 +130,33 @@ def build_search_prompt(query: str, sources: bool, depth: str) -> str:
 
 
 def build_fetch_prompt(url: str, content: str, discussion: bool) -> str:
-    authored = (
-        "Return the complete author-composed unit in order, excluding other people's replies from authoredContext. "
-        "Actively search for same-author self-replies or continuations whose conversation includes the anchor; do not treat the anchor alone as evidence that the authored unit is complete."
-        if content == "authored"
-        else "Return only the anchor as authored content and set authoredContextAvailable when more author-composed content exists."
-    )
-    discussion_instruction = (
-        "Include a bounded representative discussion showing material interpretations, agreement, disagreement, corrections, and notable reactions. "
-        "Every viewpoint needs concrete examples. Actively retrieve concrete reply or quote-post reaction X objects, cite every returned example, and set sampleNotice to explain that the sample is not exhaustive."
-        if discussion
-        else "Do not retrieve general replies or quote-post reactions. Set discussion.included false, sampleNotice empty, and viewpoints empty."
-    )
+    identity = _x_identity(url)
+    status_id = identity[1] if identity and identity[0] == "status" else None
+    if content == "authored":
+        authored = (
+            "Return the complete author-composed unit in order, excluding other people's replies from authoredContext. "
+            "Actively search for same-author self-replies or continuations whose conversation includes the anchor; do not treat the anchor alone as evidence that the authored unit is complete."
+        )
+        if status_id:
+            authored += (
+                f" After resolving the anchor author's actual handle, run an X keyword search using conversation_id:{status_id} from:<actual handle> "
+                "so every same-author continuation is separately encountered and cited."
+            )
+    else:
+        authored = "Return only the anchor as authored content and set authoredContextAvailable when more author-composed content exists."
+    if discussion:
+        discussion_instruction = (
+            "Include a bounded representative discussion showing material interpretations, agreement, disagreement, corrections, and notable reactions. "
+            "Every viewpoint needs concrete examples. Actively retrieve concrete reply or quote-post reaction X objects, cite every returned example, and set sampleNotice to explain that the sample is not exhaustive."
+        )
+        if status_id:
+            discussion_instruction += (
+                f" Run X keyword searches using quoted_tweet_id:{status_id} and in_reply_to_status_id:{status_id} "
+                "so every discussion example is separately encountered and cited. In discussion examples, label direct replies with relation reply "
+                "and quote-post reactions with relation quote_reaction; relation quote is only for a post embedded by the anchor."
+            )
+    else:
+        discussion_instruction = "Do not retrieve general replies or quote-post reactions. Set discussion.included false, sampleNotice empty, and viewpoints empty."
     return (
         f"Retrieve this exact X object with x_search: {url}\n"
         "Return the structured object required by the response schema. "
@@ -284,8 +299,18 @@ def enforce_live_fetch(
 
     anchor["relation"] = "anchor"
     author_identity = _author_identity(anchor.get("authorHandle"))
+    authored_values = document.get("authoredContext")
+    if isinstance(authored_values, list):
+        authored_values = [
+            item
+            for item in authored_values
+            if not (
+                isinstance(item, dict)
+                and _x_identity(str(item.get("url") or "")) == anchor_identity
+            )
+        ]
     authored, rejected_authored = _verified_items(
-        document.get("authoredContext"),
+        authored_values,
         frozenset({"authored"}),
         cited_identities,
         author_identity,
