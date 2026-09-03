@@ -222,171 +222,206 @@ Status: active
 Scope: v0
 Load-bearing: yes
 
-## D36 - 2026-08-13 - Fail closed on ambiguous host correlations
+## D20 - 2026-08-13 - Vibe docs describe, never prescribe
 
-Decision: Native wall-clock enforcement uses an explicit allowlist for control tools. It rejects pre-action events without a stable session scope, duplicate active action identifiers, unknown child lifecycle links, and batch child lifecycle events without a valid index. Lifecycle and action correlation state is bounded.
-
-Why: A stale session fallback, broad tool prefix, or ambiguous child event can attach enforcement to the wrong action or let work escape its deadline. Failing closed preserves the contract even when host metadata is incomplete or malformed.
-
-Alternatives: Keep the prior fallback behavior (rejected because it can enforce another session's state); accept arbitrary wall-clock-prefixed tools as control tools (rejected because extensions can bypass expiry checks); retain unbounded correlation maps (rejected because long-lived sessions can accumulate stale host identifiers).
-
-Consequences: Unsupported or malformed host events are blocked and reported through the existing host boundary. Valid child lifecycle events continue to correlate by parent action and batch index. The bounded map capacity blocks new admitted work until stale actions finish.
-
+Decision: Vibe and contract docs in this repo describe goals and feel; they never prescribe formulas. Mechanisms appear only as labeled examples ("Example:", never "Means:"), and definitions describe rather than legislate.
+Why: "do not be prescriptive in definitions" and "this is too prescriptive for a vibe. this is an example, not a formula" and "no prescriptive stuff in vibes" - Plannotator annotations, vibe.md round 1 (items 1, 16, 28).
+Alternatives: Keep prescriptive means in vibes (rejected because the human reads them as rules, making the vibe a straitjacket); strip all mechanism detail from vibes (rejected because labeled examples carry taste).
+Consequences: Every clause in docs/vibe.md uses "Example:". Future vibe drafts are checked against this rule before review. Strong words like "need" are quoted as source material, never paraphrased into requirements.
+Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: yes
 
-## D37 - 2026-08-13 - Add persistent turn-limit mode
+## D21 - 2026-08-13 - The goal is progress; sifting is the suspected mechanism
 
-Decision: Add a native `/wallclock turn-limit <duration>` mode and matching
-`mode: "turn-limit"` activation field. The mode keeps the owner contract
-active after terminal settlement and resets its hard deadline to the configured
-duration for the next terminal agent turn. `/wallclock set <duration>` and
-`wallclock_set` update the active duration in either mode without discarding
-the plan, assignments, or reports. The existing deadline mode and default
-`block-new` policy remain unchanged.
-
-Why: The user wants a repeatable per-turn ceiling, such as two minutes, that
-does not require reactivation after every turn and can be changed or cleared
-explicitly.
-
-Alternatives: Make every activation persistent (rejected because it changes
-the existing one-shot contract); require stop and restart for every duration
-change (rejected because it adds avoidable state loss and ceremony); reset at
-every internal `turn_end` event (rejected because retries and continuations
-make it narrower than a terminal agent turn).
-
-Consequences: Turn-limit requires a duration, not a local-time deadline.
-Existing child assignment deadlines remain fixed and are never extended by a
-parent turn reset. State version 4 stores the mode and configured duration;
-version 3 state fails closed and is not migrated.
-
+Decision: Tools and skills in this repo are judged by whether they produce real, felt progress toward action. The sieve is the current hypothesis for how, not the goal, and is replaceable if it stops producing progress.
+Why: "working with the tools and skills should both feel like and crucially ACTUALY BE making progress... the goal is not sifting. sifting is what i suspect works for me" - Plannotator annotation, vibe.md round 1 (item 8).
+Alternatives: Keep sifting as the stated goal (rejected because a metaphor cannot be a success criterion); drop the sieve metaphor entirely (rejected because it remains the best current hypothesis).
+Consequences: V1 is "Progress you can feel": after one sitting, the user can name what moved. Sieve-style tooling (passes, gut calls, top-k) is a mechanism under test.
+Source: plannotator round on docs/vibe.md, 2026-08-13
 Status: active
-Scope: v1
+Scope: v0
 Load-bearing: yes
 
-## D38 - 2026-08-13 - Start turn-limit windows at user-turn start
+## D22 - 2026-08-13 - Never delegate understanding
 
-Decision: A `turn-limit` owner window ends at terminal agent settlement and
-remains armed without a running owner deadline until the next normal user
-message begins. That message starts a fresh configured-duration window.
-Steering messages do not reset or extend the current deadline. Child assignment
-deadlines remain independent.
-
-Why: Resetting at terminal settlement starts the next budget before the user
-has sent the next request. It spends idle time and lets a later steer message
-inherit an incorrectly refreshed deadline.
-
-Alternatives: Reset at terminal settlement (rejected because it starts the
-clock too early); reset on every user message (rejected because steering
-messages would extend a running turn); reset at every internal `turn_end`
-(rejected because retries and continuations are not terminal owner turns).
-
-Consequences: The host clears the owner deadline timer at settlement and
-rearms it on the next normal owner message. Status can remain active while the
-owner contract is armed; the next user message restores the full duration.
-
-Status: active
-Scope: v1
+Decision: Agents fetch, filter, rank, and propose; the user owns understanding. Skills build the user's working model rather than substituting for it, and conclusions must carry provenance.
+Why: "never delegate understanding... 'raw information plus intuition plus iteration leads to clarity leads to understanding' write that down" - Plannotator annotation, vibe.md round 1 (item 15).
+Alternatives: Let agent conclusions stand in for user understanding when the user is busy (rejected because it erodes exactly the compounding the toolchain exists to support).
+Consequences: V4 added to docs/vibe.md. lc-ticketize tickets only what is already understood. Any tool whose output cannot be explained back by the user violates the vibe.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: superseded-by D32
+Scope: v0
 Load-bearing: yes
 
-## D39 - 2026-08-13 - Turn summaries ship on main as a native plugin
+## D23 - 2026-08-13 - Turn receipts are a companion concern, not part of the sifting strategy
 
-Decision: Ship the current turn-summary implementation on `main` as an Agent Plugins package. The native Pi and OMP adapters append a fixed end-of-turn summary reminder through the host `context` seam; `/summary on|off` toggles the reminder for the current process. The package makes no model call and has no UI or MCP surface.
+Decision: The end-of-turn receipt is an agent-communication preference tracked separately from the sieve philosophy; it lives in docs/vibe.md as an explicitly labeled companion clause.
+Why: "this is my overall vibe for interacting with the agent but i fear this is separate from the sifting strategy. but i do want this." - Plannotator annotation, vibe.md round 1 (item 34); also items 12 and 13.
+Consequences: Receipt work (standing instruction, possible pi/omp extension) proceeds on its own track and is not evidence for or against sieve tooling.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
 
-Why: The user asked to put the renamed turn-summary plugin in `main` after confirming that the prior branch was not merged.
+## D24 - 2026-08-13 - "yearn" is taken; the skill-scoped logger needs its own name
 
-Consequences: New Pi and OMP processes can load `plugins/turn-summary/` from the canonical checkout. The reminder text currently says to keep the summary under 400 words; that limit is prompt guidance, not a runtime-enforced or user-configurable setting.
+Decision: The proposed papercut-style logger for skill invocations must not be named "yearn". Yearn already exists, is human-facing, and captures anything the user yearns for.
+Why: "yearn exists. it's anything the user yearns for. not necessarily about a skill. i proposed a skill-specific version; it is not yearn" and "should have a better name" - Plannotator annotations, vibe.md round 1 (items 5, 33).
+Consequences: Proposal P4 in docs/log/2026-08-13-sieve-vibe.md is renamed-pending. Nothing in this repo ships a skill-scoped tool called "yearn". Naming is an open question returned to the user.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
 
+## D25 - 2026-08-13 - Optimize for resumability, not for uninterrupted blocks
+
+Decision: Tools are designed so interruptions cost as little as possible: state saved after every decision, passes resumable mid-pile, minimal context loss on return. Uninterrupted blocks are the ideal; resumability is the requirement.
+Why: "i have adhd. ideally i have uninterrupted blocks. but i think the real preference is - interruptions cost as little as possible; i can continue sifting with minimal context loss." - Plannotator annotation, vibe.md round 1 (item 14).
+Consequences: Use Circumstances in docs/vibe.md rewritten around interruption cost. Review and triage tools must not lose state when interrupted.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D26 - 2026-08-13 - Decomposition targets deliverables; implement/verify is one pattern, not a dichotomy
+
+Decision: Ticket decomposition attacks unbroken deliverables. The implement-plus-verify split is one common pattern, applied with judgment, not a rule imposed on every task; dependencies between tasks are named, and a multi-component deliverable can remain one ticket.
+Why: "i think our bigger problem is simply that we haven't been breaking down deliverables. don't over-index on the 'task-verify' dichotomy" and "'create a model eval framework' is a deliverable but has several sub-components not captured by the deliverable, which should still be a single ticket" and "not always necessary" - Plannotator annotations, vibe.md round 1 (items 25, 2, 3).
+Alternatives: Mandate an implement/verify sub-task split for every ticket (rejected as over-indexing on one axis of hidden work).
+Consequences: V3 rewritten as "Deliverables get broken down". Proposal P1 for lc-ticketize changes shape: no mandated split; instead decomposition guidance plus named proof.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: superseded-by D31
+Scope: v0
+Load-bearing: yes
+
+## D27 - 2026-08-13 - Defer lost-chat recovery spec
+
+Decision: Recovery of word dumps and decisions from session history (memex or similar) is wanted but unspec'd; defer until the mechanism is understood.
+Why: "ideally we have systems that can recover from this; memex plugin is useful but unsure how to use/spec" - Plannotator annotation, vibe.md round 1 (item 24).
+Consequences: docs/vibe.md V2 notes the aspiration without promising a mechanism. initiative-standup already starts from a Memex session ledger and is the natural proving ground.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: deferred
+Revisit: when Memex usage matures beyond the standup ledger, or the next time a word dump is lost
+Scope: v1+
+Load-bearing: no
+
+## D28 - 2026-08-13 - Defer loop-duration recording
+
+Decision: Recording how long iteration loops take (to learn whether changes help) is attractive but noisy and not yet in scope.
+Why: "would be great to record how long loops take so we can iterate on skills/approaches etc and see us make progress and/or rollback bad progress. really hard to say with certainty though lots of noise in the signal. also not necessarily in scope" - Plannotator annotation, vibe.md round 1 (item 31).
+Consequences: docs/vibe.md V6 mentions the idea as not yet in scope; no instrumentation is built now.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: deferred
+Revisit: when skill-iteration is next revised, or when a second loop feels too slow
+Scope: v1+
+Load-bearing: no
+
+## D29 - 2026-08-13 - Few stages, settled by iteration
+
+Decision: Clarity pipelines stay small: three stages is ideal, four or five in practice, settled by iterating rather than by rule; the pipeline should be as painless and fast as possible while still productive.
+Why: "20 stages isn't better than nothing-at-all. 3 stages is idealy; probably 4 or 5, but we have to iterate... should be as painless and fast as possible while also as productive as possible" - Plannotator annotation, vibe.md round 1 (item 20).
+Consequences: docs/vibe.md V2 adopts this framing. Any proposed pipeline with more than five stages carries the burden of proof.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D30 - 2026-08-13 - The vibe is the source of truth; the artifact chain is a facet
+
+Decision: docs/vibe.md is the source of truth for this repo's philosophy. The lc-north-star artifact chain (dump, vibe, PRD, spec, plan, tickets) is one downstream facet of it, not a separate or fixed system, and is updated or replaced as the vibe iterates.
+Why: "i think ideally we replace/update this chain. it's not a source of truth or a separate system; it's a facet of the system/vibe we are cultivating (one that will need updating as we iterate on this vibe, which is the source of truth)" - Plannotator annotation, vibe.md round 2 (item 1).
+Alternatives: Treat the chain as fixed infrastructure the vibe must fit into (rejected because it inverts the authority); treat chain and vibe as independent systems (rejected because the chain is downstream).
+Consequences: After vibe approval, lc-north-star and docs/lifecycle.md are revised to declare the vibe upstream. All skills and tools answer to the vibe.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D31 - 2026-08-13 - Deliverables are one ticket plus enumerated sub-tickets
+
+Decision: Decomposition targets deliverables. A deliverable is one ticket; its components are sub-tickets that must also be tracked and enumerated. Implement/verify remains one common split, applied with judgment, not a dichotomy; dependencies between tasks are named.
+Why: "the deliverable is one ticket; the components are sub-tickets that must also be tracked and enumerated" - Plannotator annotation, vibe.md round 2 (item 2).
+Alternatives: A multi-component deliverable as a single flat ticket with no tracked sub-tickets (rejected because components then hide); forcing every component into a separate top-level ticket (rejected because the deliverable loses its single handle).
+Consequences: Supersedes D26, carrying forward its decomposition intent. lc-ticketize's eventual revision must model deliverable ticket plus enumerated sub-tickets.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D32 - 2026-08-13 - Understanding is symbiotic
+
+Decision: The user strives for understanding; the system strives to measure and ensure it, and the system has failed if it cannot guide the user there. Once the user has full understanding, the user guides the system. Understanding is never delegated away; conclusions carry provenance; agents fetch, filter, and propose.
+Why: "the user does not own understanding; the user strives for understanding, and the system strives to measure and ensure their understanding. the system has failed if it cannot guide the user to understanding. once the user has full understanding, the user can guide the system. it is symbiotic." - Plannotator annotation, vibe.md round 2 (item 4); probing/measurement from item 6.
+Alternatives: The user owns understanding unaided (rejected: the system then has no failure mode when the user is lost); the system owns understanding (rejected: that is delegation).
+Consequences: Supersedes D22, carrying forward "never delegate understanding" and provenance. V4 rewritten around symbiosis; the system needs probing and measurement mechanisms (teach-back, spot questions) as first-class features.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D33 - 2026-08-13 - Existing skills are seeds, not fixtures
+
+Decision: Existing skills and tools are seeds and context - works in progress, some to be scrapped. Nothing is load-bearing merely because it exists, and iterations on any of them (ticketize included) are downstream of this vibe. Do not be poisoned by existing context and history.
+Why: "do not over-index on existing skills; if the skills worked, we would not need this vibe doc or to plan this system. they are seeds and context. they are works in progress, or (often) work that should be scrapped. crucial: do not be poisoned by existing context and history" - Plannotator annotation, vibe.md round 2 (item 5); item 3 on ticketize.
+Alternatives: Treat shipped skills as the baseline to preserve (rejected because it anchors the new system to the old one's assumptions).
+Consequences: docs/vibe.md carries the seed caveat above its clauses. Future skill work may scrap and rebuild rather than amend.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D34 - 2026-08-13 - At most two fix rounds per doc; aim for one
+
+Decision: Review of a written doc converges fast: at most two fix rounds, and the goal is one. A doc needing a third fix round signals the draft process failed, not that a third round should happen.
+Why: "minimal fix-rounds. i want to say max 2. avoid 2 if possible" - Plannotator annotation, vibe.md round 2 (item 8).
+Consequences: Drafts are written to converge (self-contained, glossary first, non-prescriptive per D20). lc-review-capture's rounds stay bounded per D29's stage discipline.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active
+Scope: v0
+Load-bearing: no
+
+## D35 - 2026-08-13 - Ticketize's refusal to ticket vibes stands provisionally
+
+Decision: lc-ticketize's hard rule against ticketing ununderstood work ("refuses to ticket vibes") stands for now on the grounds that it minimizes noise for coworkers. The user is not sure they agree; the rule is provisional and revisited when lc-ticketize is revised.
+Why: "not sure i agree. but good to minimize noise for coworkers, so can stand for now" - Plannotator annotation, vibe.md round 3 (item 1, anchored to the V4 example). Reading: the target is the ticketize line, since "minimize noise for coworkers" fits keeping half-baked work off a shared board; if the disagreement was with the symbiosis framing instead, the user can reopen V4.
+Consequences: No text change to docs/vibe.md (the annotation says the line can stand). The uncertainty is on the record so a future revision does not mistake the rule for settled.
+Source: plannotator round on docs/vibe.md, 2026-08-13
+Status: active (provisional)
+Revisit: when lc-ticketize is revised under D31, or if the user reopens it
+Scope: v0
+Load-bearing: no
+
+## D36 - 2026-08-13 - The skill-scoped notes tool is named skiterate and is a plugin
+
+Decision: The papercut-style capture scoped to skill invocations (proposal P4) is named `skiterate` and will be built as an Agent Plugins package with native Pi and OMP adapters, following the wall-clock pattern, rather than as a skill-plus-script.
+Why: "yes, it would be a plugin like yearn or wallclock here. call it idk 'skiterate'" - user in chat, 2026-08-13.
+Consequences: Resolves the open naming from D24. Name sits adjacent to the existing skill-iteration skill (skiterate is the logger; skill-iteration is the loop it feeds); flagged to the user and accepted provisionally ("idk"), so rename while unbuilt is free.
 Source: user chat message, 2026-08-13
-Status: active
+Status: active (provisional name)
+Revisit: on any rename request before first ship
 Scope: v0
 Load-bearing: no
 
+## D37 - 2026-08-13 - Turn receipts ship as a plugin in three stages
 
-## D40 - 2026-08-14 - Ship a native bug capture command
-
-Decision: Add `plugins/bug-command/` as a command-only Agent Plugin for Pi and
-OMP. `/bug [--plugin <name>] [--skill <name>] <bug description>` appends one
-context-rich JSON record to `~/BUGS.md`, or to `BUGS_PATH` when configured.
-The record includes repository, worktree, branch, folder, host, model, session
-metadata, turn metadata, recent activity, and the note. It does not copy full
-prompts or event payloads.
-
-Why: The user wants a Yearn-shaped capture command for bugs, with the same
-low-ceremony native-command shape as `/skiterate`, but the output needs enough
-local session and turn context to debug plugins, skills, and applications
-after the original turn is gone.
-
-Alternatives: Make it a skill wrapper (rejected because the host command seam
-can capture session and lifecycle metadata that a later skill invocation
-cannot); reuse Yearn (rejected because wishes and bugs have different
-records); capture full prompts and events (rejected because it increases
-privacy risk and makes the log hard to scan).
-
-Consequences: Automatic plugin attribution is best effort and stays null when
-the host does not expose a plugin marker. The explicit `--plugin` and
-`--skill` flags remain available. Turn numbers are host-provided when
-available, otherwise lifecycle-order hints.
-
-Source: user chat message, 2026-08-14
+Decision: The turn receipt is delivered as an Agent Plugins package, not as a standing instruction in a global instructions file. v1 injects a succinct per-turn receipt reminder through the host turn-context seam, the same mechanism wall-clock uses to inject measured time. v2 adds collapsible above-the-fold UI in the harness. v3 adds a companion model that writes the receipt content.
+Why: "think that is also best as a plugin since wallclock injects the time left etc after each turn. succinct reminder culd be nice. longterm would be nice to have collapsible arrows for above-the-fold stuff and/or a companion model (v2 and v3)" - user in chat, 2026-08-13.
+Alternatives: Standing instruction in the global instructions file first, extension later (rejected: the plugin owns delivery from v1, and the wall-clock turn-context seam is already proven on this machine).
+Consequences: The earlier layer-1/layer-2 split (log doc P5) is superseded. v1 needs no model call. v3's cheap-model call path must be verified against the installed omp/pi before implementation, same discipline as wall-clock's capability checks.
+Source: user chat, 2026-08-13
 Status: active
-Scope: v0
+Scope: v0 (v1); v1+ (v2, v3)
 Load-bearing: no
 
-## D41 - 2026-08-14 - Add a fast native plugin builder skill
+## D38 - 2026-08-13 - The vibe is a starting point; reality is reached by stochastic descent
 
-Decision: Publish `skills/agent-plugin/SKILL.md` as the default workflow for
-building small native Pi and OMP Agent Plugins. It starts with a minimal
-vertical slice, reuses the nearest existing package, keeps adapters thin,
-captures only bounded context, proves both adapters, separates source tests
-from live host proof, and hands installed OMP work to
-`omp-plugin-iteration`.
-
-Why: The bug-command build repeated package, host seam, record, test, state,
-and live-proof decisions. The user asked for a reusable skill so the next
-tool does not pay that setup cost again.
-
-Alternatives: Extend `omp-plugin-iteration` (rejected because that skill
-starts after a plugin exists and focuses on reinstall and restart); add a
-large code generator (rejected because plugin behavior and record shapes vary,
-and a generator would create stale scaffolding).
-
-Consequences: Future native plugin work has a named fast path and explicit
-proof boundary. The skill is model-invoked for native Pi or OMP plugin
-requests. It is documented; the isolated cold-reader attempt was blocked by
-the host lifecycle gate, and the skill is not yet field-tested on a second
-plugin.
-
-Source: user chat message, 2026-08-14
+Decision: A written vibe is the initial state of the work, not its destination. Work descends from the vibe toward reality through many small, noisy, stochastic steps; the noise is tolerated because it lets the descent escape local optima. The machinery (skills, tools, plugins) exists to make steps cheaper and less noisy, and is not itself the goal.
+Why: "vibe is also just the starting point. we have a vibe. we need to figure out how to make it reality" and "stochastic; gradient descent. we want to descend to the optimal state. or something" - user in chat, 2026-08-13.
+Alternatives: Treat the written vibe as the deliverable and measure the repo against the document (rejected: the vibe is the initial point, and a document can look complete while reality is nowhere near it); treat the descent as replacing the sieve (rejected: the two are compatible metaphors - the sieve filters a pile, the descent moves the whole system toward the goal).
+Consequences: docs/vibe.md gains V8 plus glossary and promise lines. Tool and process evaluation now asks "does it take a cheaper, less noisy step toward the vibe?" rather than "is it finished?".
+Source: user chat, 2026-08-13
 Status: active
 Scope: v0
-Load-bearing: no
-
-## D42 - 2026-08-28 - Keep wall-clock operations native-only
-
-Decision: Remove wall-clock's root `mcp.json`, standalone MCP server, and MCP
-operation tests. Keep the Agent Plugins manifest and bundled skill, while Pi
-and OMP native adapters expose the sole wall-clock operation catalog.
-
-Why: OMP discovers both Agent Plugin MCP servers and native extension tools
-from one installed package. Shipping both exposed duplicate wall-clock
-operations with different session state and enforcement semantics, while the
-MCP `wallclock_start` could not activate an enforced deadline. The user
-reported the duplicate catalog and directed that it be fixed.
-
-Alternatives: Disable the MCP server in one local OMP profile (rejected because
-the package would remain broken for every other install); rename the MCP tools
-(rejected because two non-equivalent catalogs would remain); remove the native
-tools (rejected because only the native adapter can enforce the contract).
-
-Consequences: Agent Plugin clients can still discover the wall-clock
-instructions. Unsupported clients have no operation surface. Supported Pi and
-OMP sessions expose only native tools backed by the host session and
-pre-action gate. D9 remains true as a statement about the Agent Plugins
-standard, but this package no longer exercises its optional MCP component.
-
-Source: user chat message, 2026-08-28
-Status: active
-Scope: current
 Load-bearing: yes
