@@ -73,6 +73,26 @@ function getAssignedNodes(payload: unknown): LinearNode[] {
   if (!Array.isArray(nodes)) return [];
   return nodes as LinearNode[];
 }
+function missingAssignedIssuesShape(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null || !("data" in payload)) {
+    return true;
+  }
+  const data: unknown = payload.data;
+  if (typeof data !== "object" || data === null || !("viewer" in data)) {
+    return true;
+  }
+  const viewer: unknown = data.viewer;
+  if (typeof viewer !== "object" || viewer === null || !("assignedIssues" in viewer)) {
+    return true;
+  }
+  const assignedIssues: unknown = viewer.assignedIssues;
+  return (
+    typeof assignedIssues !== "object" ||
+    assignedIssues === null ||
+    !("nodes" in assignedIssues) ||
+    !Array.isArray(assignedIssues.nodes)
+  );
+}
 
 /** Only issues that are still actionable ("assigned to me, not completed"). */
 function isActionable(node: LinearNode): boolean {
@@ -129,10 +149,10 @@ export async function fetchAssignedNotCompleted(
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Could not parse linear api output: ${message}`);
   }
-  const nodes = getAssignedNodes(data);
-  if (nodes.length === 0) {
-    throw new Error("Linear returned no assigned issues.");
+  if (missingAssignedIssuesShape(data)) {
+    throw new Error("Could not parse linear api output: missing viewer.assignedIssues.");
   }
+  const nodes = getAssignedNodes(data);
 
   const filterTeam = options.team;
   return nodes

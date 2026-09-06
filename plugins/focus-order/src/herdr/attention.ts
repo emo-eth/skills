@@ -10,7 +10,7 @@ import {
   worktreeRankOf,
 } from "../shared/identity.ts";
 import { claimOwner, releaseOwner } from "../shared/modal-lock.ts";
-import { loadState, saveState } from "../shared/store.ts";
+import { loadState, mutateState } from "../shared/store.ts";
 import type { AgentSnapshot, FocusOrderState } from "../shared/types.ts";
 
 const RESET = "\u001b[0m";
@@ -50,11 +50,7 @@ async function main(): Promise<void> {
 
     const refresh = async (): Promise<void> => {
       agents = await listAgents();
-      const normalized = clearResolvedSnoozes(state, agents);
-      if (normalized !== state) {
-        state = normalized;
-        saveState(state);
-      }
+      state = await mutateState((current) => clearResolvedSnoozes(current, agents));
       selected = Math.max(
         0,
         Math.min(selected, Math.max(urgentAgents(state, agents).length - 1, 0)),
@@ -86,12 +82,11 @@ async function main(): Promise<void> {
           render(state, urgentAgents(state, agents), selected, status);
           return true;
         }
-        state = snoozeAgent(state, target);
-        saveState(state);
+        state = await mutateState((current) => snoozeAgent(current, target));
         status = `${agentLabel(target)} snoozed until it becomes working`;
         return closeAndExit();
       }
-      if (input === "f" || input === "F" || input === "\r" || input === "\n") {
+      if (input === "f" || input === "F" || input === "\r" || input === "\n" || input === "") {
         const target = urgent[selected];
         if (target) {
           await focusTab(target.tab_id);
@@ -101,14 +96,12 @@ async function main(): Promise<void> {
         return true;
       }
       if (input === "u" || input === "U") {
-        state = { ...state, enabled: false };
-        saveState(state);
+        state = await mutateState((current) => ({ ...current, enabled: false }));
         status = "Guard disabled; the modal will close";
         return closeAndExit();
       }
       if (input === "m" || input === "M") {
-        state = { ...state, mode: "focus" };
-        saveState(state);
+        state = await mutateState((current) => ({ ...current, mode: "focus" }));
         status = "Switched to focus mode; the modal will close";
         return closeAndExit();
       }

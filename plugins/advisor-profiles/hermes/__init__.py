@@ -233,6 +233,8 @@ class AdvisorProfilesPlugin:
             if not names:
                 return "No enabled advisors configured."
             return self._set_selection(names, "use")
+        if name == "off":
+            return self._set_selection([], "off")
         slug = watchdog.slugify(name)
         if slug not in self._roster.advisors:
             known = ", ".join(sorted(advisor.name for advisor in self._roster.advisors.values())) or "(none)"

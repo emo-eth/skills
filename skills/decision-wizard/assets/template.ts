@@ -11,7 +11,6 @@
 // its list source and its action.
 
 const { createHash } = require("node:crypto");
-const { readFileSync } = require("node:fs");
 const {
   mkdir,
   readFile,
@@ -68,12 +67,7 @@ type ReviewOptions = {
   items: ReviewItem[];
 };
 
-const scriptedInput: string[] | undefined = process.stdin.isTTY
-  ? undefined
-  : readFileSync(0, "utf8")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+let scriptedInput: string[] | undefined;
 
 function paint(value: string, color: string): string {
   return useColor ? `${color}${value}${RESET}` : value;
@@ -184,8 +178,8 @@ async function removeState(stateFile: string): Promise<void> {
 }
 
 async function readLine(prompt: string): Promise<string> {
-  if (scriptedInput !== undefined) {
-    return scriptedInput.shift() ?? "";
+  if (!process.stdin.isTTY) {
+    return (await nextScriptedAnswer()) ?? "";
   }
 
   const reader = createInterface({ input: process.stdin, output: process.stdout });
@@ -196,8 +190,17 @@ async function readLine(prompt: string): Promise<string> {
   }
 }
 
-function nextScriptedAnswer(): string | undefined {
-  return scriptedInput?.shift();
+async function nextScriptedAnswer(): Promise<string | undefined> {
+  if (process.stdin.isTTY) return undefined;
+  if (scriptedInput === undefined) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+    scriptedInput = Buffer.concat(chunks).toString("utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+  return scriptedInput.shift();
 }
 
 function normalizeDecision(value: string): Decision | "pause" | undefined {
@@ -214,7 +217,7 @@ function normalizeDecision(value: string): Decision | "pause" | undefined {
 
 async function chooseDecision(): Promise<Decision | "pause"> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    const answer = nextScriptedAnswer();
+    const answer = await nextScriptedAnswer();
     return answer ? normalizeDecision(answer) ?? "pause" : "pause";
   }
 

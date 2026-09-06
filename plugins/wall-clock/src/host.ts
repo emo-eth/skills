@@ -217,6 +217,8 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const writeOwnedState = (sessionId: string): void => {
     const state = controller.snapshot(sessionId);
     if (state) host.appendEntry?.("wall-clock-state", state);
+    const fastLane = fastLanes.get(sessionId);
+    if (fastLane) host.appendEntry?.("wall-clock-fast-lane", fastLane);
   };
 
   const requireStableScope = (ctx?: RuntimeContext): Scope => {
@@ -365,6 +367,14 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
   const activateSession = (ctx: RuntimeContext | undefined, input: ActivationInput, plan: PlanItem[] = []) => {
     const sessionId = requireOwnerSession(ctx);
     ensureActivationSupport(input.expiryPolicy, input.mode);
+    const childSessionIds = [...coordination.childBindings.entries()]
+      .filter(([, child]) => child.parentSessionId === sessionId)
+      .map(([childSessionId]) => childSessionId);
+    const hasLiveWork = controller.runningActions(sessionId).length > 0
+      || childSessionIds.some((childSessionId) => controller.runningActions(childSessionId).length > 0);
+    if (controller.status(sessionId).active && (hasLiveWork || childSessionIds.length > 0)) {
+      throw new Error("Wall-clock cannot replace an active contract while child work is live");
+    }
     if (controller.status(sessionId).active) stopSessionById(sessionId, ctx);
     const status = controller.activate(sessionId, input, plan);
     scheduleDeadline(sessionId, undefined, ctx);
@@ -520,14 +530,33 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     clearSessionDeadlines(direct);
     const restored = stateFromEntries(ctx.sessionManager?.getEntries?.() ?? ctx.sessionManager?.getBranch?.() ?? [], direct);
     if (restored === null) {
+      coordination.settledSessions.delete(direct);
       controller.discard(direct);
       clearSessionDeadlines(direct);
       notify(ctx, "Wall-clock state is malformed or belongs to another session; control is inactive", "error");
       updateStatus(host, controller, direct, ctx);
       return;
     }
-    if (restored) controller.restoreFromState(restored, direct);
-    else controller.discard(direct);
+    if (restored) {
+      controller.restoreFromState(restored, direct);
+    const entries = ctx.sessionManager?.getEntries?.() ?? ctx.sessionManager?.getBranch?.() ?? [];
+    const fastLaneEntry = [...entries].reverse().find((entry) => {
+      const candidate = entry as { customType?: string; data?: unknown };
+      return candidate.customType === "wall-clock-fast-lane";
+    }) as { data?: unknown } | undefined;
+    const fastLaneData = fastLaneEntry?.data as Partial<FastLaneState> | undefined;
+    if (fastLaneData && (fastLaneData.kind === "do-it-now" || fastLaneData.kind === "wrap-it-up") && typeof fastLaneData.request === "string" && typeof fastLaneData.toolCalls === "number") {
+      fastLanes.set(direct, { kind: fastLaneData.kind, request: fastLaneData.request, toolCalls: fastLaneData.toolCalls });
+    } else {
+      fastLanes.delete(direct);
+    }
+      const restoredSnapshot = controller.snapshot(direct);
+      if (restoredSnapshot && !restoredSnapshot.stopped && restoredSnapshot.turnState === "armed") coordination.settledSessions.add(direct);
+      else coordination.settledSessions.delete(direct);
+    } else {
+      controller.discard(direct);
+      coordination.settledSessions.delete(direct);
+    }
     const snapshot = controller.snapshot(direct);
     if (snapshot && !snapshot.stopped) {
       scheduleDeadline(direct, undefined, ctx);
@@ -808,7 +837,10 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
       for (const childAssignment of assignments) scheduleDeadline(scope.sessionId, childAssignment.id, ctx);
     }
     controller.beginToolCall(scope.sessionId, actionId);
-    if (fastLane && !nativeTool) fastLane.toolCalls += 1;
+    if (fastLane && !nativeTool) {
+      fastLane.toolCalls += 1;
+      persist(scope.sessionId);
+    }
     if (!nativeTool) {
       controller.startAction(scope.sessionId, actionId, toolName, action, assignmentId);
       if (ctx) coordination.actionContexts.set(actionId, ctx);
@@ -848,6 +880,7 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     }
     const scope = actionScopeFor(ctx, event);
     if (!scope) {
+      if (!controller.hasActiveSession()) return undefined;
       return { result: { output: "Wall-clock blocked this command: a stable host session identifier is required", exitCode: 1, cancelled: true, truncated: false } };
     }
     if (!controller.status(scope.sessionId, scope.assignmentId).active) return undefined;
@@ -1074,6 +1107,12 @@ export function installHostExtension(host: RuntimeHost, options: HostExtensionOp
     const linked = linkedEntry?.[1];
     const actionId = linked?.actionId ?? canonicalActionId(scope, rawActionId);
     if (!actionId) return;
+    const asyncState = event && typeof event === "object" && "details" in event
+      && event.details && typeof event.details === "object" && "async" in event.details
+      && event.details.async && typeof event.details.async === "object" && "state" in event.details.async
+      ? event.details.async.state
+      : undefined;
+    if (asyncState === "running") return;
     const running = controller.runningActions(linked?.sessionId ?? scope.sessionId).find((action) => action.actionId === actionId);
     const actionContext = coordination.actionContexts.get(actionId) ?? ctx;
     const observed = running?.abortRequestedAt !== undefined && Boolean(enforcement?.abortObserved?.(event, actionContext));

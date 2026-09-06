@@ -62,6 +62,8 @@ type SessionMetadata = {
 const TRACKED_EVENTS = [
   "session_start",
   "before_agent_start",
+  "turn_start",
+  "turn_end",
   "message_start",
   "command",
   "tool_call",
@@ -171,7 +173,8 @@ function rememberEvent(
   const explicitTurn = extractTurn(event) ?? contextTurn(context);
   if (explicitTurn !== undefined) {
     state.turn = explicitTurn;
-    state.turnStartedAt = extractTimestamp(event) ?? state.turnStartedAt ?? now;
+    const stamp = eventName === "turn_start" ? extractTurnStartedAt(event) : extractTimestamp(event);
+    state.turnStartedAt = stamp ?? state.turnStartedAt ?? now;
     return;
   }
 
@@ -290,16 +293,25 @@ function extractToolName(event: unknown): string | undefined {
   if (direct) return direct;
   return namedValue(value.tool);
 }
-
 function extractTurn(event: unknown): number | undefined {
   const value = asRecord(event);
   if (!value) return undefined;
-  const direct = firstNumber(value, ["turn", "turnNumber", "turnIndex"]);
+  const direct = firstNumber(value, ["turnIndex", "turn", "turnNumber"]);
   if (direct !== undefined) return direct;
   const details = asRecord(value.details);
-  return firstNumber(details, ["turn", "turnNumber", "turnIndex"]);
+  return firstNumber(details, ["turnIndex", "turn", "turnNumber"]);
 }
 
+function extractTurnStartedAt(event: unknown): string | undefined {
+  const value = asRecord(event);
+  if (!value) return undefined;
+  const candidate = value.timestamp;
+  if (typeof candidate === "number" && Number.isFinite(candidate)) {
+    return new Date(candidate).toISOString();
+  }
+  return extractTimestamp(event);
+
+}
 function contextTurn(context: RuntimeContext): number | undefined {
   return numberValue(context.turn) ?? numberValue(callSessionMethod(context.sessionManager, "getTurn"));
 }

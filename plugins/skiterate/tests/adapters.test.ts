@@ -108,3 +108,48 @@ test("OMP registers /skiterate and honors an explicit skill argument", async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a skill remembered in one session does not leak into the next session", async () => {
+  const root = await mkdtemp(join(tmpdir(), "skiterate-isolation-"));
+  try {
+    const host = new FakeHost();
+    skiteratePiExtension(host);
+    const cwd = process.cwd();
+    const first: RuntimeContext = {
+      cwd,
+      sessionManager: {
+        getSessionId: () => "session-a",
+        getSessionFile: () => undefined,
+      } as RuntimeContext["sessionManager"],
+      model: { provider: "test", id: "model-1" },
+      ui: { notify: (message) => notices.push(message) },
+    };
+    const second: RuntimeContext = {
+      cwd,
+      sessionManager: {
+        getSessionId: () => "session-b",
+        getSessionFile: () => undefined,
+      } as RuntimeContext["sessionManager"],
+      model: { provider: "test", id: "model-1" },
+      ui: { notify: (message) => notices.push(message) },
+    };
+
+    await host.emit("before_agent_start", {
+      prompt: '<skill name="skill-iteration" location="/skills/skill-iteration/SKILL.md">',
+    }, first);
+    await withOutputPath(join(root, "SKITERATE.md"), async () => {
+      await host.commands.get("skiterate")!.handler("session a note", first);
+      await host.commands.get("skiterate")!.handler("session b note", second);
+    });
+
+    const lines = (await readFile(join(root, "SKITERATE.md"), "utf8")).trim().split("\n");
+    assert.equal(lines.length, 2);
+    const firstRecord = JSON.parse(lines[0].slice(2)) as Record<string, string | null>;
+    const secondRecord = JSON.parse(lines[1].slice(2)) as Record<string, string | null>;
+    assert.equal(firstRecord.skill, "skill-iteration");
+    assert.equal(secondRecord.skill, null);
+    assert.equal(secondRecord.note, "session b note");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -39,15 +39,23 @@ echo "Found $PR_COUNT merged PRs in window" >&2
 # For each PR, pull review comments where author is a bot and body looks like
 # bugbot. Cursor BugBot comments typically include "BugBot" or "bugbot" string.
 : > "$OUT_DIR/comments.jsonl"
+FETCH_FAILED=0
 while IFS= read -r line; do
   NUM=$(echo "$line" | jq -r '.number')
-  gh api --paginate "repos/$REPO/pulls/$NUM/comments" --jq '
+  if ! gh api --paginate "repos/$REPO/pulls/$NUM/comments" --jq '
     .[] | select(
       (.user.type == "Bot") or
       (.body | test("BugBot|bugbot|Cursor"; "i"))
     ) | {pr: '"$NUM"', path: .path, line: .line, body: .body}
-  ' >> "$OUT_DIR/comments.jsonl" 2>/dev/null || true
+  ' >> "$OUT_DIR/comments.jsonl" 2>/dev/null; then
+    FETCH_FAILED=1
+  fi
 done < "$OUT_DIR/prs.jsonl"
+
+if [ "$FETCH_FAILED" -ne 0 ]; then
+  echo "ERROR: one or more PR comment fetches failed; preserving existing refresh stamp" >&2
+  exit 1
+fi
 
 COMMENT_COUNT=$(wc -l < "$OUT_DIR/comments.jsonl" | tr -d ' ')
 echo "Collected $COMMENT_COUNT bugbot comments" >&2

@@ -622,6 +622,7 @@ test("terminal OMP agent end clears a fast lane", async () => {
   const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
   const host = new FakeHost();
   installHostExtension(host as unknown as RuntimeHost, {
+    controller,
     enforcement: {
       name: "fake-omp",
       canBlockNew: true,
@@ -1486,4 +1487,338 @@ test("action correlation refuses new work at its bounded capacity", async () => 
   assert.equal(blocked.block, true);
   assert.match(blocked.reason, /correlation capacity/);
   assert.equal(controller.runningActions("main").length, 0);
+});
+
+test("native assignment tool is admitted as wall-clock control work", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-pi", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+
+  const input = {
+    parentPlanItemId: "item-1",
+    objective: "Inspect one module",
+    scope: ["src"],
+    acceptance: ["Return evidence"],
+    budgetMs: 5_000,
+  };
+  const gate = await host.emit("tool_call", { toolCallId: "assign-call", toolName: "wallclock_assign", input }, ctx);
+  assert.equal(gate, undefined);
+
+  const result = await host.tools.get("wallclock_assign").execute("assign-call", input, undefined, undefined, ctx) as { content: Array<{ text: string }> };
+  const payload = JSON.parse(result.content[0].text);
+  assert.equal(payload.assignment.parentPlanItemId, "item-1");
+  assert.equal(payload.assignment.parentSessionId, "main");
+});
+
+test("restored turn-limit session resets its armed turn at a normal user message", async () => {
+  let now = 1_000;
+  const clock = { now: () => now };
+  const controller = new WallClockController(clock, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    clock,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("turn-limit 2m block-new", ctx);
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  const entries = host.entries.map((entry) => ({ type: "custom", ...entry }));
+
+  now = 10_000;
+  const restoredController = new WallClockController(clock, new MemoryStore());
+  const restoredHost = new FakeHost();
+  installHostExtension(restoredHost as unknown as RuntimeHost, {
+    controller: restoredController,
+    clock,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const restoredCtx = context("main", entries);
+  await restoredHost.emit("session_start", {}, restoredCtx);
+  await restoredHost.emit("message_start", { message: { role: "user" } }, restoredCtx);
+  const status = restoredController.status("main");
+  assert.equal(status.active, true);
+  assert.equal(status.phase, "active");
+  assert.equal(status.deadlineMs, 130_000);
+
+  now = 130_001;
+  const blocked = await restoredHost.emit("tool_call", { toolCallId: "late-read", toolName: "read", input: { path: "src/a.ts" } }, restoredCtx) as { block: boolean };
+  assert.equal(blocked.block, true);
+});
+
+test("replacing an active contract is rejected while child work is live", async () => {
+  let now = 1_000;
+  const scheduled: Array<() => void> = [];
+  const abortRequests: unknown[] = [];
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: (request: unknown) => { abortRequests.push(request); },
+      abortObserved: () => true,
+    },
+    schedule: (callback: () => void) => { scheduled.push(callback); return callback; },
+    cancelSchedule: () => undefined,
+  } as const;
+  installHostExtension(parentHost as unknown as RuntimeHost, options);
+  installHostExtension(childHost as unknown as RuntimeHost, options);
+  const parentCtx = context("main", [], () => undefined);
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", parentCtx);
+
+  await parentHost.emit("tool_call", {
+    toolCallId: "task-call",
+    toolName: "task",
+    input: {
+      tasks: [{
+        task: "Inspect the module",
+        wallClock: {
+          parentPlanItemId: "inspect",
+          objective: "Inspect the module",
+          scope: ["src"],
+          acceptance: ["Return findings"],
+          budgetMs: 5_000,
+        },
+      }],
+    },
+  }, parentCtx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "child-agent",
+    sessionFile: "child-session",
+    status: "started",
+    parentToolCallId: "task-call",
+    index: 0,
+  });
+  const childCtx = context("child-session", [], () => undefined);
+  await childHost.emit("session_start", {}, childCtx);
+  await childHost.emit("tool_call", { toolCallId: "child-read", toolName: "read", input: {} }, childCtx);
+
+  await assert.rejects(
+    parentHost.commands.get("wallclock").handler("start 120s block-new", parentCtx),
+    /child/i,
+  );
+  assert.equal(controller.status("main").deadlineMs, 61_000);
+  assert.equal(controller.snapshot("main")?.assignments[0]?.status, "active");
+
+  now = 6_000;
+  for (const callback of scheduled) callback();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(abortRequests.length, 1);
+});
+
+test("shrinking an armed turn duration clamps its wrap-up band at the next reset", async () => {
+  let now = 1_000;
+  const clock = { now: () => now };
+  const controller = new WallClockController(clock, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    clock,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("turn-limit 60s block-new", ctx);
+  await host.emit("agent_end", { willContinue: false }, ctx);
+  await host.commands.get("wallclock").handler("set 5s", ctx);
+  assert.equal(controller.status("main").phase, "armed");
+
+  now = 2_000;
+  await host.emit("message_start", { message: { role: "user" } }, ctx);
+  const status = controller.status("main");
+  assert.equal(status.phase, "active");
+  assert.equal(status.deadlineMs, 7_000);
+  assert.equal(controller.snapshot("main")?.wrapUpAt, 6_000);
+});
+
+test("sessionless user_bash is transparent while inactive and fail-closed while active", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+
+  const transparent = await host.emit("user_bash", { command: "printf safe" }, undefined);
+  assert.equal(transparent, undefined);
+
+  await host.commands.get("wallclock").handler("start 60s block-new", context());
+  const blocked = await host.emit("user_bash", { command: "printf safe" }, undefined) as { result: { exitCode: number; cancelled: boolean } };
+  assert.equal(blocked.result.exitCode, 1);
+  assert.equal(blocked.result.cancelled, true);
+});
+
+test("background single-task result before started lifecycle still correlates the child", async () => {
+  const now = { value: 1_000 };
+  const controller = new WallClockController({ now: () => now.value }, new MemoryStore());
+  const coordination = createHostCoordination(controller);
+  const events = new FakeEventBus();
+  const parentHost = new FakeHost(events);
+  const childHost = new FakeHost(events);
+  const options = {
+    coordination,
+    controller,
+    enforcement: {
+      name: "fake-omp",
+      canBlockNew: true,
+      canAbortAction: () => true,
+      abortRunning: () => undefined,
+      abortObserved: () => true,
+    },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  };
+  installHostExtension(parentHost as unknown as RuntimeHost, options);
+  installHostExtension(childHost as unknown as RuntimeHost, options);
+  const parentCtx = context();
+  await parentHost.commands.get("wallclock").handler("start 60s block-new", parentCtx);
+  await parentHost.tools.get("wallclock_assign").execute("assignment-call", {
+    parentPlanItemId: "item-1",
+    objective: "Read the README",
+    scope: ["README.md"],
+    acceptance: ["Return evidence"],
+    budgetMs: 5_000,
+  }, undefined, undefined, parentCtx);
+  await parentHost.emit("tool_call", {
+    toolCallId: "bg-task",
+    toolName: "task",
+    input: { task: "Read README.md" },
+  }, parentCtx);
+  await parentHost.emit("tool_result", {
+    toolCallId: "bg-task",
+    toolName: "task",
+    isError: false,
+    details: { async: { state: "running", jobId: "child", type: "task" } },
+  }, parentCtx);
+  await events.emit("task:subagent:lifecycle", {
+    id: "child",
+    sessionFile: "child-session",
+    status: "started",
+    parentToolCallId: "bg-task",
+    index: 0,
+  });
+  const childCtx = context("child-session", [], () => undefined);
+  await childHost.emit("session_start", {}, childCtx);
+  assert.equal(await childHost.emit("tool_call", {
+    toolCallId: "child-read",
+    toolName: "read",
+    input: { path: "README.md" },
+  }, childCtx), undefined);
+  assert.equal(controller.snapshot("main")?.assignments[0]?.childSessionId, "child-session");
+});
+
+test("armed shorter duration rejects before mutating retained completed assignments", () => {
+  let now = 1_000;
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  controller.activate("main", { durationMs: 60_000, mode: "turn-limit", expiryPolicy: "block-new" });
+  controller.assign("main", {
+    parentPlanItemId: "item-1",
+    objective: "Retained work",
+    scope: ["src"],
+    acceptance: ["Done"],
+    budgetMs: 50_000,
+  });
+  now = 2_000;
+  controller.complete("main", "assignment-1", "complete");
+  controller.armTurn("main");
+  const before = controller.snapshot("main");
+  assert.throws(() => controller.setDuration("main", 5_000), /assignment/);
+  assert.deepEqual(controller.snapshot("main"), before);
+});
+
+test("subagent delegation is blocked during wrap-up", async () => {
+  let now = 1_000;
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("start 10s block-new", ctx);
+  now = 9_500;
+  const blocked = await host.emit("tool_call", {
+    toolCallId: "subagent-wrap-up",
+    toolName: "subagent",
+    input: { agent: "scout", task: "Read README.md" },
+  }, ctx) as { block: boolean; reason: string };
+  assert.equal(blocked.block, true);
+});
+
+test("context event exposes measured wall-clock fields to the model", async () => {
+  let now = 1_000;
+  const controller = new WallClockController({ now: () => now }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.commands.get("wallclock").handler("start 60s block-new", ctx);
+  await host.emit("before_provider_request", {}, ctx);
+  now = 1_400;
+  await host.emit("after_provider_response", {}, ctx);
+  const result = await host.emit("context", { messages: [] }, ctx) as { messages: Array<{ content: Array<{ text: string }> }> };
+  const text = result.messages[0]!.content[0]!.text;
+  assert.match(text, /currentTimeMs|Current time/);
+  assert.match(text, /totalElapsedMs|Total elapsed/);
+  assert.match(text, /latestInferenceElapsedMs|Latest inference/);
+  assert.match(text, /latestToolCallElapsedMs|Latest tool/);
+  assert.match(text, /assignmentElapsedMs|Assignment elapsed/);
+});
+
+test("fast-lane state survives session restore with its bounded tool count", async () => {
+  const controller = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const host = new FakeHost();
+  installHostExtension(host as unknown as RuntimeHost, {
+    controller,
+    enforcement: { name: "fake-omp", canBlockNew: true, canAbortAction: () => true, abortRunning: () => undefined, abortObserved: () => true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const ctx = context();
+  await host.emit("message_start", {
+    message: { role: "custom", details: { name: "do-it-now", args: "finish this task" }, content: "skill body" },
+  }, ctx);
+  for (let index = 0; index < 12; index += 1) {
+    await host.emit("tool_call", { toolCallId: `fast-${index}`, toolName: "read", input: {}, action: "read" }, ctx);
+    await host.emit("tool_result", { toolCallId: `fast-${index}`, isError: false }, ctx);
+  }
+  const entries = host.entries.map((entry) => ({ type: "custom", ...entry }));
+  const restoredController = new WallClockController({ now: () => 1_000 }, new MemoryStore());
+  const restoredHost = new FakeHost();
+  installHostExtension(restoredHost as unknown as RuntimeHost, {
+    controller: restoredController,
+    enforcement: { name: "fake-omp", canBlockNew: true, canAbortAction: () => true, abortRunning: () => undefined, abortObserved: () => true },
+    schedule: () => "timer",
+    cancelSchedule: () => undefined,
+  });
+  const restoredCtx = context("main", entries);
+  await restoredHost.emit("session_start", {}, restoredCtx);
+  const blocked = await restoredHost.emit("tool_call", { toolCallId: "after-restore", toolName: "read", input: {}, action: "read" }, restoredCtx) as { block: boolean };
+  assert.equal(blocked.block, true);
 });

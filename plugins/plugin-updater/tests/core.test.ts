@@ -76,6 +76,7 @@ test("parsePluginList extracts GitHub plugins and counts local plugins", () => {
   assert.equal(parsed.github[0].source.requested_ref, undefined);
 });
 
+
 test("parsePluginList rejects invalid payloads", () => {
   assert.throws(() => parsePluginList("not json"), /invalid plugin-list JSON/);
   assert.throws(() => parsePluginList("{}"), /invalid plugin-list response/);
@@ -227,6 +228,9 @@ test("sortForUpdate keeps the updater itself last", () => {
 });
 
 test("minHerdrHint flags minimum-version refusals only", () => {
+  const actualRefusal =
+    "plugin requires Herdr 0.9.0 or newer; current Herdr is 0.8.2";
+  assert.match(minHerdrHint(actualRefusal) ?? "", /newer Herdr binary/);
   assert.match(
     minHerdrHint("install failed: plugin min_herdr_version 0.9.0 exceeds this binary") ?? "",
     /newer Herdr binary/,

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { appendSkiterateNote, modelName, parseCommandArgs } from "../src/record.ts";
+import { appendSkiterateNote, collectGitMetadata, modelName, parseCommandArgs } from "../src/record.ts";
 
 test("command arguments accept an optional skill and preserve note text", () => {
   assert.deepEqual(parseCommandArgs("--skill lc-ticketize fix the acceptance note"), {
@@ -58,4 +58,18 @@ test("append honors SKITERATE_PATH and writes one JSON record with metadata", as
 test("model metadata uses the host model id when provider is absent", () => {
   assert.equal(modelName({ id: "gpt-test" }), "gpt-test");
   assert.equal(modelName(undefined), undefined);
+});
+
+test("collectGitMetadata strips credentials from the persisted repo identity", async () => {
+  const remotes: Record<string, string> = {
+    "https://user:secret@github.com/emo-eth/skills.git": "https://github.com/emo-eth/skills.git",
+    "https://token123@github.com/emo-eth/skills.git": "https://github.com/emo-eth/skills.git",
+    "ssh://git@github.com/emo-eth/skills.git": "ssh://git@github.com/emo-eth/skills.git",
+    "git@github.com:emo-eth/skills.git": "git@github.com:emo-eth/skills.git",
+  };
+  for (const [remote, expected] of Object.entries(remotes)) {
+    const git = await collectGitMetadata("/repo/worktree", async (args) =>
+      args[0] === "remote" ? remote : args[1] === "--show-toplevel" ? "/repo/worktree" : "main");
+    assert.equal(git.repo, expected, remote);
+  }
 });

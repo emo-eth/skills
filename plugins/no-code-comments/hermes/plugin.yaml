@@ -1,9 +1,8 @@
 name: no-code-comments
-version: "0.3.0"
-description: Deterministically strips prose comments from Hermes code-writing tool inputs while preserving semantic directives.
+version: "0.4.0"
+description: Advisory no-code-comments policy prompt and /no-code-comments status command for Hermes.
 author: emo-eth
 kind: standalone
 tags:
   - code-quality
-  - enforcement
-  - middleware
+  - advisory

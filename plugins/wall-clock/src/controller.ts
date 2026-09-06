@@ -110,17 +110,16 @@ export class WallClockController {
     if (state.stopped) throw new Error("Wall-clock is not active for this session");
     requireDuration(durationMs);
     if (!Number.isFinite(at)) throw new Error("A finite update time is required");
+    const hardDeadline = at + durationMs;
+    const assignment = state.assignments.find((item) => item.hardDeadline > hardDeadline);
+    if (assignment) throw new Error(`Duration cannot end before assignment ${assignment.id}`);
     if (state.turnState === "armed") {
-      // While armed, only the configured duration changes; deadlines are recomputed when a turn starts.
+      const wrapUpMs = resizeWrapUp(state, durationMs);
       state.durationMs = durationMs;
+      if (state.hardDeadline !== undefined) state.wrapUpAt = state.hardDeadline - wrapUpMs;
       state.revision += 1;
       this.save(state);
       return this.status(sessionId);
-    }
-    const hardDeadline = at + durationMs;
-    const assignment = state.assignments.find((item) => item.hardDeadline > hardDeadline);
-    if (assignment) {
-      throw new Error(`Duration cannot end before assignment ${assignment.id}`);
     }
     const wrapUpMs = resizeWrapUp(state, durationMs);
     state.durationMs = durationMs;
@@ -476,6 +475,9 @@ export class WallClockController {
       "Budget is a ceiling: finish as soon as the acceptance target is met.",
       "If you reduce scope or validation, keep the result working and report the shortcut, tradeoff, and skipped work.",
     ].filter((line): line is string => line !== undefined);
+    lines.push(
+      `Measured: currentTimeMs=${context.currentTimeMs}; totalElapsedMs=${context.totalElapsedMs}; latestInferenceElapsedMs=${context.latestInferenceElapsedMs}; latestToolCallElapsedMs=${context.latestToolCallElapsedMs}; assignmentElapsedMs=${context.assignmentElapsedMs}`,
+    );
     if (status.assignment) {
       lines.push(`Assignment ${status.assignment.id}: ${status.assignment.objective}`);
       lines.push(`Acceptance: ${status.assignment.acceptance.join("; ")}`);
@@ -556,7 +558,7 @@ export class WallClockController {
 
 export function classifyAction(toolName: string, input?: unknown): ActionClass {
   const name = toolName.toLowerCase();
-  if (name.includes("task") || name.includes("spawn") || name.includes("delegate") || name.includes("assign")) return "delegate";
+  if (name.includes("task") || name.includes("spawn") || name.includes("delegate") || name.includes("assign") || name === "subagent") return "delegate";
   if (name.includes("final") || name.includes("report") || name.includes("complete") || name.includes("status") || name.includes("context") || name.includes("check")) return "finalize";
   if (name === "read" || name === "search" || name.includes("list") || name.includes("inspect")) return "read";
   if (name === "write" || name === "edit" || name.includes("patch") || name.includes("create") || name.includes("update")) return "write";
@@ -572,7 +574,7 @@ function freshRuntimeTiming(): RuntimeTiming {
 export function isWallClockControlTool(toolName: string): boolean {
   const name = toolName.toLowerCase();
   return name === "wallclock_start"
-    || name === "wallclock_set"
+    || name === "wallclock_assign"
     || name === "wallclock_status"
     || name === "wallclock_stop"
     || name === "wallclock_context"

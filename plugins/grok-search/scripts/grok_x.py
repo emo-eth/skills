@@ -196,10 +196,10 @@ def _x_identity(value: str) -> tuple[str, str] | None:
         return None
     if parsed.scheme != "https" or parsed.hostname not in {"x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"}:
         return None
-    status = re.search(r"/status/(\d+)", parsed.path)
+    status = re.search(r"/status/(\d+)(?=\/|$)", parsed.path)
     if status:
         return "status", status.group(1)
-    article = re.search(r"/i/article/(\d+)", parsed.path)
+    article = re.search(r"/i/article/(\d+)(?=\/|$)", parsed.path)
     if article:
         return "article", article.group(1)
     return None

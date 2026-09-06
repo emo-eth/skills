@@ -1,11 +1,12 @@
 import { runSnapshot } from "./enforce.ts";
-import { loadState, saveState } from "../shared/store.ts";
+import { mutateState } from "../shared/store.ts";
 
 async function main(): Promise<void> {
-  const state = loadState();
-  const mode = state.mode === "focus" ? "modal" : "focus";
-  saveState({ ...state, mode });
-  console.log(`focus-order mode: ${mode}`);
+  const state = await mutateState((current) => ({
+    ...current,
+    mode: current.mode === "focus" ? "modal" : "focus",
+  }));
+  console.log(`focus-order mode: ${state.mode}`);
   await runSnapshot();
 }
 

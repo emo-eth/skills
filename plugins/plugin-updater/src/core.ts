@@ -16,6 +16,7 @@ export type GithubSource = {
 export type GithubPlugin = {
   pluginId: string;
   source: GithubSource;
+  enabled: boolean;
 };
 
 export type RemoteRef = { sha: string; name: string };
@@ -46,6 +47,7 @@ export type CheckOutcome = {
   classification: Classification;
   detail?: string;
   preview?: UpdatePreview;
+  enabled?: boolean;
 };
 
 export type ExecResult = {
@@ -185,6 +187,7 @@ export function parsePluginList(
         resolved_commit: optionalString(narrow.resolved_commit),
         managed_path: optionalString(narrow.managed_path),
       },
+      enabled: typeof record.enabled === "boolean" ? record.enabled : true,
     });
   }
   return { github, localCount };
@@ -286,7 +289,11 @@ export function shortSha(sha: string | undefined): string {
 }
 
 export function minHerdrHint(stderr: string): string | null {
-  if (/min_herdr_version/i.test(stderr) || /newer (herdr )?(binary|version)/i.test(stderr)) {
+  if (
+    /min_herdr_version/i.test(stderr) ||
+    /newer (herdr )?(binary|version)/i.test(stderr) ||
+    /requires Herdr .+ or newer/i.test(stderr)
+  ) {
     return "This plugin now requires a newer Herdr binary. Update Herdr first, then retry.";
   }
   return null;
@@ -476,6 +483,7 @@ export async function collectOutcomes(
         remoteSha: tracked.sha ?? undefined,
         classification,
         detail,
+        enabled: plugin.enabled,
       };
       if (classification === "behind") {
         outcome.preview = await collectPreview(run, outcome);

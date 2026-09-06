@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   appendNoteRecord,
+  collectGitMetadata,
   modelName,
   outputPath,
   parseCommandArgs,
@@ -132,4 +133,18 @@ test("model metadata uses the provider and model id", () => {
   assert.equal(modelName({ provider: "openai", id: "gpt-test" }), "openai/gpt-test");
   assert.equal(modelName({ id: "gpt-test" }), "gpt-test");
   assert.equal(modelName(undefined), undefined);
+});
+
+test("collectGitMetadata strips credentials from the persisted repo identity", async () => {
+  const remotes: Record<string, string> = {
+    "https://user:secret@github.com/emo-eth/skills.git": "https://github.com/emo-eth/skills.git",
+    "https://token123@github.com/emo-eth/skills.git": "https://github.com/emo-eth/skills.git",
+    "ssh://git@github.com/emo-eth/skills.git": "ssh://git@github.com/emo-eth/skills.git",
+    "git@github.com:emo-eth/skills.git": "git@github.com:emo-eth/skills.git",
+  };
+  for (const [remote, expected] of Object.entries(remotes)) {
+    const git = await collectGitMetadata("/repo/worktree", async (args) =>
+      args[0] === "remote" ? remote : args[1] === "--show-toplevel" ? "/repo/worktree" : "main");
+    assert.equal(git.repo, expected, remote);
+  }
 });

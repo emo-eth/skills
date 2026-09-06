@@ -196,20 +196,19 @@ const X_HOSTS: Record<string, true> = {
 
 export function installGrokTools(
   host: RuntimeHost,
-  options: { runner?: GrokRunner; consent?: "context" | "approval" } = {},
+  options: { runner?: GrokRunner } = {},
 ): void {
   if (typeof host?.registerTool !== "function") {
     throw new Error("grok-search requires the host's native registerTool seam");
   }
 
   const runner = options.runner ?? runGrokCli;
-  const consent = options.consent ?? "context";
   host.registerTool({
     name: "grok_search",
     label: "Search X with Grok",
     description: "Search live X posts, sources, reactions, narratives, and sentiment. Use quick depth for ordinary context and deep depth for broad, high-stakes, or fast-moving questions. Sources mode returns evidence for the calling agent; answer mode asks Grok for bounded X-native synthesis. Never use this tool for the general web.",
     parameters: SEARCH_SCHEMA,
-    approval: consent === "approval" ? "read" : undefined,
+    approval: "read",
     execute: async (...args: unknown[]) => {
       const input = toolInput<SearchInput>(args);
       return textResult(await runContentTool(runner, buildSearchArgs(input), args, "search"));
@@ -221,7 +220,7 @@ export function installGrokTools(
     label: "Fetch X content",
     description: "Faithfully retrieve a specific X post, authored thread, or X Article. Anchor content is the default. Request authored content for the complete author-composed unit and discussion for representative replies and quote-post reactions. Parent, quote, link, and media context retain provenance.",
     parameters: FETCH_SCHEMA,
-    approval: consent === "approval" ? "read" : undefined,
+    approval: "read",
     execute: async (...args: unknown[]) => {
       const input = toolInput<FetchInput>(args);
       return textResult(await runContentTool(runner, buildFetchArgs(input), args, "fetch"));
@@ -233,11 +232,11 @@ export function installGrokTools(
     label: "Connect Grok",
     description: "Inspect Grok authentication or run a consent-gated device login. start_device requests explicit host approval before contacting xAI. Present its verification URL and code, wait for browser approval, call complete_device with the returned session, then retry the original Grok request.",
     parameters: AUTH_SCHEMA,
-    approval: consent === "approval" ? authApproval : undefined,
+    approval: authApproval,
     execute: async (...args: unknown[]) => {
       const input = toolInput<AuthInput>(args);
       const signal = toolSignal(args);
-      if (input.action === "start_device" && consent === "context" && !await confirmDeviceAuthorization(args)) {
+      if (input.action === "start_device" && !await confirmDeviceAuthorization(args)) {
         return textResult({
           kind: "error",
           code: "authorization_cancelled",
@@ -365,16 +364,8 @@ export function buildAuthArgs(input: AuthInput): string[] {
 }
 
 function authApproval(input: unknown): ToolApprovalDecision {
-  if (typeof input === "object" && input !== null && "action" in input) {
-    if (input.action === "status") return "read";
-    if (input.action === "start_device") {
-      return {
-        tier: "write",
-        reason: "Start Grok device authorization",
-        override: true,
-        policy: "prompt",
-      };
-    }
+  if (typeof input === "object" && input !== null && "action" in input && input.action === "status") {
+    return "read";
   }
   return "write";
 }
@@ -452,12 +443,12 @@ async function resolveHostOAuth(
   const models = typeof registry.getAll === "function" ? [...registry.getAll()] : [];
   const current = context?.model;
   if (current !== undefined && !models.includes(current)) models.unshift(current);
-  const xaiModel = models.find((model) => (
+  const xaiModel = models.find((model) => model.provider === "xai");
+  let subscriptionPresent = models.some((model) => (
     model.provider === "xai"
     && typeof registry.isUsingOAuth === "function"
     && registry.isUsingOAuth(model)
   ));
-  let subscriptionPresent = xaiModel !== undefined;
   if (xaiModel !== undefined && typeof registry.getProviderAuth === "function") {
     try {
       const resolved = await registry.getProviderAuth("xai");
@@ -466,7 +457,7 @@ async function resolveHostOAuth(
         return { credential, subscriptionPresent: true };
       }
     } catch {
-      return { subscriptionPresent: true };
+      return { subscriptionPresent };
     }
   }
 
@@ -778,9 +769,9 @@ function xIdentity(value: string): string | undefined {
     return undefined;
   }
   if (parsed.protocol !== "https:" || X_HOSTS[parsed.hostname.toLowerCase()] !== true) return undefined;
-  const status = parsed.pathname.match(/\/status\/(\d+)/);
+  const status = parsed.pathname.match(/\/status\/(\d+)(?=\/|$)/);
   if (status !== null) return `status:${status[1]}`;
-  const article = parsed.pathname.match(/^\/i\/article\/(\d+)/);
+  const article = parsed.pathname.match(/^\/i\/article\/(\d+)(?=\/|$)/);
   return article === null ? undefined : `article:${article[1]}`;
 }
 

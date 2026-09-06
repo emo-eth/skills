@@ -1,21 +1,18 @@
-# Wall Clock Project State
+# Repository Project State
 
 ## What this is
 
-Wall-clock is an Agent Plugins package with native Pi and OMP adapters for enforced time boundaries around agent sessions, assignments, and host actions. Codex and Claude are limited to portable package discovery, and Claude proprietary systems are excluded. The product document still has draft approval metadata, but the v0 implementation now matches its reviewed Pi and OMP contract and has real-host evidence.
+This repository publishes personal skills and twelve executable plugin packages. Wall-clock is the largest runtime package: native Pi and OMP adapters enforce time boundaries around sessions, assignments, and host actions. Codex and Claude remain portable discovery targets, not enforcement hosts.
 
 ## Where we are
 
-Current phase: v0 implementation complete on `main`. Pi 0.84.1 and OMP 17.2.15 load the native adapters, inject measured time, block late native work, and abort their real bash executors under `abort-running`. The native `/wallclock` command accepts an optional `start`, defaults an omitted policy to `block-new`, and submits an optional trailing prompt only after activation; idle use starts a turn and active use steers it. The host status display recalculates from the current clock once per second. OMP supports inline batch delegation: a parent can choose any number of independent task items, the host validates the full batch, creates one assignment per item, bounds each child by the parent's hard deadline, and correlates each child by batch index. Running child actions are aborted at child or parent expiry even when the parent policy is `block-new`; child admission fails closed without a tested abort seam. Nested delegation remains deferred. The adapters also recognize explicit `/do-it-now` and `/wrap-it-up` skill invocations and apply a fixed two-minute host guard.
+The September executable audit covers all twelve packages plus standalone tools and skill helpers. It corrected native adapter, cancellation, persistence, consent, credential-recording, concurrency, input, and partial-application failures. Evidence and remaining boundaries are in `docs/log/2026-09-06-executable-verification.md`. Pstack was inspected but left unchanged at the user's direction. The separately authored `plugins/no-code-comments/` is now advisory-only v0.4.0 and remains uninstalled; it never rewrites tool arguments. A full OMP restart is required to remove its old hooks from an already-running process.
+
+Wall-clock's previously claimed v0 completion was too broad. Pi 0.84.1 and OMP 17.2.15 load native adapters, inject measured time, block late work, and abort tested native bash executors under `abort-running`. `/wallclock` accepts an optional `start`, defaults to `block-new`, and submits an optional trailing prompt after activation. The status display recalculates once per second. Pre-created single OMP assignments are tested; inline batch delegation is not supported by the pinned host because its native task schema strips `tasks[].wallClock` before admission. Do not infer batch support from direct-hook tests. Nested delegation remains deferred. Explicit `/do-it-now` and `/wrap-it-up` invocations apply a fixed two-minute guard.
 
 The package is installed and enabled in the normal local OMP profile from the wall-clock plugin checkout. A clean OMP process auto-loaded the extension, activated a one-millisecond contract, and blocked a real shell command after expiry. A newly installed OMP npm plugin needs a full process restart; `/reload-plugins` does not activate it in OMP 17.2.15. The original completion evidence is in `docs/log/2026-08-12-wall-clock-completion.md`; direct-start command and live-status evidence is in `docs/log/2026-08-12-wall-clock-command-ux.md`.
 
-Native wall-clock contracts started by an explicit `/wallclock` command or
-`wallclock_start` clear after terminal agent settlement: Pi's
-`agent_settled` or OMP's terminal `agent_end`. Expired contracts remain active
-through continuations, and cleanup waits for active child work before stopping.
-A normal follow-up does not need `/wallclock stop`. Evidence is in
-`docs/log/2026-08-13-wall-clock-self-clear.md`.
+Normal contracts started by `/wallclock` or `wallclock_start` persist until explicit stop. Configured turn-limit contracts return to armed state after terminal settlement, waiting for the next real turn. The September regressions cover armed-session restoration, duration changes, and fast-lane call-limit persistence. The older self-clear log is historical evidence, not the current contract.
 
 The current package includes persisted-state validation with mode and
 configured-duration fields, assignment and report contracts, report-linked
@@ -96,8 +93,8 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Topic | Thinking and decisions | Code | Verified by | Tier |
 | --- | --- | --- | --- | --- |
 | Product contract | `docs/prds/2026-08-11-wall-clock/vibe.md`, `prd.md` | `plugins/wall-clock/` | `docs/review/2026-08-11-wall-clock-round-1-answers.md` | documented |
-| Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `mcp.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
-| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | `npm run check`, `npm test` (74 Node tests and 6 Bun native-runner tests), Pi and OMP command-line tests, isolated OMP install test, native TaskTool child tests, and the dated completion logs | verified-live |
+| Plugin capability boundary | `docs/prds/2026-08-11-wall-clock/plugin-capabilities.md` | `plugins/wall-clock/plugin.json`, `skills/wall-clock/SKILL.md` | `plugins/wall-clock/tests/plugin.test.ts` | documented |
+| Runtime implementation | `proposals/wall-clock/design.md`, `docs/DECISIONS.md` | `plugins/wall-clock/src/`, `plugins/wall-clock/tests/` | September audit log for current checks and limitations; older completion logs for the specific live scenarios they exercised | verified-live for named scenarios only |
 | Nested assignment limits | `proposals/wall-clock/nested-assignment-limits.md` | not implemented | data-shape sign-off and Gate 0 still required | proposed |
 | Skiterate notes | `docs/DECISIONS.md` D36, `docs/vibe.md` V7 | `plugins/skiterate/` | package `npm run check`, `npm test`, and clean OMP 17.2.15 RPC with `SKITERATE_PATH` override | verified-live |
 | Initiative reporting | `skills/initiative-standup/SKILL.md` | `skills/initiative-standup/SKILL.md` plus Memex session inventory and transcript retrieval, with optional Herdr navigation | `memex index --include-agents` and the `nicosuave.memex` refresh action succeeded 2026-08-12 | documented |
@@ -105,8 +102,9 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Repo philosophy (the sieve) | `docs/vibe.md`, `docs/log/2026-08-13-sieve-vibe.md`, `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md` | lc- family revisions (lc-north-star, vibe template, lifecycle.md, lc-ticketize, lc-review-capture, lc-project-state) on `main` | Plannotator rounds 1-3 applied (D20-D35); improved north-star gates pass on vibe.md; approval pending, edits direct | proposed |
 | Direct execution lane | `skills/do-it-now/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` and skill contract inspection | documented |
 | Papercut logging | `skills/papercut/SKILL.md` | `skills/papercut/scripts/papercut.sh` | append-only `~/PAPERCUTS.md`, `--path`/`PAPERCUTS_PATH`, `--repo` metadata | documented |
-| Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | explicit-contract cleanup after terminal settlement, expiry enforcement through continuation, child-work retention, and skill contract inspection | documented |
-| Grok X retrieval | `docs/prds/2026-09-02-grok-search/vibe.md` | `plugins/grok-search/src/`, `plugins/grok-search/scripts/`, `plugins/grok-search/tests/` | `npm run check`; 27 Python, 29 Node, and 2 native-runner tests; fresh Pi and OMP processes; live OMP search and anchor fetch; live authored continuation and bounded discussion expansion with per-object citations and no degradation | verified-live |
+| Completion lane | `skills/wrap-it-up/SKILL.md`, `plugins/wall-clock/src/host.ts` | `plugins/wall-clock/tests/host.test.ts` | fixed fast-lane guard, expiry enforcement, child-work retention, and persisted call-limit regression | source-verified |
+| Grok X retrieval | `docs/prds/2026-09-02-grok-search/vibe.md` | `plugins/grok-search/src/`, `plugins/grok-search/scripts/`, `plugins/grok-search/tests/` | September audit for current consent and URL-identity checks; prior live search/fetch evidence described above | verified-live for named scenarios only |
+| Executable repository audit | `docs/log/2026-09-06-executable-verification.md` | twelve plugin packages, `tools/`, non-pstack executable skill helpers | package checks, native runners, isolated CLI/script smokes; explicit external-service and host gaps | source-verified and isolated-runtime-verified |
 | Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Session history | `docs/prds/2026-09-02-session-history/vibe.md` | not implemented; CASS is the likely mechanism | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Agent memory | `docs/prds/2026-09-02-agent-memory/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |

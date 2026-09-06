@@ -3,7 +3,7 @@ import { appendSkiterateNote, extractSkillName, parseCommandArgs } from "./recor
 export type RuntimeContext = {
   cwd?: string;
   sessionId?: string;
-  sessionManager?: { getSessionFile?: () => string | undefined };
+  sessionManager?: { getSessionId?: () => string | undefined; getSessionFile?: () => string | undefined };
   model?: unknown;
   ui?: { notify?: (message: string, level?: string) => void };
 };
@@ -45,6 +45,8 @@ export function installSkiterateExtension(host: RuntimeHost, agent: string): voi
 }
 
 function sessionKey(context: RuntimeContext): string {
-  const session = context.sessionId ?? context.sessionManager?.getSessionFile?.();
+  const session = context.sessionId
+    ?? context.sessionManager?.getSessionId?.()
+    ?? context.sessionManager?.getSessionFile?.();
   return session || context.cwd || "default";
 }

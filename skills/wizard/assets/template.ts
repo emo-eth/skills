@@ -54,26 +54,28 @@ const colors = {
   yellow: "\u001b[33m",
 };
 
-let lineReader: ReturnType<typeof createInterface> | undefined;
-const scriptedInput: string[] | undefined = stdin.isTTY
-  ? undefined
-  : readFileSync(0, "utf8").split(/\r?\n/);
-let scriptedInputIndex = 0;
+type LineReader = {
+  question(prompt: string): Promise<string>;
+  close(): void;
+};
+type ScriptReader = {
+  [Symbol.asyncIterator](): AsyncIterator<string>;
+  close(): void;
+};
+
+let lineReader: LineReader | undefined;
+let scriptedInput: ScriptReader | undefined;
 
 function paint(value: string, color: string): string {
   return useColor ? `${color}${value}${colors.reset}` : value;
 }
 
-function clearScreen(): void {
-  if (stdout.isTTY) {
-    stdout.write("\u001b[2J\u001b[3J\u001b[H");
-  }
-}
-
 async function readLine(prompt: string): Promise<string> {
   stdout.write(prompt);
-  if (scriptedInput !== undefined) {
-    return scriptedInput[scriptedInputIndex++] ?? "";
+  if (!stdin.isTTY) {
+    scriptedInput ??= createInterface({ input: stdin });
+    const result = await scriptedInput[Symbol.asyncIterator]().next();
+    return result.done ? "" : result.value;
   }
 
   lineReader ??= createInterface({ input: stdin, output: stdout });
@@ -82,7 +84,9 @@ async function readLine(prompt: string): Promise<string> {
 
 function closeLineReader(): void {
   lineReader?.close();
+  scriptedInput?.close();
   lineReader = undefined;
+  scriptedInput = undefined;
 }
 
 async function readHidden(prompt: string): Promise<string> {

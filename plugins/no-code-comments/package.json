@@ -1,6 +1,6 @@
 {
   "name": "@emo-eth/no-code-comments-plugin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -20,9 +20,10 @@
   },
   "scripts": {
     "check": "tsc -p tsconfig.json",
-    "test": "npm run test:node && npm run test:omp-runner && npm run test:hermes",
+    "test": "npm run test:node && npm run test:omp-runner && npm run test:pi-runner && npm run test:hermes",
     "test:node": "node --experimental-strip-types --test tests/*.test.ts",
     "test:omp-runner": "bun test ./tests/native-omp-runner.bun.ts",
+    "test:pi-runner": "bun test ./tests/native-pi-runner.bun.ts",
     "test:hermes": "python3 -m unittest discover -s hermes/tests -v"
   },
   "devDependencies": {

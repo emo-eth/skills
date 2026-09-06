@@ -406,6 +406,23 @@ test("status surfaces the tools limitation and list shows the roster", async () 
   assert.ok(list.includes("selected"));
 });
 
+test("status shows the complete status-only nit", async () => {
+  const registry = new FakeRegistry();
+  registry.verdict = JSON.stringify({ severity: "nit", note: "The filename hides the ownership boundary." });
+  const { host } = await setup(
+    {
+      "WATCHDOG.yml": WATCHDOG("  - name: vibe\n"),
+    },
+    registry,
+  );
+  await host.emit("session_start");
+  host.branch.push(...messageEntries(MESSAGES));
+  await host.emit("agent_settled");
+  await host.command("status");
+  assert.ok(lastNotice(host).includes("The filename hides the ownership boundary."));
+  assert.equal(host.userMessages.length, 0, "a nit never becomes a follow-up");
+});
+
 test("a host without the command seam still reviews settled runs", async () => {
   const root = await makeProject({
     ".git": "",

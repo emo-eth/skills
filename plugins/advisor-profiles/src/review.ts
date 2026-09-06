@@ -163,6 +163,10 @@ export async function runAdvisorReviews(input: AdvisorReviewInput): Promise<Revi
     outcomes.push(outcome);
     input.record(advisor, outcome);
   }
+  for (const outcome of outcomes) {
+    if (outcome.kind !== "note" || outcome.suppressedDuplicate) continue;
+    input.dedupe.add(normalizeNote(outcome.note));
+  }
 
   let bestIndex = -1;
   let bestSeverity = 0;
@@ -222,14 +226,13 @@ async function reviewAdvisor(
   if (verdict.kind === "error") return verdict;
   if (verdict.kind === "pass") return { kind: "pass" };
 
-  const normalized = normalizeNote(verdict.note);
-  if (input.dedupe.has(normalized)) {
-    return { kind: "note", severity: verdict.severity, note: verdict.note, suppressedDuplicate: true };
-  }
-  input.dedupe.add(normalized);
-  return { kind: "note", severity: verdict.severity, note: verdict.note, suppressedDuplicate: false };
+  return {
+    kind: "note",
+    severity: verdict.severity,
+    note: verdict.note,
+    suppressedDuplicate: input.dedupe.has(normalizeNote(verdict.note)),
+  };
 }
-
 function extractJsonObject(text: string): string | undefined {
   const trimmed = text.trim();
   if (trimmed.startsWith("{")) {

@@ -7,7 +7,7 @@ import {
   urgentAgents,
 } from "../shared/identity.ts";
 import { popupOpen } from "../shared/modal-lock.ts";
-import { loadState, saveState } from "../shared/store.ts";
+import { mutateState } from "../shared/store.ts";
 import type { AgentSnapshot, FocusOrderState } from "../shared/types.ts";
 
 const MODAL_WIDTH = "90%";
@@ -15,10 +15,8 @@ const MODAL_HEIGHT = 20;
 
 /** One full snapshot: load state, list agents, clear snoozes, save, then enforce. */
 export async function runSnapshot(): Promise<void> {
-  const state = loadState();
   const agents = await listAgents();
-  const normalized = clearResolvedSnoozes(state, agents);
-  if (normalized !== state) saveState(normalized);
+  const normalized = await mutateState((state) => clearResolvedSnoozes(state, agents));
   await enforce(normalized, agents);
 }
 

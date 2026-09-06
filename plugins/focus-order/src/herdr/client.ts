@@ -30,15 +30,11 @@ type WorkspaceInfo = {
 };
 
 export async function listAgents(): Promise<AgentSnapshot[]> {
-  const [agentResponse, workspaceResponse] = await Promise.allSettled([
+  const [agentResult, workspaceResult] = await Promise.all([
     call("agent.list", {}),
     call("workspace.list", {}),
   ]);
-  if (agentResponse.status === "rejected") throw agentResponse.reason;
-  const agentResult = agentResponse.value;
-  const workspaces = workspaceResponse.status === "fulfilled"
-    ? workspaceMap(workspaceResponse.value.workspaces)
-    : new Map<string, WorkspaceInfo>();
+  const workspaces = workspaceMap(workspaceResult.workspaces);
   const candidates = agentResult.agents ?? agentResult.panes;
   if (!Array.isArray(candidates)) return [];
   return candidates.flatMap((value) => {

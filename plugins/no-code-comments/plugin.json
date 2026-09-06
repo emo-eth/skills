@@ -1,12 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "no-code-comments",
-  "version": "0.3.0",
-  "description": "Deterministically strips prose comments from code-writing tool inputs while preserving semantic directives.",
+  "version": "0.4.0",
+  "description": "Advisory no-code-comments policy prompt and /no-code-comments status command for Pi, OMP, and Hermes.",
   "author": {
     "name": "emo-eth",
     "url": "https://github.com/emo-eth"
   },
   "repository": "https://github.com/emo-eth/skills",
-  "keywords": ["code comments", "enforcement", "pi", "omp", "hermes"]
+  "keywords": ["code comments", "advisory", "pi", "omp", "hermes"]
 }

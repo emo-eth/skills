@@ -258,14 +258,14 @@ test("returns help string for 'help'", () => {
   assert.equal(message, "focus-order status <working|idle|blocked|done>; focus-order clear");
 });
 
-test("help paths do not touch host status, entries, or notifications", () => {
+test("help remains visible without mutating agent status", () => {
   const host = makeFakeHost();
   install(host);
   host.commands["focus-order"].handler("", CONTEXT);
   host.commands["focus-order"].handler("help", CONTEXT);
   assert.equal(host.statusCalls.length, 0);
   assert.equal(host.entryCalls.length, 0);
-  assert.equal(host.notifyCalls.length, 0);
+  assert.equal(host.notifyCalls.length, 2);
 });
 
 // --- Lifecycle reporting ---

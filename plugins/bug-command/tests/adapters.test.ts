@@ -113,6 +113,38 @@ for (const [agent, adapter, host] of adapters) {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test(`${agent} records the native turn index and start timestamp over the approximate hint`, async () => {
+    const root = await mkdtemp(join(tmpdir(), `bug-command-native-turn-${host}-`));
+    try {
+      const fake = new FakeHost();
+      adapter(fake);
+      const current = context(`${host}-native-turn`, fake.notices);
+
+      await fake.emit("before_agent_start", {
+        prompt: '<skill name="skill-iteration" location="/skills/skill-iteration/SKILL.md">',
+        pluginName: "turn-summary",
+      }, current);
+      await fake.emit("turn_start", {
+        type: "turn_start",
+        turnIndex: 4,
+        timestamp: 1760000000000,
+      }, current);
+      await fake.emit("tool_call", { toolName: "read" }, current);
+
+      await withEnvPath("BUGS_PATH", join(root, "BUGS.md"), async () => {
+        await fake.commands.get("bug")!.handler("turn metadata drifted from the native host", current);
+      });
+
+      const line = (await readFile(join(root, "BUGS.md"), "utf8")).trim();
+      const record = JSON.parse(line.slice(2)) as Record<string, unknown>;
+      assert.equal(record.turn, 4);
+      assert.equal(record.turnStartedAt, new Date(1760000000000).toISOString());
+      assert.equal(record.lastEvent, "tool_call");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 }
 
 test("each personal command writes to its own file with its own notice", async () => {

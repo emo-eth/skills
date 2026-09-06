@@ -17,7 +17,7 @@ import {
   worktreeKey,
   storedWorktreeLabel,
 } from "../shared/identity.ts";
-import { loadState, saveState } from "../shared/store.ts";
+import { loadState, mutateState } from "../shared/store.ts";
 import type {
   AgentSnapshot,
   FocusOrderState,
@@ -30,11 +30,17 @@ import {
   type ManagerSelection,
   type ManagerWorktreeRow,
 } from "./manager-view.ts";
+
 const CLEAR = "\u001b[2J\u001b[H";
 
 type Section = ManagerSection;
 type Selection = ManagerSelection;
 type WorktreeRow = ManagerWorktreeRow;
+type ApplyUpdate = (
+  mutate: (state: FocusOrderState) => FocusOrderState,
+  message: string | ((state: FocusOrderState) => string),
+) => Promise<void>;
+
 async function main(): Promise<void> {
   let state = loadState();
   let agents = await listAgents();
@@ -90,11 +96,13 @@ async function main(): Promise<void> {
     render();
   };
 
-  const update = (next: FocusOrderState, message: string): void => {
-    state = next;
-    saveState(state);
+  const update = async (
+    mutate: (state: FocusOrderState) => FocusOrderState,
+    message: string | ((state: FocusOrderState) => string),
+  ): Promise<void> => {
+    state = await mutateState(mutate);
     syncSelection();
-    status = message;
+    status = typeof message === "string" ? message : message(state);
     render();
   };
 
@@ -128,14 +136,17 @@ async function main(): Promise<void> {
       return true;
     }
     if (input === "m" || input === "M") {
-      update(
-        { ...state, mode: state.mode === "focus" ? "modal" : "focus" },
-        `Mode: ${state.mode === "focus" ? "modal" : "focus"}`,
+      await update(
+        (current) => ({ ...current, mode: current.mode === "focus" ? "modal" : "focus" }),
+        (current) => `Mode: ${current.mode}`,
       );
       return true;
     }
     if (input === "e" || input === "E") {
-      update({ ...state, enabled: !state.enabled }, `Guard ${state.enabled ? "disabled" : "enabled"}`);
+      await update(
+        (current) => ({ ...current, enabled: !current.enabled }),
+        (current) => `Guard ${current.enabled ? "enabled" : "disabled"}`,
+      );
       return true;
     }
     if (input === "l" || input === "L") {
@@ -185,11 +196,11 @@ async function main(): Promise<void> {
       return true;
     }
     if (input === "x" || input === "X") {
-      unsetSelected(update);
+      await unsetSelected(update);
       return true;
     }
     if (input === "s" || input === "S") {
-      snoozeSelected();
+      await snoozeSelected();
       return true;
     }
     if (input === "f" || input === "F") {
@@ -224,12 +235,15 @@ async function main(): Promise<void> {
 
   const moveSelected = async (
     delta: -1 | 1,
-    apply: (state: FocusOrderState, message: string) => void,
+    apply: ApplyUpdate,
   ): Promise<void> => {
     if (selection.section === "agents") {
       const agent = selectedAgent(state, agents, selection);
       if (!agent) return;
-      apply(moveRank(state, agent, delta), `${agentLabel(agent)} moved ${delta < 0 ? "up" : "down"}`);
+      await apply(
+        (current) => moveRank(current, agent, delta),
+        `${agentLabel(agent)} moved ${delta < 0 ? "up" : "down"}`,
+      );
       return;
     }
     const row = selectedWorktree(state, agents, selection);
@@ -238,19 +252,18 @@ async function main(): Promise<void> {
       render();
       return;
     }
-    apply(
-      moveWorktreeRank(state, row.agent, delta),
+    const agent = row.agent;
+    await apply(
+      (current) => moveWorktreeRank(current, agent, delta),
       `${row.label} moved ${delta < 0 ? "up" : "down"}`,
     );
   };
 
-  const rankSelected = async (
-    apply: (state: FocusOrderState, message: string) => void,
-  ): Promise<void> => {
+  const rankSelected = async (apply: ApplyUpdate): Promise<void> => {
     if (selection.section === "agents") {
       const agent = selectedAgent(state, agents, selection);
       if (!agent) return;
-      apply(addOrMoveToEnd(state, agent), `${agentLabel(agent)} ranked at the end`);
+      await apply((current) => addOrMoveToEnd(current, agent), `${agentLabel(agent)} ranked at the end`);
       return;
     }
     const row = selectedWorktree(state, agents, selection);
@@ -259,38 +272,45 @@ async function main(): Promise<void> {
       render();
       return;
     }
-    apply(addOrMoveWorktreeToEnd(state, row.agent), `${row.label} ranked at the end`);
+    const agent = row.agent;
+    await apply(
+      (current) => addOrMoveWorktreeToEnd(current, agent),
+      `${row.label} ranked at the end`,
+    );
   };
 
-  const unsetSelected = (apply: (state: FocusOrderState, message: string) => void): void => {
+  const unsetSelected = async (apply: ApplyUpdate): Promise<void> => {
     if (selection.section === "agents") {
       const agent = selectedAgent(state, agents, selection);
       if (!agent) return;
-      apply(unsetRank(state, agent), `${agentLabel(agent)} is unranked`);
+      await apply((current) => unsetRank(current, agent), `${agentLabel(agent)} is unranked`);
       return;
     }
     const row = selectedWorktree(state, agents, selection);
     if (!row) return;
     const key = worktreeKey(row.identity);
-    apply(
-      {
-        ...state,
-        ordered_worktrees: state.ordered_worktrees.filter(
+    await apply(
+      (current) => ({
+        ...current,
+        ordered_worktrees: current.ordered_worktrees.filter(
           (stored) => worktreeKey(stored.identity) !== key,
         ),
-      },
+      }),
       `${row.label} is unranked`,
     );
   };
 
-  const snoozeSelected = (): void => {
+  const snoozeSelected = async (): Promise<void> => {
     const agent = selectedAgent(state, agents, selection);
     if (!agent) {
       status = "Snooze applies to agents, not worktrees";
       render();
       return;
     }
-    update(snoozeAgent(state, agent), `${agentLabel(agent)} snoozed until it becomes working`);
+    await update(
+      (current) => snoozeAgent(current, agent),
+      `${agentLabel(agent)} snoozed until it becomes working`,
+    );
   };
 
   const focusSelected = async (): Promise<void> => {

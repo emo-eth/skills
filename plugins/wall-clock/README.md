@@ -24,7 +24,7 @@ with this plugin loaded activates a fixed fast lane:
 
 - 2-minute hard deadline;
 - `abort-running` for supported native actions;
-- bounded delegation through as many inline batch assignments as useful before wrap-up;
+- bounded delegation through pre-created assignments before wrap-up;
 - at most 12 ordinary tool calls.
 
 The lane clears when the host reports that the agent run has fully settled. If
@@ -39,7 +39,7 @@ plugin loaded activates a fixed fast lane:
 
 - two-minute hard deadline;
 - `abort-running` for supported native actions;
-- bounded delegation through as many inline batch assignments as useful while the phase is active;
+- bounded delegation through pre-created assignments while the phase is active;
 - at most 12 ordinary tool calls.
 
 The lane clears after the host reports that the agent run has fully settled. If
@@ -60,8 +60,8 @@ Activation accepts a positive duration such as `30m` or a future local time such
 
 Both policies block new delegation and destructive actions during wrap-up. Both block all new non-control work after expiry. A completed assignment also blocks more work in that assignment.
 
-The normal deadline mode clears after terminal agent settlement. The `turn-limit`
-mode stays active after terminal settlement but does not reset its deadline there.
+The normal deadline mode remains active after terminal settlement until explicitly
+stopped. The `turn-limit` mode instead becomes armed after terminal settlement.
 The next normal user message starts a fresh configured-duration window. Steering
 messages keep the current deadline and never extend it. An expired turn remains
 enforced until it settles; a later normal user message starts the next window.
@@ -79,7 +79,7 @@ The default wrap-up period is 20 percent of the available time, capped at five m
 | Host | Pre-action gate | Turn context | `block-new` | `abort-running` | Child behavior | Failure mode | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pi 0.84.1 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `find`, and `ls` | Assignments are recorded; Pi has no native task child in this adapter | Activation or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-runners.test.ts` |
-| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Each batch item receives its own inline assignment and hard deadline bounded by the parent; child work is aborted at expiry and nested delegation is deferred | Missing event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
+| OMP 17.2.15 | Native `tool_call` and `user_bash` events | Native `context`, inference, and result events | Supported | Supported for `bash`, `read`, `write`, `edit`, `grep`, `glob`, and `task` | Pre-created single assignments have native child evidence; model-issued inline batches are blocked by the host schema | Missing event bus, missing abort function, or an unabortable action is rejected | `tests/real-hosts.test.ts`, `tests/native-omp-runner.bun.ts`, `tests/host.test.ts` |
 | Portable Agent Plugin skill only | None | None | Unavailable | Unavailable | No child creation | Instructs the client to use a native Pi or OMP adapter | `tests/plugin.test.ts`, `tests/real-hosts.test.ts` |
 
 Child assignments are strictly bounded by the parent contract. Each child deadline is
@@ -125,14 +125,14 @@ Start a session, optionally submit the first prompt, and inspect it:
 `start` is optional for the normal deadline mode. The policy is optional and
 defaults to `block-new`. When the command includes a prompt, an idle host
 starts a new turn and a running host delivers it as normal steering input.
-Normal wall-clock contracts stop after terminal settlement. A `turn-limit`
+Normal wall-clock contracts remain enforced after terminal settlement until stopped. A `turn-limit`
 contract remains active after settlement and starts its next deadline when the
 next normal user message begins. Steering messages keep the current deadline.
 `set` changes the active duration in either mode without discarding state.
 
 The native status display refreshes once per second from the current host clock. A delayed refresh recalculates the remaining time instead of decrementing a cached value, so display delays do not accumulate drift.
 
-Stop the current contract before starting a replacement. A second start never silently discards active plans, assignments, reports, or running-action ownership.
+A new start may replace an idle contract, discarding its plan and reports. Replacement is rejected while owned actions or child sessions are live. Use `set` to change duration without discarding recorded work.
 
 The package also declares `pi.extensions` and `omp.extensions` in `package.json` for native package discovery. Do not install this directory through `npx skills`; it is a runtime plugin, not a personal skill package.
 
@@ -162,38 +162,26 @@ The native adapters register:
 
 An assignment report records completed and partial work, evidence, skipped work, validation, shortcuts and tradeoffs, risks, unknowns, actual elapsed time, the selected policy, and one recommended parent action. A plan revision can link to the report that caused it.
 
-## Inline batch delegation
+## Inline batch limitation
 
-During the active phase, an OMP parent may choose any number of independent
-children in one `task` call. Each item carries its own assignment contract:
+Model-issued inline batches are not supported by the pinned OMP 17.2.15 task
+schema. It deletes `tasks[].wallClock` before the wall-clock admission hook runs.
+The plugin then rejects the missing assignment metadata rather than launching
+unbounded children. Direct-hook batch tests do not prove the native model path.
 
-```json
-{
-  "tasks": [
-    {
-      "task": "Inspect authentication",
-      "wallClock": {
-        "parentPlanItemId": "auth",
-        "objective": "Inspect authentication",
-        "scope": ["src/auth"],
-        "acceptance": ["Return findings"],
-        "budgetMs": 120000
-      }
-    }
-  ]
-}
-```
-
-The host validates every item before creating any assignment or child. Each
-item becomes one assignment and one child session. The host injects measured
-assignment context into the child task and removes the `wallClock` metadata
-before the underlying OMP task tool runs. Invalid input starts no children.
+Use `wallclock_assign` followed by a single native task with one unbound
+assignment. A working inline-batch implementation needs a host schema-extension
+seam that also preserves the original tool-call identity for child correlation.
+Replacing `task` with a naive `invokeTool` wrapper is not sufficient because the
+wrapper creates a different call identifier.
 
 ## Persistence and isolation
 
 Native state is written as version 4 custom entries in the owning host session.
 It stores the mode and configured duration in addition to the deadline,
 wrap-up point, policy, plan, assignments, reports, revision, and stopped flag.
+Fast-lane identity, request, and consumed-tool count are persisted in a companion
+custom entry so a reload preserves the call cap and terminal-settlement behavior.
 Reload and resume compute phase and remaining time from the current clock. The
 latest wall-clock entry is authoritative. A malformed, old-version, or
 cross-session latest entry disables wall-clock for that session instead of
@@ -204,13 +192,12 @@ An OMP child sees only its assigned scope and cannot stop the parent limit, crea
 ## Portable package
 
 The root `plugin.json` and bundled Agent Skill follow Agent Plugins 1.0.0. The package intentionally has no `mcp.json`: OMP discovers both Agent Plugin MCP servers and native extension tools from one installed package, which exposed two wall-clock catalogs even though MCP could not enforce a deadline. The native catalog is the sole operation surface. OMP discovery is covered by a real-host test that asserts the skill remains available and no `mcp__wall_clock` tools appear.
-- OMP supports any number of bounded inline batch assignments before wrap-up. Each batch item uses `wallClock` assignment metadata, receives its own deadline bounded by the parent's hard deadline and report, and maps to one child session. Running child actions are aborted when their own deadline or the parent deadline expires, regardless of the parent's `block-new` versus `abort-running` policy. Nested delegation remains blocked until its lifecycle contract is implemented. Under `abort-running`, only one parent-session task action can be active because the abort function is session-wide.
 The Codex feasibility finding is in [CODEX-SUPPORT.md](CODEX-SUPPORT.md). It describes a possible `block-new`-only adapter; Codex activation is not implemented or supported in v0.
 
 ## Known boundaries
 
 - Pi does not provide native child delegation through this adapter.
-- OMP supports any number of bounded inline batch assignments before wrap-up. Each batch item uses `wallClock` assignment metadata, receives its own deadline and report, and maps to one child session. Nested delegation remains blocked until its lifecycle contract is implemented. Under `abort-running`, only one parent-session task action can be active because the abort function is session-wide.
+- OMP inline batches are blocked by the native task schema. Single-task background launch correlation has a focused lifecycle regression; full background cancellation remains a separate native-host proof gap. Nested delegation is deferred.
 - OMP 17.2.15 does not forward the parent event-bus object into a task-created child. The adapter binds the real child session file through a process-wide registry and removes the binding when the child reaches a terminal lifecycle state.
 - Remote provider cancellation needs provider-specific confirmation and is not implemented.
 - Do-it-now cannot infer semantic scope from arbitrary tool input. The host guard limits time, delegation, and tool-call count; the model instructions still prevent unrelated reads, writes, and research.

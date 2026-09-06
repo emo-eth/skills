@@ -30,13 +30,9 @@ let scriptedInput: string[] | undefined;
 
 async function readScriptedAnswers(): Promise<string[]> {
   if (scriptedInput !== undefined) return scriptedInput;
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
   const chunks: Buffer[] = [];
-  process.stdin.on("data", (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)));
-  process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-  process.stdin.on("error", reject);
-  process.stdin.resume();
-  scriptedInput = (await promise)
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+  scriptedInput = Buffer.concat(chunks).toString("utf8")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -88,13 +84,12 @@ export async function rawChoice(
     const onData = (chunk: Buffer | string): void => {
       const input = chunk.toString();
       if (input.includes("\u0003")) return finish("pause");
-      if (input.includes("\u001b[C") || input.includes("\u001bOC")) {
-        return finish("right");
-      }
-      if (input.includes("\u001b[D") || input.includes("\u001bOD")) {
-        return finish("left");
-      }
-      const result = normalize(input);
+      const token = input.includes("\u001b[C") || input.includes("\u001bOC")
+        ? "right"
+        : input.includes("\u001b[D") || input.includes("\u001bOD")
+          ? "left"
+          : input;
+      const result = normalize(token);
       if (result) finish(result);
     };
     process.stdin.on("data", onData);

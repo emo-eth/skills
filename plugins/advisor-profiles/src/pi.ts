@@ -380,7 +380,7 @@ function formatOutcome(outcome: AdvisorOutcome): string {
   if (outcome.kind === "no_model") return `no_model (${outcome.reason})`;
   if (outcome.kind === "error") return `error (${outcome.message})`;
   if (outcome.suppressedDuplicate) return `${outcome.severity} (duplicate suppressed)`;
-  return outcome.severity;
+  return `${outcome.severity}: ${outcome.note}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

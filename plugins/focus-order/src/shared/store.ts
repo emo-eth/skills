@@ -1,3 +1,5 @@
+import lockfile from "proper-lockfile";
+
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -52,6 +54,43 @@ export function saveState(state: FocusOrderState): void {
   const temporary = `${path}.tmp-${process.pid}`;
   writeFileSync(temporary, `${JSON.stringify(normalizeState(state), null, 2)}\n`, "utf8");
   renameSync(temporary, path);
+}
+
+const STATE_LOCK_TIMEOUT_MS = 5_000;
+const STATE_LOCK_STALE_MS = 60_000;
+
+export async function mutateState(
+  mutate: (state: FocusOrderState) => FocusOrderState,
+): Promise<FocusOrderState> {
+  const target = statePath();
+  mkdirSync(dirname(target), { recursive: true });
+  let release: (() => Promise<void>) | undefined;
+  try {
+    release = await lockfile.lock(target, {
+      lockfilePath: `${target}.lock`,
+      realpath: false,
+      stale: STATE_LOCK_STALE_MS,
+      update: STATE_LOCK_STALE_MS / 2,
+      retries: {
+        retries: Math.ceil(STATE_LOCK_TIMEOUT_MS / 10),
+        factor: 1,
+        minTimeout: 10,
+        maxTimeout: 10,
+        randomize: false,
+      },
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ELOCKED") throw error;
+    throw new Error(`focus-order: timed out acquiring state lock ${target}.lock`);
+  }
+  try {
+    const current = loadState();
+    const next = mutate(current);
+    if (next !== current) saveState(next);
+    return next;
+  } finally {
+    await release();
+  }
 }
 
 export function normalizeState(value: unknown): FocusOrderState {

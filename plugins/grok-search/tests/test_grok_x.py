@@ -62,6 +62,14 @@ class FetchContractTests(unittest.TestCase):
         self.assertNotIn("quoted_tweet_id:", prompt)
         self.assertNotIn("in_reply_to_status_id:", prompt)
 
+    def test_status_id_boundary_rejects_garbage_suffix_and_keeps_media_suffixes(self) -> None:
+        garbage = grok_x.build_fetch_prompt("https://x.com/a/status/123garbage", "authored", False)
+        self.assertNotIn("conversation_id:123", garbage)
+        photo = grok_x.build_fetch_prompt("https://x.com/a/status/123/photo", "authored", False)
+        self.assertIn("conversation_id:123 from:<actual handle>", photo)
+        video = grok_x.build_fetch_prompt("https://x.com/a/status/123/video", "anchor", True)
+        self.assertIn("quoted_tweet_id:123", video)
+
 
     def test_response_schema_preserves_provenance_and_article_kind(self) -> None:
         response_format = grok_x.fetch_response_format()

@@ -286,6 +286,27 @@ test("run rejects immediately for a pre-aborted signal without emitting a reques
   assert.deepEqual(bus.payloadsOf(DELEGATION_CANCEL_EVENT), []);
 });
 
+test("dispose cancels unanswered runs and releases their listeners", { timeout: 1_000 }, async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { bus, adapter } = makeAdapter();
+  adapter.activateRoster(makeRoster([makeBot()]));
+
+  const promise = adapter.run(runInput(makeBot(), { ownerRunId: "run-2", nodeId: "node-8" }));
+  const request = bus.payloadsOf<DelegationRequestPayload>(DELEGATION_REQUEST_EVENT)[0];
+  const rejected = assert.rejects(promise);
+  adapter.dispose();
+  await rejected;
+
+  assert.deepEqual(bus.payloadsOf<CancelPayload>(DELEGATION_CANCEL_EVENT), [
+    { requestId: request.requestId, ownerRunId: "run-2", nodeId: "node-8" },
+  ]);
+  t.mock.timers.tick(35_001);
+  assert.equal(bus.payloadsOf<CancelPayload>(DELEGATION_CANCEL_EVENT).length, 1);
+  assert.equal(bus.listenerCount(DELEGATION_RESPONSE_EVENT), 0);
+  adapter.dispose();
+  assert.equal(bus.payloadsOf<CancelPayload>(DELEGATION_CANCEL_EVENT).length, 1);
+});
+
 test("child process denies runs and exposes no parent-native availability", async () => {
   const prior = makeAdapter();
   const scout = makeBot();

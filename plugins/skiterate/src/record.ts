@@ -91,7 +91,8 @@ export async function appendSkiterateNote(input: AppendNoteInput): Promise<Skite
 
 export async function collectGitMetadata(cwd: string, runGit: GitRunner = defaultGitValue): Promise<GitMetadata> {
   const worktree = await runGit(["rev-parse", "--show-toplevel"], cwd);
-  const repo = await runGit(["remote", "get-url", "origin"], cwd) ?? worktree;
+  const remote = await runGit(["remote", "get-url", "origin"], cwd);
+  const repo = remote ? sanitizedRemoteUrl(remote) : worktree;
   const branch = await runGit(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd);
   const detachedCommit = branch ? undefined : await runGit(["rev-parse", "--short", "HEAD"], cwd);
   return {
@@ -99,6 +100,20 @@ export async function collectGitMetadata(cwd: string, runGit: GitRunner = defaul
     worktree: worktree ?? cwd,
     branch: branch ?? (detachedCommit ? `detached:${detachedCommit}` : "unknown"),
   };
+}
+
+function sanitizedRemoteUrl(value: string): string {
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return value;
+  }
+  if (!url.username && !url.password) return value;
+  url.password = "";
+  if (url.protocol !== "ssh:") url.username = "";
+  return url.toString();
 }
 
 export function modelName(model: unknown): string | undefined {

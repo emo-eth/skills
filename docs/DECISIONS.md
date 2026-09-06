@@ -425,3 +425,12 @@ Source: user chat, 2026-08-13
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## 2026-09-06 - Executable audit scope and advisory comment policy
+
+Decision: Leave `skills/pstack/` unchanged during the executable audit. Convert the separately authored `plugins/no-code-comments/` to advisory-only: keep its policy reminder and command, remove every code-rewriting hook and scanner, and leave it uninstalled.
+Why: The user asked whether the comment plugin came from pstack and said not to touch pstack. Repository history established that this plugin is locally authored and distinct from pstack's reviewer skill; the user then selected “Advisory only.”
+Consequences: Findings in pstack remain report-only. No-code-comments v0.4.0 must preserve tool arguments byte-for-byte; an already-running OMP process needs a full restart to shed the previously installed rewriting hooks.
+Source: user chat and explicit policy selection during the executable audit, 2026-09-05/06
+Status: active
+Scope: repository audit; locally authored no-code-comments runtime plugin

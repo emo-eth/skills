@@ -135,6 +135,27 @@ test("the most severe note wins; ties go to the first advisor in roster order", 
   assert.equal(tie.recorded.length, 2);
 });
 
+test("same-turn duplicate blocker outranks a nit", async () => {
+  const { input, recorded } = recordingInput({
+    advisors: [advisor("first"), advisor("second")],
+    resolveModel: (entry) => ({
+      kind: "ok",
+      model: entry.name === "first" ? { provider: "p", id: "first-model" } : { provider: "p", id: "second-model" },
+    }),
+    complete: async (model) => {
+      const note = "The retry loop swallows errors.";
+      return model.id === "first-model"
+        ? JSON.stringify({ severity: "nit", note })
+        : JSON.stringify({ severity: "blocker", note });
+    },
+  });
+  const result = await runAdvisorReviews(input);
+  assert.ok(result.followUp);
+  assert.equal(result.followUp.severity, "blocker");
+  assert.ok(result.followUp.message.includes("second"));
+  assert.equal(recorded.length, 2, "both advisors record outcomes");
+});
+
 test("an unresolvable model yields no_model without calling complete", async () => {
   const { input, completeCalls, recorded } = recordingInput({
     resolveModel: () => ({ kind: "no_model", reason: 'model "anthropic/ghost" not found' }),

@@ -76,6 +76,14 @@ async function reinstall(outcome: CheckOutcome): Promise<boolean> {
   console.log(`\n==> ${herdrBinary} ${args.join(" ")}`);
   const result = await spawnVisible(herdrBinary, args);
   if (result.status === 0) {
+    if (outcome.enabled === false) {
+      const restored = await spawnVisible(herdrBinary, ["plugin", "disable", outcome.pluginId]);
+      if (restored.status !== 0) {
+        console.error(`${outcome.pluginId} update FAILED while restoring disabled state`);
+        stateLog(`failed to restore disabled state for ${outcome.pluginId}`);
+        return false;
+      }
+    }
     console.log(`${outcome.pluginId} updated.`);
     stateLog(`updated ${outcome.pluginId} to ${shortSha(outcome.remoteSha)}`);
     return true;
@@ -90,12 +98,15 @@ async function reinstall(outcome: CheckOutcome): Promise<boolean> {
   stateLog(`failed ${outcome.pluginId}: ${firstLine(stderr) || "no error output"}`);
   return false;
 }
-
 async function scheduleSelfUpdate(outcome: CheckOutcome): Promise<void> {
   const helperPath = fileURLToPath(new URL("./self-update.ts", import.meta.url));
+  const args = reinstallArgs(outcome);
+  if (outcome.enabled === false) {
+    args.push("--disable-after-update", outcome.pluginId);
+  }
   const child = spawn(
     process.execPath,
-    ["--experimental-strip-types", helperPath, ...reinstallArgs(outcome)],
+    ["--experimental-strip-types", helperPath, ...args],
     { detached: true, env: process.env, stdio: "ignore" },
   );
   const { promise, resolve, reject } = Promise.withResolvers<void>();

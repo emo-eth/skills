@@ -49,7 +49,7 @@ OAUTH_ALLOWED_ENDPOINT_PREFIXES = ("https://auth.x.ai/", "https://accounts.x.ai/
 OAUTH_CALLBACK_TIMEOUT_SECONDS = 300
 DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
-STATUS_ID_RE = re.compile(r"(?:x|twitter)\.com/([^/]+)/status/(\d+)")
+STATUS_ID_RE = re.compile(r"(?:x|twitter)\.com/([^/]+)/status/(\d+)(?=[/?]|$)")
 
 
 class GrokError(Exception):

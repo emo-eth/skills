@@ -21,7 +21,7 @@ import {
 import { fetchAssignedNotCompleted, setPriority } from "./linear-client.ts";
 import { clearScreen, confirmExact, paint, rawChoice } from "./prompt.ts";
 
-const STATE_VERSION = 1;
+const STATE_VERSION = 2;
 const BOLD = "\u001b[1m";
 
 const DEFAULT_STATE_FILE = ".prioritize-state.json";
@@ -67,13 +67,19 @@ type InputTicket = {
   [key: string]: unknown;
 };
 
+type ApplyingCheckpoint = {
+  source: "linear";
+  team: string | undefined;
+  updates: Record<string, number>;
+};
+
 type ReviewState = {
   version: number;
+  mode: "top-k";
   snapshot: string;
   top: number;
-  // Paired outcome cache, canonical pair-key -> "left"|"right"|"tie",
-  // stored in canonical orientation (id-smaller ticket is the "left" side).
   comparisons: ComparisonCache;
+  applying?: ApplyingCheckpoint;
   updatedAt: string;
 };
 
@@ -235,19 +241,21 @@ function snapshotFor(tickets: Ticket[], top: number): string {
   });
   return createHash("sha256").update(value).digest("hex");
 }
-
 async function readState(stateFile: string): Promise<ReviewState | undefined> {
   try {
     const content = await readFile(stateFile, "utf8");
     const state = JSON.parse(content) as ReviewState;
     if (
       state.version !== STATE_VERSION ||
+      state.mode !== "top-k" ||
       typeof state.snapshot !== "string" ||
       typeof state.top !== "number" ||
       !state.comparisons ||
       typeof state.comparisons !== "object"
     ) {
-      throw new Error("the state file has an unsupported format");
+      throw new Error(
+        `the state file has an unsupported format; run again with --reset to discard ${stateFile}`,
+      );
     }
     return state;
   } catch (error: unknown) {
@@ -256,20 +264,22 @@ async function readState(stateFile: string): Promise<ReviewState | undefined> {
     throw new Error(`Could not read ${stateFile}: ${message}`);
   }
 }
-
 async function writeState(
   stateFile: string,
   snapshot: string,
   top: number,
   comparisons: ComparisonCache,
+  applying?: ApplyingCheckpoint,
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
   const state: ReviewState = {
     version: STATE_VERSION,
+    mode: "top-k",
     snapshot,
     top,
     comparisons,
+    applying,
     updatedAt: new Date().toISOString(),
   };
   await writeFile(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
@@ -398,12 +408,14 @@ async function loadTickets(inputPath: string): Promise<Ticket[]> {
 
 type BinState = {
   version: number;
+  mode: "bin";
   snapshot: string;
-  tiers: Record<string, number | undefined>; // ticket id -> bin index (0..4)
+  tiers: Record<string, number | undefined>;
+  applying?: ApplyingCheckpoint;
   updatedAt: string;
 };
 
-const BIN_STATE_VERSION = 1;
+const BIN_STATE_VERSION = 2;
 
 async function readsBinState(stateFile: string): Promise<BinState | undefined> {
   try {
@@ -411,11 +423,14 @@ async function readsBinState(stateFile: string): Promise<BinState | undefined> {
     const state = JSON.parse(content) as BinState;
     if (
       state.version !== BIN_STATE_VERSION ||
+      state.mode !== "bin" ||
       typeof state.snapshot !== "string" ||
       !state.tiers ||
       typeof state.tiers !== "object"
     ) {
-      throw new Error("the bin state file has an unsupported format");
+      throw new Error(
+        `the state file has an unsupported format; run again with --reset to discard ${stateFile}`,
+      );
     }
     return state;
   } catch (error: unknown) {
@@ -429,17 +444,83 @@ async function writeBinState(
   stateFile: string,
   snapshot: string,
   tiers: Record<string, number | undefined>,
+  applying?: ApplyingCheckpoint,
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
   const state: BinState = {
     version: BIN_STATE_VERSION,
+    mode: "bin",
     snapshot,
     tiers,
+    applying,
     updatedAt: new Date().toISOString(),
   };
   await writeFile(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   await rename(temporaryFile, stateFile);
+}
+
+function applyingSourceMismatch(
+  applying: ApplyingCheckpoint,
+  usingLinear: boolean,
+  team: string | undefined,
+): string | undefined {
+  if (!usingLinear || applying.source !== "linear") {
+    return "the saved application checkpoint was created from Linear; rerun against Linear or use --reset";
+  }
+  if ((applying.team ?? undefined) !== (team ?? undefined)) {
+    return `the saved application checkpoint used team ${applying.team ?? "all teams"} but this run uses ${team ?? "all teams"}; rerun with the same team or use --reset`;
+  }
+  return undefined;
+}
+
+function checkpointIdsMissing(
+  applying: ApplyingCheckpoint,
+  tickets: Ticket[],
+): string[] {
+  const known = new Set(tickets.map((ticket) => ticket.id));
+  return Object.keys(applying.updates).filter((id) => !known.has(id));
+}
+
+function currentPriorityMap(tickets: Ticket[]): Map<string, number | undefined> {
+  return new Map(
+    tickets.map((ticket) => [
+      ticket.id,
+      ticket.priority === undefined || ticket.priority === null
+        ? undefined
+        : Number(ticket.priority),
+    ]),
+  );
+}
+
+async function applyCheckpoint(
+  stateFile: string,
+  applying: ApplyingCheckpoint,
+  tickets: Ticket[],
+  persist: (applying: ApplyingCheckpoint) => Promise<void>,
+): Promise<void> {
+  const planned = Object.keys(applying.updates).length;
+  const remaining: Record<string, number> = { ...applying.updates };
+  const currentPriorities = currentPriorityMap(tickets);
+  for (const [id, target] of Object.entries(applying.updates)) {
+    if (currentPriorities.get(id) === target) {
+      delete remaining[id];
+      await persist({ ...applying, updates: remaining });
+      console.log(`${id} is already at priority ${target}; skipping.`);
+      continue;
+    }
+    try {
+      await setPriority(id, target);
+    } catch (error) {
+      await persist({ ...applying, updates: remaining });
+      throw error;
+    }
+    delete remaining[id];
+    await persist({ ...applying, updates: remaining });
+    console.log(`Updated ${id} -> ${PRIORITY_LABELS[target] ?? target}`);
+  }
+  await removeState(stateFile);
+  console.log(`Done. ${planned} ticket(s) set to their planned priority.`);
 }
 
 function normalizeYesNo(value: string): "yes" | "no" | "pause" | undefined {
@@ -504,7 +585,10 @@ async function binForTicket(
 
 async function runBin(args: Arguments): Promise<void> {
   const stateFile = args.state;
-  const assigned = await fetchAssignedNotCompleted({ team: args.team });
+  const usingLinear = args.input === undefined;
+  const assigned = usingLinear
+    ? await fetchAssignedNotCompleted({ team: args.team })
+    : await loadTickets(args.input);
   // Triage target: tickets that have no priority yet. The point is to pull
   // them out of the no-priority pool into one of the 4 meaningful tiers.
   const tickets = assigned.filter(
@@ -514,6 +598,21 @@ async function runBin(args: Arguments): Promise<void> {
 
   const snapshot = snapshotFor(tickets, args.top);
   const saved = await readsBinState(stateFile);
+  if (saved?.applying) {
+    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team);
+    if (mismatch) throw new Error(mismatch);
+    const missing = checkpointIdsMissing(saved.applying, assigned);
+    if (missing.length > 0) {
+      throw new Error(
+        `the saved application checkpoint references tickets no longer assigned: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
+      );
+    }
+    console.log("Resuming an interrupted priority application.");
+    await applyCheckpoint(stateFile, saved.applying, assigned, (applying) =>
+      writeBinState(stateFile, snapshot, saved.tiers, applying),
+    );
+    return;
+  }
   if (saved && saved.snapshot !== snapshot) {
     throw new Error(
       "The ticket list changed since the saved session. Inspect it, then run --reset.",
@@ -521,7 +620,8 @@ async function runBin(args: Arguments): Promise<void> {
   }
 
   const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
-  console.log(`Binning ${tickets.length} ticket(s). Source: Linear (${args.team ?? "all teams"}).`);
+  const sourceLabel = usingLinear ? `Linear (${args.team ?? "all teams"})` : `file ${args.input}`;
+  console.log(`Binning ${tickets.length} ticket(s). Source: ${sourceLabel}.`);
   if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
   await writeBinState(stateFile, snapshot, tiers);
 
@@ -560,6 +660,19 @@ async function runBin(args: Arguments): Promise<void> {
   }
   console.log(`\n${triaged} ticket(s) triaged into a priority tier.`);
 
+  if (!usingLinear) {
+    if (args.output) {
+      await mkdir(dirname(args.output), { recursive: true });
+      await writeFile(args.output, `${JSON.stringify({
+        tickets: tickets.map((ticket) => ({
+          ...ticket,
+          priority: tiers[ticket.id] === undefined ? ticket.priority : TRIAGE_BINS[tiers[ticket.id]!]?.p,
+        })),
+      }, null, 2)}\n`, "utf8");
+    }
+    return;
+  }
+
   if (args.dryRun) {
     console.log("\nDry run only. No Linear changes made.");
     return;
@@ -584,13 +697,19 @@ async function runBin(args: Arguments): Promise<void> {
     console.log("Skipped. Saved state remains; rerun to resume.");
     return;
   }
+  const updates: Record<string, number> = {};
   for (const t of toWrite) {
-    const p = TRIAGE_BINS[tiers[t.id]!]!.p;
-    await setPriority(t.id, p);
-    console.log(`Updated ${t.id} -> ${PRIORITY_LABELS[p] ?? p}`);
+    updates[t.id] = TRIAGE_BINS[tiers[t.id]!]!.p;
   }
-  await removeState(stateFile);
-  console.log(`Done. ${toWrite.length} ticket(s) set to their binned priority.`);
+  const applying: ApplyingCheckpoint = {
+    source: "linear",
+    team: args.team,
+    updates,
+  };
+  await writeBinState(stateFile, snapshot, tiers, applying);
+  await applyCheckpoint(stateFile, applying, assigned, (applying) =>
+    writeBinState(stateFile, snapshot, tiers, applying),
+  );
 }
 
 async function main(): Promise<void> {
@@ -626,6 +745,21 @@ async function main(): Promise<void> {
 
   const snapshot = snapshotFor(tickets, args.top);
   const saved = await readState(stateFile);
+  if (saved?.applying) {
+    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team);
+    if (mismatch) throw new Error(mismatch);
+    const missing = checkpointIdsMissing(saved.applying, tickets);
+    if (missing.length > 0) {
+      throw new Error(
+        `the saved application checkpoint references tickets no longer assigned: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
+      );
+    }
+    console.log("Resuming an interrupted priority application.");
+    await applyCheckpoint(stateFile, saved.applying, tickets, (applying) =>
+      writeState(stateFile, saved.snapshot, saved.top, saved.comparisons, applying),
+    );
+    return;
+  }
   if (saved && saved.snapshot !== snapshot) {
     throw new Error(
       "The ticket list or --top changed since the saved session. Inspect it, then run --reset.",
@@ -652,7 +786,7 @@ async function main(): Promise<void> {
   const maxComparisons = tickets.length * args.top;
 
   // Iterative driver: ask exactly one comparison per pass, then rerun the core.
-  for (let guard = 0; guard < tickets.length * tickets.length; guard += 1) {
+  for (let guard = 0; guard <= tickets.length * tickets.length; guard += 1) {
     const result = findTopKOrNextComparison(tickets, args.top, comparisons);
     if (result.complete) {
       ranked = result.ranked;
@@ -746,13 +880,19 @@ async function main(): Promise<void> {
     console.log("Skipped. Saved state remains; rerun to resume from your comparisons.");
     return;
   }
-
+  const updates: Record<string, number> = {};
   for (const ticket of ranked) {
-    await setPriority(ticket.id, args.priorityTarget);
-    console.log(`Updated ${ticket.id} -> ${priorityLabel}`);
+    updates[ticket.id] = args.priorityTarget;
   }
-  await removeState(stateFile);
-  console.log(`Done. Top ${ranked.length} set to ${priorityLabel}; others left as-is.`);
+  const applying: ApplyingCheckpoint = {
+    source: "linear",
+    team: args.team,
+    updates,
+  };
+  await writeState(stateFile, snapshot, args.top, comparisons, applying);
+  await applyCheckpoint(stateFile, applying, tickets, (applying) =>
+    writeState(stateFile, snapshot, args.top, comparisons, applying),
+  );
 }
 
 await main().catch((error: unknown) => {

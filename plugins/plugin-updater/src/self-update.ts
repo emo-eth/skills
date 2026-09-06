@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { firstLine, resolveHerdrBinary, runCommand } from "./core.ts";
 
 const herdrBinary = resolveHerdrBinary();
-const installArgs = process.argv.slice(2);
+const disableIndex = process.argv.indexOf("--disable-after-update");
+const disablePluginId = disableIndex >= 0 ? process.argv[disableIndex + 1] : undefined;
+const installArgs = disableIndex >= 0 ? process.argv.slice(2, disableIndex) : process.argv.slice(2);
 
 function log(message: string): void {
   const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
@@ -33,9 +35,16 @@ try {
   await delay(15_000);
   log(`self-update running: ${herdrBinary} ${installArgs.join(" ")}`);
   const result = await runCommand(herdrBinary, installArgs);
-  if (result.status === 0) {
+  if (result.status === 0 && disablePluginId) {
+    const restored = await runCommand(herdrBinary, ["plugin", "disable", disablePluginId]);
+    if (restored.status !== 0) {
+      log(`self-update failed restoring disabled state for ${disablePluginId}`);
+      process.exitCode = 1;
+    }
+  }
+  if (result.status === 0 && process.exitCode !== 1) {
     log("self-update ok");
-  } else {
+  } else if (result.status !== 0) {
     log(
       `self-update failed (${result.status ?? "no status"}): ` +
         `${firstLine(result.stderr) || result.error || "no error output"}`,

@@ -59,7 +59,7 @@ function initializeRunner(session: { extensionRunner: unknown; model: unknown },
   return runner;
 }
 
-test("OMP ExtensionRunner loads and rewrites a write payload", async () => {
+test("OMP ExtensionRunner keeps advisory policy prompt and leaves tool payloads untouched", async () => {
   const root = mkdtempSync(join(tmpdir(), "no-code-comments-omp-runner-"));
   const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
   const { session } = await createAgentSession({
@@ -78,13 +78,16 @@ test("OMP ExtensionRunner loads and rewrites a write payload", async () => {
     const runner = initializeRunner(session, sessionManager);
     await runner.emit({ type: "session_start" });
     expect(runner.getCommand("no-code-comments")).toBeDefined();
-    const result = await runner.emitToolCall({
+    const commentedWrite = "const a = 1; // prose\nconst b = 2; /* kept */\n";
+    const event = {
       type: "tool_call",
       toolCallId: "write-1",
       toolName: "write",
-      input: { path: "sample.ts", content: "const a = 1; // remove\n" },
-    });
-    expect(result?.input).toEqual({ path: "sample.ts", content: "const a = 1;\n" });
+      input: { path: "sample.ts", content: commentedWrite },
+    };
+    const result = await runner.emitToolCall(event);
+    expect(result).toBeUndefined();
+    expect(event.input).toEqual({ path: "sample.ts", content: commentedWrite });
     const prompt = await runner.emitBeforeAgentStart("", [], []);
     expect(prompt?.systemPrompt).toContain(NO_CODE_COMMENTS_PROMPT);
   } finally {

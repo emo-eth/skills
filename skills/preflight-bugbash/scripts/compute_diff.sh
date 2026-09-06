@@ -42,12 +42,20 @@ git diff --name-only --diff-filter=d "$BASE"...HEAD > "$OUT_DIR/_committed.txt"
 # Uncommitted (staged + unstaged) vs HEAD — exclude deletions for same reason
 git diff --name-only --diff-filter=d HEAD > "$OUT_DIR/_uncommitted.txt"
 git diff --name-only --diff-filter=d --cached HEAD > "$OUT_DIR/_staged.txt"
+git ls-files --others --exclude-standard > "$OUT_DIR/_untracked.txt"
 
 # Union, sorted. Deletions already stripped above via --diff-filter=d.
-cat "$OUT_DIR/_committed.txt" "$OUT_DIR/_uncommitted.txt" "$OUT_DIR/_staged.txt" \
+OUT_ABS="$(cd "$OUT_DIR" && pwd -P)"
+REPO_ABS="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
+OUT_REL="${OUT_ABS#"$REPO_ABS"/}"
+awk -v out="$OUT_REL" 'index($0, out "/") != 1' \
+  "$OUT_DIR/_untracked.txt" > "$OUT_DIR/_untracked_filtered.txt"
+cat "$OUT_DIR/_committed.txt" "$OUT_DIR/_uncommitted.txt" "$OUT_DIR/_staged.txt" "$OUT_DIR/_untracked_filtered.txt" \
   | sort -u > "$OUT_DIR/changed_files.txt"
 
-rm -f "$OUT_DIR/_committed.txt" "$OUT_DIR/_uncommitted.txt" "$OUT_DIR/_staged.txt"
+rm -f "$OUT_DIR/_committed.txt" "$OUT_DIR/_uncommitted.txt" "$OUT_DIR/_staged.txt" \
+  "$OUT_DIR/_untracked.txt" "$OUT_DIR/_untracked_filtered.txt"
+
 
 # Summary: diffstat + hunk headers
 {

@@ -47,8 +47,10 @@ each child at the earlier of its requested budget and the parent's hard deadline
 Every admitted child action must have a host action identifier and a tested abort
 seam. If the parent or child deadline expires, the host aborts running child
 actions; the parent's `block-new` policy does not let child work continue past
-that hard stop. Use inline batch delegation when several independent children
-should start together. Nested delegation remains unavailable until its lifecycle
+that hard stop. On pinned OMP 17.2.15, create an assignment with `wallclock_assign`
+and launch one native task while exactly one assignment is unbound. Do not send
+inline batches: the native task schema removes their assignment metadata before
+the admission hook. Nested delegation remains unavailable until its lifecycle
 contract is proven.
 During wrap-up, do not start new delegation or destructive work; finish and
 report the smallest current acceptance target.
@@ -92,7 +94,7 @@ Before an assignment, write, destructive action, or long operation:
 1. Call `wallclock_status` when the tool is available.
 2. Call `wallclock_check` with the proposed tool name, action class, input, and assignment key when an explicit decision is useful. Never estimate task duration.
 3. If the result denies the action, do not start it. Move to wrap-up, reporting, or a smaller safe action.
-4. Delegate only when an independent child clearly reduces risk or finishes part of the acceptance target faster. Use one inline batch when several children should start together. Do not start delegation during wrap-up.
+4. Delegate only when an independent child clearly reduces risk or finishes part of the acceptance target faster. On pinned OMP 17.2.15, use pre-created single assignments rather than inline batches. Do not start delegation during wrap-up.
 5. After expiry, start no new tool work. Report the current state and any work that remains.
 
 The check is advisory to the model. A supported Pi or OMP native adapter separately enforces the decision at its pre-tool event.

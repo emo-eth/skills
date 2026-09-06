@@ -232,27 +232,18 @@ for (const [name, adapter] of [
 }
 
 test("host adapters apply the correct approval boundary", () => {
-  const pi = new Host();
-  const omp = new Host();
-  grokSearchPiExtension(pi);
-  grokSearchOmpExtension(omp);
-
-  assert.equal(pi.tools.get("grok_search")?.approval, undefined);
-  assert.equal(pi.tools.get("grok_fetch")?.approval, undefined);
-  assert.equal(pi.tools.get("grok_auth")?.approval, undefined);
-  assert.equal(omp.tools.get("grok_search")?.approval, "read");
-  assert.equal(omp.tools.get("grok_fetch")?.approval, "read");
-  const approval = omp.tools.get("grok_auth")?.approval;
-  assert.equal(typeof approval, "function");
-  if (typeof approval !== "function") throw new Error("OMP grok_auth approval is not dynamic");
-  assert.equal(approval({ action: "status" }), "read");
-  assert.deepEqual(approval({ action: "start_device" }), {
-    tier: "write",
-    reason: "Start Grok device authorization",
-    override: true,
-    policy: "prompt",
-  });
-  assert.equal(approval({ action: "complete_device" }), "write");
+  for (const adapter of [grokSearchPiExtension, grokSearchOmpExtension]) {
+    const host = new Host();
+    adapter(host);
+    assert.equal(host.tools.get("grok_search")?.approval, "read");
+    assert.equal(host.tools.get("grok_fetch")?.approval, "read");
+    const approval = host.tools.get("grok_auth")?.approval;
+    assert.equal(typeof approval, "function");
+    if (typeof approval !== "function") throw new Error("grok_auth approval is not dynamic");
+    assert.equal(approval({ action: "status" }), "read");
+    assert.equal(approval({ action: "start_device" }), "write");
+    assert.equal(approval({ action: "complete_device" }), "write");
+  }
 });
 
 test("installGrokTools requires the native registerTool seam", () => {
@@ -391,6 +382,8 @@ test("fetch argument construction accepts only HTTPS X or Twitter content URLs",
     "https://X.COM/user/status/123",
     "https://x.com/i/status/123",
     "https://x.com/i/article/123",
+    "https://x.com/user/status/123/photo",
+    "https://x.com/user/status/123/video",
   ]) {
     assert.deepEqual(buildFetchArgs({ url }), ["fetch", url, "--json", "--content", "anchor"]);
   }
@@ -403,6 +396,8 @@ test("fetch argument construction accepts only HTTPS X or Twitter content URLs",
     "x.com/user/status/123",
     "not a url",
     "https://x.com/user",
+    "https://x.com/user/status/123garbage",
+    "https://x.com/i/article/123garbage",
   ]) {
     assert.throws(() => buildFetchArgs({ url }), /X or Twitter/);
   }
@@ -497,6 +492,57 @@ test("Pi-style device authorization requires host confirmation", async () => {
     DEVICE_AUTHORIZATION,
   );
   assert.equal(calls, 1);
+});
+
+test("grok_auth refuses start_device when metadata approval is bypassed", async () => {
+  let deviceCalls = 0;
+  let statusCalls = 0;
+  const runner: GrokRunner = async (args) => {
+    if (args.includes("--start")) deviceCalls += 1;
+    else if (args[0] === "auth") statusCalls += 1;
+    return args.includes("--start") || args.includes("--complete") ? DEVICE_AUTHORIZATION : AUTH_STATUS;
+  };
+  const host = new Host();
+  installGrokTools(host, { runner });
+  const auth = host.tools.get("grok_auth");
+
+  const refusal = {
+    kind: "error",
+    code: "authorization_cancelled",
+    message: "Grok device authorization requires explicit human approval.",
+    source: null,
+  };
+  assert.deepEqual(payloadValue(await auth?.execute("yolo", { action: "start_device" })), refusal);
+  assert.deepEqual(
+    payloadValue(await auth?.execute(
+      "yolo-denied",
+      { action: "start_device" },
+      undefined,
+      undefined,
+      { ui: { confirm: async () => false } },
+    )),
+    refusal,
+  );
+  assert.equal(deviceCalls, 0);
+
+  assert.deepEqual(
+    payloadValue(await auth?.execute(
+      "yolo-approved",
+      { action: "start_device" },
+      undefined,
+      undefined,
+      { ui: { confirm: async () => true } },
+    )),
+    DEVICE_AUTHORIZATION,
+  );
+  assert.equal(deviceCalls, 1);
+
+  assert.deepEqual(payloadValue(await auth?.execute("yolo-status", { action: "status" })), AUTH_STATUS);
+  assert.deepEqual(
+    payloadValue(await auth?.execute("yolo-complete", { action: "complete_device", session: "session-1" })),
+    DEVICE_AUTHORIZATION,
+  );
+  assert.equal(statusCalls, 1);
 });
 
 test("content tools parse structured payloads and pass tool errors through unthrown", async () => {
@@ -724,6 +770,42 @@ test("OMP delegates primary xai credentials only when their origin is OAuth", as
       signal: undefined,
     },
   }]);
+});
+
+test("host resolves stale OAuth cache through getProviderAuth requiring OAuth source", async () => {
+  const model = { provider: "xai", id: "grok-4-fast", baseUrl: "https://api.x.ai/v1" };
+  const runnerCalls: Array<{ hostCredential?: string }> = [];
+  const runner: GrokRunner = async (_args, options) => {
+    runnerCalls.push({ hostCredential: options.hostCredential });
+    return SEARCH_RESULT;
+  };
+
+  const oauthContext = {
+    model,
+    modelRegistry: {
+      getAll: () => [model],
+      isUsingOAuth: () => false,
+      getProviderAuth: async () => ({ auth: { apiKey: "provider-oauth" }, source: "OAuth" }),
+    },
+  };
+  const host = new Host();
+  installGrokTools(host, { runner });
+  await host.tools.get("grok_search")?.execute("call-1", { query: "Q" }, undefined, oauthContext);
+  assert.deepEqual(runnerCalls, [{ hostCredential: "provider-oauth" }]);
+
+  runnerCalls.length = 0;
+  const apiKeyContext = {
+    model,
+    modelRegistry: {
+      getAll: () => [model],
+      isUsingOAuth: () => false,
+      getProviderAuth: async () => ({ auth: { apiKey: "billed-api-key" }, source: "XAI_API_KEY" }),
+    },
+  };
+  const blocked = new Host();
+  installGrokTools(blocked, { runner });
+  await blocked.tools.get("grok_search")?.execute("call-2", { query: "Q" }, undefined, apiKeyContext);
+  assert.deepEqual(runnerCalls, [{ hostCredential: undefined }]);
 });
 
 test("OMP delegation requires credential origin proven as OAuth", async () => {

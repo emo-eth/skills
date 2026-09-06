@@ -53,9 +53,10 @@ same turn. Return as soon as the finish line passes.
    repository, history, web, or unrelated records for context that cannot
    change the result.
 4. Decide how many bounded wall-clock assignments are useful for independent
-   work. Use one inline batch when several children should start together. Give
-   each child one objective, narrow scope, observable acceptance target, and a
-   budget below measured remaining time. Do not use nested delegation.
+   work. On pinned OMP 17.2.15, create each assignment before its single task call;
+   inline batch metadata does not survive the native schema. Give each child one
+   objective, narrow scope, observable acceptance target, and a budget below
+   measured remaining time. Do not use nested delegation.
    Do not run optional skills, write a plan, create a decision or review
    artifact, update project taste, refactor nearby code, or clean up unrelated
    files.

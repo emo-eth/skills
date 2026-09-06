@@ -51,6 +51,7 @@ export interface DelegationResponse {
 export class SubagentsAdapter {
   private available: string[] = [];
   private readonly events: EventBus;
+  private readonly pending = new Map<string, () => void>();
 
   constructor(events: EventBus) {
     this.events = events;
@@ -64,6 +65,7 @@ export class SubagentsAdapter {
 
   dispose(): void {
     this.available = [];
+    for (const cancel of [...this.pending.values()]) cancel();
   }
 
   availableNames(): string[] {
@@ -104,15 +106,23 @@ export class SubagentsAdapter {
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
+      this.pending.delete(requestId);
       clearTimeout(timer);
       unsubscribe?.();
       input.signal?.removeEventListener("abort", abort);
       callback();
     };
-    const abort = () => {
-      this.events.emit(DELEGATION_CANCEL_EVENT, identity);
+    const cancel = () => {
+      try {
+        this.events.emit(DELEGATION_CANCEL_EVENT, identity);
+      } catch {
+        this.available = [];
+      }
       finish(() => reject(new Error("Bot delegation was cancelled.")));
     };
+    const abort = cancel;
+
+    this.pending.set(requestId, cancel);
     const listener = (payload: unknown) => {
       const response = payload as DelegationResponse;
       if (response.requestId !== requestId) return;
@@ -122,7 +132,11 @@ export class SubagentsAdapter {
     const registered = this.events.on(DELEGATION_RESPONSE_EVENT, listener);
     if (typeof registered === "function") unsubscribe = registered;
     timer = setTimeout(() => {
-      this.events.emit(DELEGATION_CANCEL_EVENT, identity);
+      try {
+        this.events.emit(DELEGATION_CANCEL_EVENT, identity);
+      } catch {
+        this.available = [];
+      }
       finish(() => reject(new Error("pi-subagents did not return a delegation response before the host deadline.")));
     }, input.bot.timeoutMs + 30_000);
     timer.unref?.();

@@ -118,6 +118,14 @@ class AdvisorProfilesPluginTests(unittest.TestCase):
         self.assertEqual(llm.calls, [])
         self.assertIn("Advisor review: off", plugin._handle_command("status"))
 
+    def test_use_off_alias_disables_reviews(self):
+        plugin, ctx = self._plugin()
+        plugin._on_session_start(session_id="s1")
+        self.assertEqual(plugin._handle_command("use off"), "Advisor review is off for this session.")
+        plugin._on_post_llm_call(session_id="s1", user_message="hi", assistant_response="ok", conversation_history=[])
+        self.assertEqual(ctx.llm.calls, [])
+        self.assertIn("Advisor review: off", plugin._handle_command("status"))
+
     def test_use_all_selects_every_enabled_advisor(self):
         plugin, _ = self._plugin()
         plugin._on_session_start(session_id="s1")
