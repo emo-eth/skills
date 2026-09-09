@@ -1,5 +1,6 @@
 ---
 name: synthesize
+disable-model-invocation: true
 description: "Turn a scattered pile of research — dossiers, spreadsheets, chat threads, prior findings docs — into audience-fit understanding: a verbal brief, a written sync doc, or your own mental model. Use when research feels 'too granular without a good high-level thing to share,' when asked to summarize or synthesize scattered findings, prepare an executive summary, or explain complex findings to someone else, or when the user says they don't know how to make sense of a pile of information they've assembled."
 argument-hint: "[topic, or path to the research to synthesize]"
 ---

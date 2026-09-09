@@ -1,5 +1,6 @@
 ---
 name: rubber-stamp-travel-field-note
+disable-model-invocation: true
 description: Use for rubber-stamp travel field-note photo posters.
 version: 1.0.0
 author: BMO

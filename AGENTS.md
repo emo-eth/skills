@@ -98,8 +98,20 @@ Grep the whole skill dir for the old name and classify each hit before editing.
 
 ## Installing on a new machine
 
+Use `~/.agents/skills` as the only user/global skill source. Do not install
+copies or compatibility symlinks under `.claude`, `.codex`, `.pi`, or other
+host-specific skill directories. Select the installer’s `universal` target.
+Hosts without native support for this location do not get a second skill tree.
+
+Installed skills are explicit-invocation-only except `herdr`: use
+`disable-model-invocation: true` in `SKILL.md` and
+`policy.allow_implicit_invocation: false` in `agents/openai.yaml`.
+Preserve this policy after updates; third-party updates can restore upstream
+metadata. Keep uninstalled skills out of the active installer lock so updates
+do not resurrect them.
+
 ```sh
-npx skills add emo-eth/skills --full-depth
+npx skills add emo-eth/skills --full-depth -g --agent universal
 ```
 
 Later, to sync the latest:
@@ -112,10 +124,9 @@ Note: `update` only refreshes skills already installed on that machine. Skills *
 
 ```sh
 npx skills add emo-eth/skills --full-depth --skill <name> [<name>...] -g -y \
-  --agent amp antigravity antigravity-cli cline codex cursor deepagents \
-          gemini-cli github-copilot kimi-code-cli opencode warp zed claude-code pi
+  --agent universal
 ```
 
-(The `--agent` list mirrors `lastSelectedAgents` in `~/.agents/.skill-lock.json`; adjust per machine.)
+Keep `lastSelectedAgents` in `~/.agents/.skill-lock.json` set to `["universal"]`.
 
 To install **every** skill in the repo, use `--full-depth` plus the undocumented wildcard — quoted, so zsh doesn't glob it: `--skill '*'`. (The interactive picker has no select-all; that's an upstream gap, [vercel-labs/skills#439](https://github.com/vercel-labs/skills/issues/439).)

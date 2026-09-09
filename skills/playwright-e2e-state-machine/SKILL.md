@@ -1,5 +1,6 @@
 ---
 name: playwright-e2e-state-machine
+disable-model-invocation: true
 description: Create comprehensive Playwright E2E tests for Next.js web3 applications by modeling all user-facing state dimensions as XState v5 machines, then generating tests that achieve meaningful coverage of declared states. The skill enforces depth-first completion — each machine should have tests for all its testable states before moving to the next. Triggers on "playwright tests", "e2e tests", "test all states", "validate user flows", "state machine tests", or when comprehensive UI test coverage is needed. Use this skill whenever the user wants E2E browser tests, even if they don't mention state machines.
 ---
 

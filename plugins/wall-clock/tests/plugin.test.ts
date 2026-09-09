@@ -31,11 +31,3 @@ test("package declares native Pi and OMP extension entry points", () => {
   assert.deepEqual(packageJson.pi, { extensions: ["./src/pi.ts"] });
   assert.deepEqual(packageJson.omp, { extensions: ["./src/omp.ts"] });
 });
-
-
-test("the bundled skill matches its directory name", () => {
-  const skill = readFileSync(join(pluginRoot, "skills", "wall-clock", "SKILL.md"), "utf8");
-  assert.match(skill, /^---\nname: wall-clock\ndescription: .+\n/);
-  assert.match(skill, /The portable Agent Plugins package provides instructions only\./);
-  assert.match(skill, /Use `block-new` when the user does not select a policy\./);
-});

@@ -1,5 +1,6 @@
 ---
 name: papercut
+disable-model-invocation: true
 description: Log small agent workflow friction that affected the work to a user-global PAPERCUTS.md file with the bundled shell helper.
 license: MIT
 ---

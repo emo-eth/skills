@@ -1,5 +1,6 @@
 ---
 name: contract-audit
+disable-model-invocation: true
 description: "Adversarial contract audit for checking a spec, plan, code diff, branch, implementation, demo, or shipped behavior against an approved PRD and optional vibe.md. Use when the user asks to audit, verify alignment, find discrepancies, loop adversarial reviewers, or ensure downstream work does not violate product requirements or vibe. Use prd-grill instead when grilling the human on whether the PRD/vibe matches their expectations."
 ---
 

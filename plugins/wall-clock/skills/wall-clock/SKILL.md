@@ -1,5 +1,6 @@
 ---
 name: wall-clock
+disable-model-invocation: true
 description: Use when the user gives a deadline or time budget, asks for wall-clock planning, bounded agent assignments, wrap-up behavior, or explicit shortcut and risk reporting. Keeps work inside a time ceiling with start, status, check, assignment, completion, and report operations.
 compatibility: Requires a native Pi or OMP adapter; the Agent Plugin surface contains instructions only and never activates a time boundary.
 ---

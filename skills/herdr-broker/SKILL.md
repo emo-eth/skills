@@ -1,5 +1,6 @@
 ---
 name: herdr-broker
+disable-model-invocation: true
 description: "Route spoken or typed requests about Herdr voice-broker work: the user references Herdr (any transcription, e.g. Herder or header), the voice broker, or a broker workstream, and asks to start, check, message, update, or cancel that delegated work. Do not use for generic start/check/run requests with no broker context. Executes only $HOME/.local/bin/voicebroker; never omp, never direct herdr, never a subagent."
 ---
 

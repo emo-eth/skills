@@ -1,5 +1,6 @@
 ---
 name: preflight-bugbash
+disable-model-invocation: true
 description: Pre-emptively find bugs in a PR branch BEFORE opening for review, mimicking the review patterns Cursor BugBot has historically flagged on this repo, plus cross-cutting staff-engineer / security / performance lenses. Use this skill whenever the user says "bugbash", "preflight", "check my branch", "review before PR", "find bugs in my diff", "what would BugBot say", "multi-review", or any request to review the current working branch / uncommitted changes against `origin/dev` for bugs. Also use proactively before finalizing any significant PR, especially ones touching handlers, migrations, terraform, auth, money math, webhooks, or feature flags. Dispatches specialized parallel subagent reviewers based on what the diff actually touches, plus three always-on holistic lens reviewers, then an aggregator-critic synthesizes findings into a single ranked report and offers iterative fixes.
 ---
 
