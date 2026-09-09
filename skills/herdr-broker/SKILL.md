@@ -5,9 +5,11 @@ description: "Route spoken or typed requests about Herdr voice-broker work: the 
 
 # Herdr broker voice routing
 
-This skill is the sole voice route for broker work. Run `$HOME/.local/bin/voicebroker` directly in the shell. Never invoke `omp`, never run `herdr` commands yourself, never spawn a subagent for broker work, and never patch Herdr, Codex, Pi, or OMP to establish another path. There is no OMP or direct-Herdr fallback: if the broker CLI fails, report the error exactly and stop.
+This skill is the sole voice route for ordinary broker control. Run `$HOME/.local/bin/voicebroker` directly in the shell. Never invoke `omp`, never patch Herdr, Codex, Pi, or OMP to establish another path.
 
-The wrapper targets the broker at `http://127.0.0.1:7749` by default. If it reports a network error, relay that error exactly; do not switch tools.
+An explicit request to diagnose or repair the broker is an exception. Use the relevant repository and service controls to diagnose and repair the broker itself. A failed broker CLI health check is evidence to investigate, not a stopping condition. Do not patch the Herdr runtime, but do not block a user-authorized broker repair because the broker is unavailable.
+
+The wrapper targets the broker at `http://127.0.0.1:7749` by default. For ordinary control, report a network error exactly. For an explicit repair request, use the error to guide diagnosis.
 
 ## Five operations
 
@@ -88,5 +90,5 @@ Within the voice conversation, remember every workstream ID the user touched or 
 
 - IDs and flags are positional exactly as templated: the workstream ID is the first argument to `message`, `status`, and `cancel`; there is no `--workstream` or `--title` in the templates. Follow the templates literally.
 - Report command failures exactly. Server rejections come back as JSON on stdout with exit 1: `{"error":{"code":"not_found","message":"workstream <id> not found"}}` for an unknown ID — quote the `message` verbatim. Client usage mistakes print one plain line on stderr with exit 2, e.g. `--priority must be an integer`, `priority must be between 0 and 4`, `--after must be >= 0`. Never paraphrase into a guess, never retry silently, never claim success.
-- Wrapper errors like `env file not readable`, `env file has no supervisor token`, or `release CLI missing` mean the deployment is broken; relay the message verbatim. Do not edit the wrapper, its env file, or broker config from the voice task.
-- Never run `herdr`, never set or fake `HERDR_ENV`, never claim to be inside Herdr, never spawn subagents, never call `omp`.
+- Wrapper errors like `env file not readable`, `env file has no supervisor token`, or `release CLI missing` mean the deployment is broken. For ordinary control, relay the message verbatim. For an explicit repair request, inspect and repair the affected broker deployment or configuration.
+- Outside an explicit broker repair request, never run `herdr`, never set or fake `HERDR_ENV`, never claim to be inside Herdr, never spawn subagents, and never call `omp`.
