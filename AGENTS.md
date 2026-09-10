@@ -102,6 +102,9 @@ Use `~/.agents/skills` as the only user/global skill source. Do not install
 copies or compatibility symlinks under `.claude`, `.codex`, `.pi`, or other
 host-specific skill directories. Select the installer’s `universal` target.
 Hosts without native support for this location do not get a second skill tree.
+Consolidation changes where the existing shared library lives, not which
+skills are installed. Do not import host-specific, bundled, or plugin skill
+libraries into it unless the user explicitly selects those skills.
 
 Installed skills are explicit-invocation-only except `herdr`: use
 `disable-model-invocation: true` in `SKILL.md` and
