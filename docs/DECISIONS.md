@@ -434,3 +434,25 @@ Consequences: Findings in pstack remain report-only. No-code-comments v0.4.0 mus
 Source: user chat and explicit policy selection during the executable audit, 2026-09-05/06
 Status: active
 Scope: repository audit; locally authored no-code-comments runtime plugin
+
+## D39 - 2026-09-11 - Skill iteration is an important primitive
+
+Decision: Treat skill iteration as an important primitive in this repo. Do not infer a general rule about every kind of iteration from that choice alone.
+Why: "skill iteration is an important primitive, i think. iteration in general, idk." - user chat during the surgical `docs/vibe.md` review, 2026-09-11.
+Alternatives: Generalize V6 into a doctrine for all iteration (not chosen because the user explicitly remained uncertain); remove iteration from the vibe (rejected because skill iteration is important).
+Consequences: Future vibe revisions preserve skill iteration as a named concern. Any broader iteration rule needs its own evidence rather than borrowing authority from this decision.
+Source: chat feedback during the surgical Plannotator review of `docs/vibe.md`, 2026-09-11
+Status: active
+Scope: v0
+Load-bearing: yes
+
+## D40 - 2026-09-11 - Questions do not authorize execution
+
+Decision: When the user asks for judgment, explanation, or an answer, answer the question without treating it as authorization to edit files, launch a review, or execute the inferred recommendation.
+Why: "i asked you a question" and "i did not ask you to do anything" - user chat during the `docs/vibe.md` discussion, 2026-09-11.
+Alternatives: Proactively implement the inferred answer (rejected because it puts words in the user's mouth and changes work they did not ask to change).
+Consequences: Consultation and execution are separate. Act only when the user asks for action or the active task already requires it.
+Source: chat feedback during the surgical Plannotator review of `docs/vibe.md`, 2026-09-11
+Status: active
+Scope: all agent work
+Load-bearing: yes

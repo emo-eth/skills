@@ -150,8 +150,9 @@ This one is an agent-communication preference, not part of the sifting strategy.
 
 ## Approval
 
-- Approved by: pending
-- Approved on: pending
-- Review status: three rounds applied (36 + 8 + 1 items); rounds closed at the user's direction under the two-round bound [D34]. No further re-review will be requested; the user edits directly when something is wrong.
+- Approved by: User
+- Approved on: 2026-09-11
+- Approval evidence: surgical Plannotator diff plus explicit chat approval
+- Review status: original rounds 1-3 applied (36 + 8 + 1 items), followed by the approved 2026-09-11 clarification that examples point toward the vibe without becoming canonical implementations.
 - Provisional: D35 (ticketize's refusal to ticket vibes) stands but the user is unsure; revisited when lc-ticketize is revised.
 - Amendment rule: this vibe changes only by explicit user request or direct user edit.
