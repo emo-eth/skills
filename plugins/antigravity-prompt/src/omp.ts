@@ -11,7 +11,7 @@ const detachedOriginals: Record<string, Model<"google-gemini-cli">> = {};
 
 export function patchSentence(text: string): string {
 	return text.replace(
-		/RFC 2119: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL\. `NEVER` = `MUST NOT`; `AVOID` = `SHOULD NOT`\./g,
+		/RFC 2119:\s*MUST,\s*REQUIRED,\s*SHOULD,\s*RECOMMENDED,\s*MAY,\s*OPTIONAL\.\s*`NEVER`\s*=\s*`MUST NOT`(?:\s*;\s*`AVOID`\s*=\s*`SHOULD NOT`)?\./g,
 		"Guidelines: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER means MUST NOT; AVOID means SHOULD NOT.",
 	);
 }
@@ -26,6 +26,20 @@ export function patchSystemPrompt<T extends string | string[] | undefined>(promp
 	return prompt;
 }
 
+export function isAdvisorContext(context: Context): boolean {
+	if (context.tools?.some(t => t.name === "advise")) {
+		return true;
+	}
+	const prompt = context.systemPrompt as unknown;
+	if (typeof prompt === "string") {
+		return prompt.includes("peer-shadow main agent");
+	}
+	if (Array.isArray(prompt)) {
+		return prompt.some(s => typeof s === "string" && s.includes("peer-shadow main agent"));
+	}
+	return false;
+}
+
 export function streamSimpleHandler(model: Model, context: Context, options?: SimpleStreamOptions) {
 	const stockModel = detachedOriginals[model.id];
 	if (!stockModel) {
@@ -37,7 +51,12 @@ export function streamSimpleHandler(model: Model, context: Context, options?: Si
 		systemPrompt: patchSystemPrompt(context.systemPrompt),
 	};
 
-	return streamSimple(stockModel, fixedContext, options);
+	let effectiveOptions = options;
+	if (isAdvisorContext(context) && effectiveOptions?.acceptEmptyResponse === undefined) {
+		effectiveOptions = { ...effectiveOptions, acceptEmptyResponse: true };
+	}
+
+	return streamSimple(stockModel, fixedContext, effectiveOptions);
 }
 
 export default function (pi: ExtensionAPI): void {
