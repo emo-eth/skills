@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "antigravity-prompt",
+  "version": "0.1.0",
+  "description": "Rewrite the RFC 2119 normative sentence in system prompt to prevent Google Antigravity false 429 quota rejections.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "omp",
+    "antigravity",
+    "prompt-fix"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@emo-eth/antigravity-prompt-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": [
+    "omp-package",
+    "antigravity",
+    "prompt-fix"
+  ],
+  "omp": {
+    "extensions": [
+      "./src/omp.ts"
+    ]
+  },
+  "exports": {
+    ".": "./src/omp.ts",
+    "./omp": "./src/omp.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-ai": "18.1.16",
+    "@oh-my-pi/pi-coding-agent": "18.1.16",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}
