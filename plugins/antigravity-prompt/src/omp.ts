@@ -1,12 +1,12 @@
 import { getProviderDefinition, registerCustomApi, streamSimple, type Context, type Model, type SimpleStreamOptions } from "@oh-my-pi/pi-ai";
 import type { OAuthCredentials } from "@oh-my-pi/pi-ai/oauth/types";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import { createGeminiRetryFetch } from "./retry-fetch.ts";
 
 export const CUSTOM_API = "google-gemini-cli-prompt-fix";
 export const TARGET_PROVIDER = "google-antigravity";
 export const DURABLE_SOURCE_ID = "antigravity-prompt-fix-durable";
 
-let isInitialized = false;
 const detachedOriginals: Record<string, Model<"google-gemini-cli">> = {};
 
 export function patchSentence(text: string): string {
@@ -56,6 +56,10 @@ export function streamSimpleHandler(model: Model, context: Context, options?: Si
 		effectiveOptions = { ...effectiveOptions, acceptEmptyResponse: true };
 	}
 
+	if (stockModel.identity.class === "gemini") {
+		effectiveOptions = { ...effectiveOptions, fetch: createGeminiRetryFetch(effectiveOptions) };
+	}
+
 	return streamSimple(stockModel, fixedContext, effectiveOptions);
 }
 
@@ -65,15 +69,13 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event: unknown, ctx: ExtensionContext) => {
 		registerCustomApi(CUSTOM_API, streamSimpleHandler, DURABLE_SOURCE_ID);
 
-		if (isInitialized) return;
-		isInitialized = true;
-
 		const catalogModels = ctx.modelRegistry.getAll().filter((m: Model) => m.provider === TARGET_PROVIDER);
 		if (catalogModels.length === 0) {
 			return;
 		}
 
 		for (const m of catalogModels) {
+			if (m.api === CUSTOM_API && detachedOriginals[m.id]) continue;
 			const resolved = ctx.modelRegistry.find(m.provider, m.id) ?? m;
 			detachedOriginals[m.id] = {
 				...resolved,
