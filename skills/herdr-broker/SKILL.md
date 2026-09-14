@@ -1,76 +1,48 @@
 ---
 name: herdr-broker
 disable-model-invocation: true
-description: "Route spoken or typed requests about Herdr voice-broker work: the user references Herdr (any transcription, e.g. Herder or header), the voice broker, or a broker workstream, and asks to start, check, message, update, or cancel that delegated work. Do not use for generic start/check/run requests with no broker context. Executes only $HOME/.local/bin/voicebroker; never omp, never direct herdr, never a subagent."
+description: "Route spoken or typed requests about Herdr voice-broker work: the user references Herdr (any transcription, e.g. Herder or header), the voice broker, or a broker workstream, and asks to start, check, message, update, connect, inspect output, or cancel that delegated work. Do not use for generic start/check/run requests with no broker context. Uses herdr_broker_* MCP tools when available; otherwise executes $HOME/.local/bin/voicebroker in the shell. Never omp, never direct herdr, never a subagent."
 ---
 
 # Herdr broker voice routing
 
-This skill is the sole voice route for ordinary broker control. Run `$HOME/.local/bin/voicebroker` directly in the shell. Never invoke `omp`, never patch Herdr, Codex, Pi, or OMP to establish another path.
+This skill routes spoken or typed requests to the Herdr Voice Broker running at `http://127.0.0.1:7749`.
 
-An explicit request to diagnose or repair the broker is an exception. Use the relevant repository and service controls to diagnose and repair the broker itself. A failed broker CLI health check is evidence to investigate, not a stopping condition. Do not patch the Herdr runtime, but do not block a user-authorized broker repair because the broker is unavailable.
+## Primary route: 2026 MCP tools
 
-The wrapper targets the broker at `http://127.0.0.1:7749` by default. For ordinary control, report a network error exactly. For an explicit repair request, use the error to guide diagnosis.
+In voice sessions (such as Codex Mobile Voice) where shell/terminal execution is unavailable, use the mounted `herdr_broker_*` MCP tools directly:
 
-## Five operations
+| User intent | MCP tool | Key arguments |
+| --- | --- | --- |
+| Check status, what is running, how is work going | `herdr_broker_status` | `workstreamId?`, `state?` (`working`, `queued`, etc.), `priority?` (0-4) |
+| Delegate, start, handle, run new work | `herdr_broker_delegate` | `title`, `prompt`, `priority?` (0-4, default 2) |
+| Attach existing work, connect in-flight pane | `herdr_broker_connect` | `worktreePath?`, `paneId?`, `title?`, `priority?` |
+| Inspect live terminal output, read what worker printed | `herdr_broker_read_output` | `workstreamId`, `lines?` (default 60) |
+| Send note, reply, steer running worker | `herdr_broker_message` | `workstreamId`, `body` |
+| What happened, any news, new events | `herdr_broker_updates` | `after?` (cursor integer), `limit?` (default 20) |
+| Cancel, stop, abort a workstream | `herdr_broker_cancel` | `workstreamId`, `reason?` |
 
-Every request maps to exactly one verb. Always pass `--json` and read the JSON output.
+### Dual-layer voice response
+Every `herdr_broker_*` tool returns dual-layer content:
+1. First text block: natural, concise spoken text designed specifically for text-to-speech (TTS). Read this aloud to the user. Keep voice turns short and conversational (1-2 sentences).
+2. Second text block: complete structured JSON payload. Use this for programmatic inspection if follow-up details are needed.
 
-| User intent | Verb |
-| --- | --- |
-| Start, run, take care of, handle, delegate work | `delegate` |
-| Tell, reply, answer, send a note to a workstream | `message` |
-| Check, is it up, does it work, what is running, how is it going | `status` |
-| What happened, any news, progress, new events | `updates` |
-| Stop, kill, abort, call off a workstream | `cancel` |
+Delegation is asynchronous: `herdr_broker_delegate` queues the workstream and returns the ID immediately. Report the ID and status right away—never block or poll waiting for completion. Completion arrives later through `herdr_broker_updates` or `herdr_broker_status`.
 
-### delegate
+## Fallback route: CLI wrapper
 
-```bash
-$HOME/.local/bin/voicebroker delegate "<short title>" --prompt "<the user's request, verbatim>" --json
-```
+If MCP tools are not mounted in this session and local shell access is available, run `$HOME/.local/bin/voicebroker` directly with `--json`:
 
-Title is the first positional argument; do not use a `--title` flag. Optional `--priority 0-4` (default 2; values outside 0-4 are rejected before anything is created). The reply is `{"id":"ws_...","title":...,"priority":...,"state":"queued"}`. Delegation is asynchronous: the workstream is queued and the returned ID is the whole result. Tell the user the ID immediately and stop — never wait for the manager, never poll for completion. Completion arrives later through `updates` or a later `status` request.
-
-### message
-
-```bash
-$HOME/.local/bin/voicebroker message <id> --body "<text, verbatim>" --json
-```
-
-Reply: `{"id":...,"state":...,"delivered":true|false}`. Report the new state and whether the message was delivered.
-
-### status
-
-```bash
-$HOME/.local/bin/voicebroker status --json
-$HOME/.local/bin/voicebroker status <id> --json
-$HOME/.local/bin/voicebroker status --state working --json
-```
-
-State filters: `queued`, `starting`, `working`, `waiting`, `blocked`, `completed`, `failed`, `cancelled`; also `--priority 0-4`. Reply: `{"workstreams":[{id,title,priority,state,...}]}`. Summarize each workstream as title, state, and ID; speak timestamps only when asked.
-
-### updates
-
-```bash
-$HOME/.local/bin/voicebroker updates --json
-$HOME/.local/bin/voicebroker updates --after <cursor> --limit 20 --json
-```
-
-Reply: `{"events":[...],"cursor":N}`. Save `cursor` and pass it as `--after` next time so follow-ups return only new events. Summarize events per workstream by `type` (`delegated`, `manager`, `state`, `message`, `report`, `heartbeat`, `recovery`) instead of dumping raw JSON.
-
-### cancel
-
-```bash
-$HOME/.local/bin/voicebroker cancel <id> [--reason "<why>"] --json
-```
-
-Reply: `{"id":...,"state":...}`. Confirm the new state to the user.
+- `delegate`: `$HOME/.local/bin/voicebroker delegate "<short title>" --prompt "<the user's request, verbatim>" --json`
+- `message`: `$HOME/.local/bin/voicebroker message <id> --body "<text, verbatim>" --json`
+- `status`: `$HOME/.local/bin/voicebroker status [--state <state>] [<id>] --json`
+- `updates`: `$HOME/.local/bin/voicebroker updates [--after <cursor>] --limit 20 --json`
+- `cancel`: `$HOME/.local/bin/voicebroker cancel <id> [--reason "<why>"] --json`
 
 ## Routing rules
 
 - Vague health checks are never delegation. "Try the Herder Voice broker", "does the broker work", "is the broker up", "what is running", "anything new?" map to `status` (plus `updates` when the user asks for news). Run `delegate` only when the user actually hands over work to do.
-- One request, one verb. If the user asks two things ("check on the deploy and start a new one"), run each verb separately and report both results.
+- One request, one action. If the user asks two things ("check on the deploy and start a new one"), execute each action separately and report both results.
 
 ## Speech transcription
 
@@ -79,17 +51,15 @@ Realtime transcription mangles "Herdr". "Herder", "header", "hurdle", "the Herde
 ## Resolving targets
 
 - Explicit ID (`ws_...`): use it directly.
-- Name or description ("the iPhone one", "the deploy workstream"): run `status --json` and match `title` case-insensitively; use the match.
+- Name or description ("the iPhone one", "the deploy workstream"): run `status` and match `title` case-insensitively; use the match.
 - "It", "that one", "the same one": use the workstream ID from earlier in this conversation.
-- No match or several plausible matches: read the candidate titles and states to the user and ask which one. Ask only then — every other target resolves from context.
+- No match or several plausible matches: speak the candidate titles and states to the user and ask which one. Ask only then — every other target resolves from context.
 
 ## Conversation memory
 
-Within the voice conversation, remember every workstream ID the user touched or you delegated, and the latest `updates` cursor. Follow-ups like "check on it" or "what did it say" reuse them: `status <id>` for a specific workstream, `updates --after <cursor>` for news. Never re-delegate just to refresh; answer from the broker's own data.
+Within the voice conversation, remember every workstream ID the user touched or you delegated, and the latest `updates` cursor. Follow-ups like "check on it" or "what did it say" reuse them: `status` for a specific workstream, `updates` with `after` cursor for news. Never re-delegate just to refresh; answer from the broker's own data.
 
 ## Errors and boundaries
 
-- IDs and flags are positional exactly as templated: the workstream ID is the first argument to `message`, `status`, and `cancel`; there is no `--workstream` or `--title` in the templates. Follow the templates literally.
-- Report command failures exactly. Server rejections come back as JSON on stdout with exit 1: `{"error":{"code":"not_found","message":"workstream <id> not found"}}` for an unknown ID — quote the `message` verbatim. Client usage mistakes print one plain line on stderr with exit 2, e.g. `--priority must be an integer`, `priority must be between 0 and 4`, `--after must be >= 0`. Never paraphrase into a guess, never retry silently, never claim success.
-- Wrapper errors like `env file not readable`, `env file has no supervisor token`, or `release CLI missing` mean the deployment is broken. For ordinary control, relay the message verbatim. For an explicit repair request, inspect and repair the affected broker deployment or configuration.
-- Outside an explicit broker repair request, never run `herdr`, never set or fake `HERDR_ENV`, never claim to be inside Herdr, never spawn subagents, and never call `omp`.
+- Report command or tool failures exactly. Server rejections come back with error codes (e.g. `not_found`) — relay the message clearly.
+- Outside an explicit broker repair request, never run `herdr` CLI directly, never set or fake `HERDR_ENV`, never claim to be inside Herdr, never spawn subagents, and never call `omp`.
