@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "antigravity-prompt",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Preserve native Antigravity prompts and parallel Gemini streaming with bounded recovery of unspecified HTTP 429 responses.",
   "author": {
     "name": "emo-eth",

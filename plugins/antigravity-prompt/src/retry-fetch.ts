@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import type { SimpleStreamOptions } from "@oh-my-pi/pi-ai";
-import { extractRetryHint } from "@oh-my-pi/pi-utils/fetch-retry";
+import { extractRetryHint } from "./retry-hint.ts";
 
 type Fetch = NonNullable<SimpleStreamOptions["fetch"]>;
 
