@@ -223,98 +223,100 @@ papercut_timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 papercut_id=""
 if command -v uuidgen >/dev/null 2>&1; then
   papercut_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-elif command -v python3 >/dev/null 2>&1; then
-  papercut_id="$(python3 -c 'import uuid; print(str(uuid.uuid4()))')"
-elif command -v node >/dev/null 2>&1; then
-  papercut_id="$(node -e 'console.log(require("crypto").randomUUID())')"
 fi
-[[ -n "$papercut_id" ]] || papercut_error "failed to generate UUID for papercut record"
 
-papercut_json_escape() {
-  local papercut_json_value="$1"
-  papercut_json_value="${papercut_json_value//\\/\\\\}"
-  papercut_json_value="${papercut_json_value//\"/\\\"}"
-  papercut_json_value="${papercut_json_value//$'\n'/\\n}"
-  papercut_json_value="${papercut_json_value//$'\r'/\\r}"
-  papercut_json_value="${papercut_json_value//$'\t'/\\t}"
-  printf '%s' "$papercut_json_value"
+export PAPERCUT_RECORD_ID="$papercut_id"
+export PAPERCUT_TIMESTAMP="$papercut_timestamp"
+export PAPERCUT_AGENT="$papercut_agent"
+export PAPERCUT_REPO_NAME="$papercut_repo_name"
+export PAPERCUT_REPO_ROOT="$papercut_repo_root"
+export PAPERCUT_WORKTREE="$papercut_git_top"
+export PAPERCUT_BRANCH="$papercut_branch"
+export PAPERCUT_COMMIT="$papercut_commit"
+export PAPERCUT_DETACHED="$papercut_detached"
+export PAPERCUT_CWD="$papercut_cwd_display"
+export PAPERCUT_MESSAGE="$papercut_message"
+export PAPERCUT_OUTPUT_PATH="$papercut_output_path"
+export PAPERCUT_DRY_RUN="$papercut_dry_run"
+export PAPERCUT_JSON="$papercut_json"
+
+python3 - "${papercut_file_display[@]+"${papercut_file_display[@]}"}" << 'PYEOF'
+import json
+import os
+import sys
+from pathlib import Path
+import uuid
+
+agent = os.environ.get("PAPERCUT_AGENT", "unknown-agent")
+repo_root = os.environ.get("PAPERCUT_REPO_ROOT") or None
+repo_name = os.environ.get("PAPERCUT_REPO_NAME") or None
+worktree = os.environ.get("PAPERCUT_WORKTREE") or None
+branch = os.environ.get("PAPERCUT_BRANCH") or None
+commit = os.environ.get("PAPERCUT_COMMIT") or None
+detached = int(os.environ.get("PAPERCUT_DETACHED", "0"))
+cwd = os.environ.get("PAPERCUT_CWD", ".")
+message = os.environ.get("PAPERCUT_MESSAGE", "")
+output_path_str = os.environ.get("PAPERCUT_OUTPUT_PATH", "")
+dry_run = os.environ.get("PAPERCUT_DRY_RUN", "0") == "1"
+json_receipt = os.environ.get("PAPERCUT_JSON", "0") == "1"
+timestamp = os.environ.get("PAPERCUT_TIMESTAMP", "")
+record_id = os.environ.get("PAPERCUT_RECORD_ID", "")
+if not record_id:
+    record_id = str(uuid.uuid4())
+
+files = sys.argv[1:]
+
+record = {
+    "schema": "springfield.papercut.v3",
+    "id": record_id,
+    "timestamp": timestamp,
+    "agent": agent,
+    "repoName": repo_name,
+    "repoRoot": repo_root,
+    "worktree": worktree,
+    "branch": branch,
+    "commit": commit,
+    "detached": detached,
+    "cwd": cwd,
+    "files": files,
+    "message": message,
 }
 
-papercut_json_nullable() {
-  if [[ -n "$1" ]]; then
-    printf '"%s"' "$(papercut_json_escape "$1")"
-  else
-    printf 'null'
-  fi
-}
+if not dry_run:
+    p = Path(output_path_str)
+    p.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+    record_bytes = (json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8")
+    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        written = 0
+        while written < len(record_bytes):
+            n = os.write(fd, record_bytes[written:])
+            if n == 0:
+                raise OSError("write() returned 0 bytes")
+            written += n
+    finally:
+        os.close(fd)
 
-papercut_record='{"schema":"springfield.papercut.v3","id":"'"$papercut_id"'","timestamp":"'"$papercut_timestamp"'","agent":"'"$(papercut_json_escape "$papercut_agent")"'","repoName":'"$(papercut_json_nullable "$papercut_repo_name")"',"repoRoot":'"$(papercut_json_nullable "$papercut_repo_root")"',"worktree":'
-if [[ -n "$papercut_git_top" ]]; then
-  papercut_record+='"'"$(papercut_json_escape "$papercut_git_top")"'"'
-else
-  papercut_record+='null'
-fi
-papercut_record+=',"branch":'"$(papercut_json_nullable "$papercut_branch")"
-papercut_record+=',"commit":'"$(papercut_json_nullable "$papercut_commit")"
-papercut_record+=',"detached":'$((papercut_detached))
-papercut_record+=',"cwd":"'"$(papercut_json_escape "$papercut_cwd_display")"'"'
-papercut_record+=',"files":['
-if ((${#papercut_file_display[@]} > 0)); then
-  for papercut_file_index in "${!papercut_file_display[@]}"; do
-    ((papercut_file_index > 0)) && papercut_record+=','
-    papercut_record+='"'"$(papercut_json_escape "${papercut_file_display[$papercut_file_index]}")"'"'
-  done
-fi
-papercut_record+='],"message":"'"$(papercut_json_escape "$papercut_message")"'"}'
-
-if ((papercut_dry_run == 0)); then
-  mkdir -p "$(dirname "$papercut_output_path")"
-
-  if [[ -s "$papercut_output_path" ]]; then
-    papercut_last_byte="$(tail -c 1 "$papercut_output_path" | od -An -t x1 | tr -d ' \n')"
-    [[ "$papercut_last_byte" == "0a" ]] || printf '\n' >> "$papercut_output_path"
-  fi
-
-  printf '%s\n' "$papercut_record" >> "$papercut_output_path"
-fi
-
-if ((papercut_json == 1)); then
-  printf '{\n'
-  printf '  "schema": "springfield.papercut.v3",\n'
-  printf '  "id": "%s",\n' "$papercut_id"
-  printf '  "timestamp": "%s",\n' "$papercut_timestamp"
-  printf '  "agent": "%s",\n' "$(papercut_json_escape "$papercut_agent")"
-  printf '  "repoRoot": "%s",\n' "$(papercut_json_escape "$papercut_repo_root")"
-  printf '  "repoName": "%s",\n' "$(papercut_json_escape "$papercut_repo_name")"
-  if [[ -n "$papercut_git_top" ]]; then
-    printf '  "worktree": "%s",\n' "$(papercut_json_escape "$papercut_git_top")"
-  else
-    printf '  "worktree": null,\n'
-  fi
-  printf '  "branch": %s,\n' "$(papercut_json_nullable "$papercut_branch")"
-  printf '  "commit": %s,\n' "$(papercut_json_nullable "$papercut_commit")"
-  printf '  "detached": %s,\n' "$((papercut_detached))"
-  printf '  "cwd": "%s",\n' "$(papercut_json_escape "$papercut_cwd_display")"
-  printf '  "files": ['
-  if ((${#papercut_file_display[@]} > 0)); then
-    for papercut_file_index in "${!papercut_file_display[@]}"; do
-      ((papercut_file_index > 0)) && printf ', '
-      printf '"%s"' "$(papercut_json_escape "${papercut_file_display[$papercut_file_index]}")"
-    done
-  fi
-  printf '],\n'
-  printf '  "message": "%s",\n' "$(papercut_json_escape "$papercut_message")"
-  printf '  "papercutsPath": "%s",\n' "$(papercut_json_escape "$papercut_output_path")"
-  if ((papercut_dry_run == 1)); then
-    printf '  "written": false\n'
-  else
-    printf '  "written": true\n'
-  fi
-  printf '}\n'
-else
-  if ((papercut_dry_run == 1)); then
-    printf 'dry-run: %s\n' "$papercut_output_path"
-  else
-    printf 'logged: %s\n' "$papercut_output_path"
-  fi
-fi
+if json_receipt:
+    receipt = {
+        "schema": "springfield.papercut.v3",
+        "id": record_id,
+        "timestamp": timestamp,
+        "agent": agent,
+        "repoRoot": repo_root,
+        "repoName": repo_name,
+        "worktree": worktree,
+        "branch": branch,
+        "commit": commit,
+        "detached": detached,
+        "cwd": cwd,
+        "files": files,
+        "message": message,
+        "papercutsPath": output_path_str,
+        "written": not dry_run,
+    }
+    sys.stdout.write(json.dumps(receipt, indent=2, ensure_ascii=False) + "\n")
+else:
+    status = "dry-run" if dry_run else "logged"
+    sys.stdout.write(f"{status}: {output_path_str}\n")
+PYEOF
