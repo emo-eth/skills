@@ -143,7 +143,7 @@ papercut_absolute_path() {
 }
 
 # Resolve the global output file. --path wins, then $PAPERCUTS_PATH,
-# then ~/PAPERCUTS.md. This is never inside the repository.
+# then ~/PAPERCUTS.jsonl. This is never inside the repository.
 if [[ -n "$papercut_output_path" ]]; then
   papercut_output_path="$(papercut_expand_tilde "$papercut_output_path")"
   papercut_output_path="$(papercut_absolute_path "$papercut_output_path")"
@@ -217,15 +217,10 @@ if ((${#papercut_files[@]} > 0)); then
     papercut_file_display+=("$(papercut_relative_or_absolute "$papercut_file")")
   done
 fi
-
+papercut_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 papercut_timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
-papercut_id=""
-if command -v uuidgen >/dev/null 2>&1; then
-  papercut_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-fi
-
-export PAPERCUT_RECORD_ID="$papercut_id"
+export PAPERCUT_SCRIPT_DIR="$papercut_script_dir"
 export PAPERCUT_TIMESTAMP="$papercut_timestamp"
 export PAPERCUT_AGENT="$papercut_agent"
 export PAPERCUT_REPO_NAME="$papercut_repo_name"
@@ -247,6 +242,12 @@ import sys
 from pathlib import Path
 import uuid
 
+script_dir = os.environ.get("PAPERCUT_SCRIPT_DIR")
+if script_dir and script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
+from papercut_records import append_records_safely, load_jsonl_strict, locked_log
+
 agent = os.environ.get("PAPERCUT_AGENT", "unknown-agent")
 repo_root = os.environ.get("PAPERCUT_REPO_ROOT") or None
 repo_name = os.environ.get("PAPERCUT_REPO_NAME") or None
@@ -260,15 +261,12 @@ output_path_str = os.environ.get("PAPERCUT_OUTPUT_PATH", "")
 dry_run = os.environ.get("PAPERCUT_DRY_RUN", "0") == "1"
 json_receipt = os.environ.get("PAPERCUT_JSON", "0") == "1"
 timestamp = os.environ.get("PAPERCUT_TIMESTAMP", "")
-record_id = os.environ.get("PAPERCUT_RECORD_ID", "")
-if not record_id:
-    record_id = str(uuid.uuid4())
 
 files = sys.argv[1:]
 
 record = {
     "schema": "springfield.papercut.v3",
-    "id": record_id,
+    "id": str(uuid.uuid4()),
     "timestamp": timestamp,
     "agent": agent,
     "repoName": repo_name,
@@ -284,34 +282,13 @@ record = {
 
 if not dry_run:
     p = Path(output_path_str)
-    p.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
-    record_bytes = (json.dumps(record, ensure_ascii=False) + "\n").encode("utf-8")
-    fd = os.open(str(p), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    try:
-        written = 0
-        while written < len(record_bytes):
-            n = os.write(fd, record_bytes[written:])
-            if n == 0:
-                raise OSError("write() returned 0 bytes")
-            written += n
-    finally:
-        os.close(fd)
+    with locked_log(p):
+        load_jsonl_strict(p)
+        append_records_safely(p, [record])
 
 if json_receipt:
     receipt = {
-        "schema": "springfield.papercut.v3",
-        "id": record_id,
-        "timestamp": timestamp,
-        "agent": agent,
-        "repoRoot": repo_root,
-        "repoName": repo_name,
-        "worktree": worktree,
-        "branch": branch,
-        "commit": commit,
-        "detached": detached,
-        "cwd": cwd,
-        "files": files,
-        "message": message,
+        **record,
         "papercutsPath": output_path_str,
         "written": not dry_run,
     }

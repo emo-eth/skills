@@ -1,0 +1,36 @@
+{
+  "name": "@emo-eth/yearn-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": [
+    "pi-package",
+    "omp-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/pi.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./src/omp.ts"
+    ]
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./pi": "./src/pi.ts",
+    "./omp": "./src/omp.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

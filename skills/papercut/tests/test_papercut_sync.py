@@ -17,6 +17,7 @@ PAPERCUT_SH = TEST_ROOT.parent / "scripts" / "papercut.sh"
 MIGRATE_PY = TEST_ROOT.parent / "scripts" / "migrate_papercuts.py"
 CHEZMOI_SOURCE_DIR = Path.home() / ".local/share/chezmoi"
 RECONCILE_PY = CHEZMOI_SOURCE_DIR / "private_dot_local/bin/executable_chezmoi-reconcile-logs.py"
+RECORDS_PY = CHEZMOI_SOURCE_DIR / "private_dot_local/bin/papercut_records.py"
 ASSIMILATE_SH = CHEZMOI_SOURCE_DIR / "private_dot_local/bin/executable_chezmoi-assimilate.sh"
 UPDATE_POST_SH = CHEZMOI_SOURCE_DIR / "private_dot_local/bin/executable_chezmoi-update-post.sh"
 RUN_AFTER_SH = CHEZMOI_SOURCE_DIR / "run_after_reconcile-logs.sh"
@@ -172,6 +173,7 @@ class TestPapercutSyncE2E(unittest.TestCase):
         bin_dir.mkdir(parents=True)
         shutil.copy2(ASSIMILATE_SH, bin_dir / "executable_chezmoi-assimilate.sh")
         shutil.copy2(RECONCILE_PY, bin_dir / "executable_chezmoi-reconcile-logs.py")
+        shutil.copy2(RECORDS_PY, bin_dir / "papercut_records.py")
         shutil.copy2(UPDATE_POST_SH, bin_dir / "executable_chezmoi-update-post.sh")
         shutil.copy2(RUN_AFTER_SH, seed_dir / "run_after_reconcile-logs.sh")
 
@@ -270,6 +272,7 @@ class TestPapercutSyncE2E(unittest.TestCase):
         bin_dir.mkdir(parents=True)
         shutil.copy2(ASSIMILATE_SH, bin_dir / "executable_chezmoi-assimilate.sh")
         shutil.copy2(RECONCILE_PY, bin_dir / "executable_chezmoi-reconcile-logs.py")
+        shutil.copy2(RECORDS_PY, bin_dir / "papercut_records.py")
         shutil.copy2(UPDATE_POST_SH, bin_dir / "executable_chezmoi-update-post.sh")
         shutil.copy2(RUN_AFTER_SH, seed_dir / "run_after_reconcile-logs.sh")
 
@@ -353,7 +356,7 @@ class TestPapercutSyncE2E(unittest.TestCase):
         m2_y_ids = {json.loads(l)["id"] for l in m2_yearnings.read_text().splitlines() if l.strip()}
         self.assertEqual(m1_y_ids, m2_y_ids)
         self.assertIn(rec_m1_y["id"], m1_y_ids)
-        self.assertIn(rec_m2_y["id"], m1_y_ids)
+        self.assertIn(rec_m2_y["id"], m2_y_ids)
 
         # Verify privacy modes on yearnings
         y_dir_mode = oct((home1 / ".yearn").stat().st_mode & 0o777)

@@ -3,3 +3,5 @@
 .prioritize-state.json
 .context/
 .pi/
+__pycache__/
+*.pyc
