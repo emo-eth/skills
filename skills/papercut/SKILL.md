@@ -1,7 +1,7 @@
 ---
 name: papercut
 disable-model-invocation: true
-description: Log small agent workflow friction that affected the work to a user-global PAPERCUTS.md file with the bundled shell helper.
+description: Log small agent workflow friction that affected the work to a user-global PAPERCUTS.jsonl file with the bundled shell helper.
 license: MIT
 ---
 
@@ -9,7 +9,7 @@ license: MIT
 
 Use this skill when a small workflow friction affects how the work goes: it costs time, causes confusion, forces a retry or workaround, or makes the result less reliable. Log it while the context is fresh. Do not turn this into an eligibility review.
 
-The helper writes to one user-global append-only file, not the repository. The default is `~/PAPERCUTS.md`; set `PAPERCUTS_PATH` or pass `--path` to choose another file.
+The helper writes to one user-global append-only JSONL file, not the repository. The default is `~/PAPERCUTS.jsonl`; set `PAPERCUTS_PATH` or pass `--path` to choose another file.
 
 ## Resolve the helper
 
@@ -63,10 +63,10 @@ papercut -m codex "what you were doing -> what got in the way"
 
 For example, do not log "`vendor --help` returned an unusual exit code" when the work was unaffected. Do log it when that behavior misled you, forced a workaround, delayed the task, or made the result uncertain, even if the tool is third-party and you do not know the fix.
 
-Each entry records the repository identity, worktree, branch (or detached commit), current folder, agent, related files, and note. Paths are local metadata; do not log secrets in paths or messages.
+Each entry is a single serialized JSON record with schema springfield.papercut.v3, an RFC 4122 UUID, UTC timestamp, repository identity, worktree, branch (or detached commit), current folder, agent, related files, and message. Paths are local metadata; do not log secrets in paths or messages.
 
 ## Output
 
-The CLI appends to the global `PAPERCUTS.md` path, creating its parent directory and file if needed. The default is `~/PAPERCUTS.md`; set `PAPERCUTS_PATH` or pass `--path` to choose another file. Output is never written into the repository.
+The CLI appends to the global `PAPERCUTS.jsonl` path, creating its parent directory and file if needed. The default is `~/PAPERCUTS.jsonl`; set `PAPERCUTS_PATH` or pass `--path` to choose another file. Output is never written into the repository.
 
 `--repo <path>` sets the project root used to compute relative metadata (worktree, branch or detached commit, and folder); it does not change the global output location.
