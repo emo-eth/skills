@@ -3,6 +3,7 @@ import {
   accessSync,
   constants,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -32,6 +33,8 @@ export type WorkerRequest = {
   target: RestartTarget;
   targets?: FleetTarget[];
   scope?: "local" | "fleet";
+  skipUpdates?: boolean;
+  skipHerdrUpdate?: boolean;
   herdrBinary: string;
   cwd: string;
   activeLockPath?: string;
@@ -117,6 +120,7 @@ export type FleetRestartDependencies = {
   delay: (milliseconds: number) => Promise<void>;
   startServer?: (target: FleetTarget) => Promise<void>;
   updatePlugins: HardRestartDependencies["updatePlugins"];
+  now: () => number;
 };
 
 export function shellEscape(arg: string): string {
@@ -320,6 +324,9 @@ export function readWorkerRequest(path: string): WorkerRequest {
     }
   }
 
+  const skipUpdates = record.skipUpdates === true;
+  const skipHerdrUpdate = record.skipHerdrUpdate === true;
+
   return {
     target: {
       session: session ?? null,
@@ -331,6 +338,8 @@ export function readWorkerRequest(path: string): WorkerRequest {
     herdrBinary: record.herdrBinary,
     cwd: record.cwd,
     scope,
+    ...(skipUpdates ? { skipUpdates: true } : {}),
+    ...(skipHerdrUpdate ? { skipHerdrUpdate: true } : {}),
     ...(targets.length > 0 ? { targets } : {}),
     ...(typeof activeLockPath === "string" ? { activeLockPath } : {}),
   };
@@ -915,11 +924,57 @@ export function releaseActiveLock(request: WorkerRequest, jobDir: string): void 
   rmSync(activeLockPath, { recursive: true, force: true });
 }
 
+export function isHerdrBinarySymlink(herdrBinary: string): boolean {
+  try {
+    const resolved = resolveHerdrBinary(herdrBinary);
+    return lstatSync(resolved).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+export async function shouldSkipHerdrUpdate(
+  deps: HardRestartDependencies,
+  updateEnv: NodeJS.ProcessEnv,
+): Promise<{ skip: boolean; reason?: string }> {
+  if (
+    deps.request.skipHerdrUpdate ||
+    updateEnv.HERDR_SKIP_SELF_UPDATE === "1" ||
+    process.env.HERDR_SKIP_SELF_UPDATE === "1"
+  ) {
+    return { skip: true, reason: "HERDR_SKIP_SELF_UPDATE or skipHerdrUpdate requested" };
+  }
+  if (deps.request.target.kind === "remote") {
+    try {
+      const res = await deps.run("sh", ["-c", 'test -L "$(which herdr 2>/dev/null || echo /dev/null)"'], {
+        env: updateEnv,
+        cwd: deps.request.cwd,
+        timeoutMs: 10_000,
+      });
+      if (res.status === 0) {
+        return { skip: true, reason: "remote herdr binary is a symlink/custom build" };
+      }
+    } catch {
+      // ignore
+    }
+  } else {
+    if (isHerdrBinarySymlink(deps.request.herdrBinary)) {
+      return { skip: true, reason: "local herdr binary is a symlink/custom build" };
+    }
+  }
+  return { skip: false };
+}
+
 async function runAllUpdates(
   deps: HardRestartDependencies,
   updateEnv: NodeJS.ProcessEnv,
 ): Promise<void> {
-  await runHerdr(deps, updateEnv, ["update"], "Herdr update", 300_000);
+  const herdrCheck = await shouldSkipHerdrUpdate(deps, updateEnv);
+  if (herdrCheck.skip) {
+    deps.log(`Skipping herdr update: ${herdrCheck.reason}`);
+  } else {
+    await runHerdr(deps, updateEnv, ["update"], "Herdr update", 300_000);
+  }
   await runUpdateCommand(deps, "omp", ["update"], "OMP update", updateEnv);
   await runUpdateCommand(deps, "omp", ["update", "--plugins"], "OMP plugin update", updateEnv);
   await runUpdateCommand(deps, "pi", ["update", "--all"], "Pi update", updateEnv);
@@ -958,18 +1013,25 @@ export async function runHardRestartPipeline(
   });
   savedAgents = await drainAndCaptureAgents(deps, targetEnv);
   deps.saveAgents(savedAgents);
-  try {
+  if (deps.request.skipUpdates) {
+    deps.log("Skipping all updates as requested (--no-updates)");
     deps.publishStatus({
-      phase: "updating",
-      message: "Updating runtimes and plugins before restarting Herdr",
+      phase: "restarting",
+      message: "Hard restart requested without updates; preserving current runtimes and configs",
     });
-    await runAllUpdates(deps, updateEnv);
-  } catch (error: unknown) {
-    updateError = error instanceof Error ? error : new Error(String(error));
+  } else {
+    try {
+      deps.publishStatus({
+        phase: "updating",
+        message: "Updating runtimes and plugins before restarting Herdr",
+      });
+      await runAllUpdates(deps, updateEnv);
+    } catch (error: unknown) {
+      updateError = error instanceof Error ? error : new Error(String(error));
+    }
+    savedAgents = await drainAndCaptureAgents(deps, targetEnv);
+    deps.saveAgents(savedAgents);
   }
-  savedAgents = await drainAndCaptureAgents(deps, targetEnv);
-  deps.saveAgents(savedAgents);
-
   deps.publishStatus({
     phase: "stopping-server",
     message: "Stopping the Herdr server",
@@ -1047,7 +1109,9 @@ export async function runHardRestartPipeline(
 
   const status: WorkerStatus = {
     phase: "complete",
-    message: "Updates finished and native agent sessions reconnected",
+    message: deps.request.skipUpdates
+      ? "Herdr hard-restarted and native agent sessions reconnected (updates skipped)"
+      : "Updates finished and native agent sessions reconnected",
   };
   deps.publishStatus(status);
   return status;
@@ -1138,6 +1202,8 @@ export async function runFleetRestartPipeline(
       herdrBinary: deps.request.herdrBinary,
       cwd: deps.request.cwd,
       scope: "local",
+      skipUpdates: deps.request.skipUpdates,
+      skipHerdrUpdate: deps.request.skipHerdrUpdate,
     };
 
     const targetDeps: HardRestartDependencies = {
@@ -1188,7 +1254,9 @@ export async function runFleetRestartPipeline(
 
   const finalStatus: WorkerStatus = {
     phase: "complete",
-    message: `Fleet restart completed successfully across all ${targets.length} machines (${targets.map((t) => t.label).join(", ")})`,
+    message: deps.request.skipUpdates
+      ? `Fleet hard-restart completed successfully across all ${targets.length} machines (${targets.map((t) => t.label).join(", ")})`
+      : `Fleet restart completed successfully across all ${targets.length} machines (${targets.map((t) => t.label).join(", ")})`,
   };
   deps.publishStatus(finalStatus);
   return finalStatus;

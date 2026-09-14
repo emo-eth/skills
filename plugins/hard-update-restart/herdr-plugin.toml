@@ -20,3 +20,18 @@ width = "90%"
 height = 24
 command = ["node", "--experimental-strip-types", "src/updater.ts"]
 
+[[actions]]
+id = "restart"
+title = "Hard-restart Herdr (no updates)"
+description = "Stop pane processes, start fresh Herdr server(s), and restore agent sessions without running any runtime or plugin updates."
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/schedule-updater.ts", "--no-updates"]
+
+[[panes]]
+id = "restart"
+title = "Hard-restart Herdr (no updates)"
+placement = "popup"
+width = "90%"
+height = 24
+command = ["node", "--experimental-strip-types", "src/updater.ts", "--no-updates"]
+

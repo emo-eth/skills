@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const workerPath = fileURLToPath(new URL("./open-updater.ts", import.meta.url));
-const args = ["--experimental-strip-types", workerPath];
+const args = ["--experimental-strip-types", workerPath, ...process.argv.slice(2)];
 
 const child = spawn(process.execPath, args, {
   detached: true,

@@ -11,9 +11,12 @@ import {
   discoverMeshTargets,
   restoredPaneIds,
   runFleetRestartPipeline,
+  runHardRestartPipeline,
   shellEscape,
+  shouldSkipHerdrUpdate,
   type CommandRunner,
   type FleetTarget,
+  type HardRestartDependencies,
   type WorkerStatus,
 } from "../src/core.ts";
 
@@ -298,4 +301,111 @@ test("runFleetRestartPipeline coordinates multiple targets and aggregates comple
   assert.match(finalStatus.message, /Fleet restart completed successfully/);
   assert.equal(statuses.some((s) => s.message.includes("[Local]")), true);
   assert.equal(statuses.some((s) => s.message.includes("[spark0]")), true);
+});
+
+test("shouldSkipHerdrUpdate honors env var and remote symlink check", async () => {
+  const baseRequest = {
+    target: { session: "default", socket: "/tmp/sock" },
+    herdrBinary: "herdr",
+    cwd: "/tmp",
+  };
+  const dummyDeps = (isRemote: boolean, isSymlink: boolean): HardRestartDependencies => ({
+    request: {
+      ...baseRequest,
+      target: { ...baseRequest.target, kind: isRemote ? "remote" : "local" },
+    },
+    jobDir: "/tmp",
+    publishStatus: () => {},
+    log: () => {},
+    saveAgents: () => {},
+    run: async (_cmd, args) => {
+      if (args.join(" ").includes("test -L")) {
+        return { status: isSymlink ? 0 : 1, stdout: "", stderr: "" };
+      }
+      return { status: 0, stdout: "", stderr: "" };
+    },
+    delay: async () => {},
+    startServer: async () => {},
+    updatePlugins: async () => {},
+    now: () => 1000,
+  });
+
+  // Env var override
+  const envCheck = await shouldSkipHerdrUpdate(dummyDeps(false, false), {
+    HERDR_SKIP_SELF_UPDATE: "1",
+  });
+  assert.equal(envCheck.skip, true);
+
+  // Remote symlink detected
+  const remoteSymlinkCheck = await shouldSkipHerdrUpdate(dummyDeps(true, true), {});
+  assert.equal(remoteSymlinkCheck.skip, true);
+  assert.match(remoteSymlinkCheck.reason!, /symlink/);
+
+  // Remote regular binary not skipped
+  const remoteRegularCheck = await shouldSkipHerdrUpdate(dummyDeps(true, false), {});
+  assert.equal(remoteRegularCheck.skip, false);
+});
+
+test("runHardRestartPipeline with skipUpdates: true restarts server and restores agents without running updates", async () => {
+  const commandsRun: string[] = [];
+  let pluginsUpdated = false;
+  let isServerRunning = true;
+
+  const mockRunner: CommandRunner = async (cmd, args) => {
+    const full = `${cmd} ${args.join(" ")}`;
+    commandsRun.push(full);
+    if (full.includes("server stop")) {
+      isServerRunning = false;
+      return { status: 0, stdout: "ok\n", stderr: "" };
+    }
+    if (full.includes("status server --json")) {
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          status: isServerRunning ? "running" : "not_running",
+          running: isServerRunning,
+          session: "default",
+          socket: "/tmp/sock",
+          capabilities: { detached_server_daemon: true, endpoint_protocol_generation: 1 },
+        }),
+        stderr: "",
+      };
+    }
+    if (full.includes("agent list")) {
+      return { status: 0, stdout: list([agent]), stderr: "" };
+    }
+    return { status: 0, stdout: "ok\n", stderr: "" };
+  };
+
+  let time = 1000;
+  const status = await runHardRestartPipeline({
+    request: {
+      target: { session: "default", socket: "/tmp/sock" },
+      herdrBinary: "herdr",
+      cwd: "/tmp",
+      skipUpdates: true,
+    },
+    jobDir: "/tmp",
+    publishStatus: () => {},
+    log: () => {},
+    saveAgents: () => {},
+    run: mockRunner,
+    delay: async () => {},
+    startServer: async () => {
+      isServerRunning = true;
+    },
+    updatePlugins: async () => {
+      pluginsUpdated = true;
+    },
+    now: () => {
+      time += 10;
+      return time;
+    },
+  });
+
+  assert.equal(status.phase, "complete");
+  assert.match(status.message, /updates skipped/);
+  assert.equal(pluginsUpdated, false);
+  assert.equal(commandsRun.some((c) => c.includes("update")), false);
+  assert.equal(commandsRun.some((c) => c.includes("server stop")), true);
 });

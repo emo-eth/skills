@@ -46,53 +46,110 @@ async function main(): Promise<void> {
     return { status: res.status, stdout: res.stdout || "" };
   });
 
-  console.log("Update everything and hard-restart");
-  console.log("");
-  if (meshTargets.length > 1) {
-    console.log("Mesh machines discovered:");
-    for (const t of meshTargets) {
-      if (t.kind === "local") {
-        console.log(`  • Local (${t.session ? `session: ${t.session}` : "current session"})`);
-      } else {
-        console.log(`  • ${t.label} (SSH: ${t.sshTarget}, session: ${t.session})`);
+  const noUpdatesFlag = process.argv.includes("--no-updates");
+
+  if (noUpdatesFlag) {
+    console.log("Hard-restart Herdr (no updates)");
+    console.log("");
+    if (meshTargets.length > 1) {
+      console.log("Mesh machines discovered:");
+      for (const t of meshTargets) {
+        if (t.kind === "local") {
+          console.log(`  • Local (${t.session ? `session: ${t.session}` : "current session"})`);
+        } else {
+          console.log(`  • ${t.label} (SSH: ${t.sshTarget}, session: ${t.session})`);
+        }
       }
+      console.log("");
     }
+    console.log("1. Drain and capture recoverable agent sessions.");
+    console.log("2. Restart Herdr server(s) without updating runtimes, extensions, or plugins.");
+    console.log("3. Reconnect agent sessions into fresh processes with current configs reloaded.");
+    console.log("");
+    console.log("This stops EVERY pane process in selected session(s), including shells and dev servers.");
+    console.log("Non-agent processes return as fresh shells, not running commands.");
+    console.log("Working, blocked, and unknown agents must settle first.");
+    console.log("An agent without a recoverable native session prevents shutdown.");
+    console.log(`If the client does not reconnect automatically, run: ${reattach}`);
+    console.log("");
+  } else {
+    console.log("Update everything and hard-restart");
+    console.log("");
+    if (meshTargets.length > 1) {
+      console.log("Mesh machines discovered:");
+      for (const t of meshTargets) {
+        if (t.kind === "local") {
+          console.log(`  • Local (${t.session ? `session: ${t.session}` : "current session"})`);
+        } else {
+          console.log(`  • ${t.label} (SSH: ${t.sshTarget}, session: ${t.session})`);
+        }
+      }
+      console.log("");
+    }
+    console.log("1. Update Herdr, OMP, and Pi runtimes.");
+    console.log("2. Update OMP plugins, Pi extensions, and tracked GitHub Herdr plugins.");
+    console.log("3. Restart Herdr session(s) and verify saved conversations return.");
+    console.log("Pinned and locally linked Herdr plugins stay untouched.");
+    console.log("Configs already on disk are loaded by the new processes; configs are not replaced.");
+    console.log("");
+    console.log("This stops EVERY pane process in selected session(s), including shells and dev servers.");
+    console.log("Non-agent processes return as fresh shells, not running commands.");
+    console.log("Working, blocked, and unknown agents must settle first.");
+    console.log("An agent without a recoverable native session prevents shutdown.");
+    console.log(`If the client does not reconnect automatically, run: ${reattach}`);
     console.log("");
   }
-  console.log("1. Update Herdr, OMP, and Pi runtimes.");
-  console.log("2. Update OMP plugins, Pi extensions, and tracked GitHub Herdr plugins.");
-  console.log("3. Restart Herdr session(s) and verify saved conversations return.");
-  console.log("Pinned and locally linked Herdr plugins stay untouched.");
-  console.log("Configs already on disk are loaded by the new processes; configs are not replaced.");
-  console.log("");
-  console.log("This stops EVERY pane process in selected session(s), including shells and dev servers.");
-  console.log("Non-agent processes return as fresh shells, not running commands.");
-  console.log("Working, blocked, and unknown agents must settle first.");
-  console.log("An agent without a recoverable native session prevents shutdown.");
-  console.log(`If the client does not reconnect automatically, run: ${reattach}`);
-  console.log("");
 
   const input = createInterface({ input: process.stdin, output: process.stdout });
   let choice = "";
   try {
-    const prompt =
-      meshTargets.length > 1
-        ? 'Type "all" (or "update") to restart all machines, "local" for this machine only, or anything else to cancel: '
-        : 'Type "update" to continue; anything else cancels: ';
+    const prompt = noUpdatesFlag
+      ? meshTargets.length > 1
+        ? 'Type "all" (or "restart") to restart all machines, "local" for this machine only, or anything else to cancel: '
+        : 'Type "restart" (or "yes") to continue; anything else cancels: '
+      : meshTargets.length > 1
+        ? 'Type "all" (update & restart all), "restart" (restart all, NO updates), "local" (this machine only), or anything else to cancel: '
+        : 'Type "update" to update & restart, "restart" for restart without updates, or anything else to cancel: ';
     choice = (await input.question(prompt)).trim().toLowerCase();
   } catch {
     choice = "";
   } finally {
     input.close();
   }
-  const isAll = choice === "all" || choice === "update";
-  const isLocal = choice === "local";
-  if (!isAll && !isLocal) {
-    console.log("Cancelled. Nothing changed.");
-    return;
+
+  let skipUpdates = noUpdatesFlag;
+  let scope: "fleet" | "local" = "local";
+
+  if (noUpdatesFlag) {
+    if (choice === "all" || choice === "restart" || choice === "update" || choice === "yes" || choice === "y") {
+      scope = meshTargets.length > 1 ? "fleet" : "local";
+      skipUpdates = true;
+    } else if (choice === "local") {
+      scope = "local";
+      skipUpdates = true;
+    } else {
+      console.log("Cancelled. Nothing changed.");
+      return;
+    }
+  } else {
+    if (choice === "all" || choice === "update") {
+      scope = meshTargets.length > 1 ? "fleet" : "local";
+      skipUpdates = false;
+    } else if (choice === "restart" || choice === "r") {
+      scope = meshTargets.length > 1 ? "fleet" : "local";
+      skipUpdates = true;
+    } else if (choice === "local") {
+      scope = "local";
+      skipUpdates = false;
+    } else if (choice === "local-restart" || choice === "lr") {
+      scope = "local";
+      skipUpdates = true;
+    } else {
+      console.log("Cancelled. Nothing changed.");
+      return;
+    }
   }
 
-  const scope: "fleet" | "local" = isAll && meshTargets.length > 1 ? "fleet" : "local";
   const selectedTargets: FleetTarget[] = scope === "fleet" ? meshTargets : [meshTargets[0]];
 
   mkdirSync(stateDir, { recursive: true });
@@ -127,6 +184,7 @@ async function main(): Promise<void> {
         target,
         targets: selectedTargets,
         scope,
+        skipUpdates,
         herdrBinary,
         cwd: jobDir,
         activeLockPath: activeDir,
