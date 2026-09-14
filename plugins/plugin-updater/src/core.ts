@@ -493,3 +493,57 @@ export async function collectOutcomes(
   );
   return { outcomes, localCount };
 }
+
+export async function reinstallPlugin(
+  run: Runner,
+  herdrBinary: string,
+  outcome: CheckOutcome,
+): Promise<void> {
+  const result = await run(herdrBinary, reinstallArgs(outcome));
+  if (result.status !== 0) {
+    const stderr = result.stderr.trim();
+    const hint = minHerdrHint(stderr);
+    let message = `${outcome.pluginId} update failed`;
+    if (result.status !== null) {
+      message += ` (exit ${result.status})`;
+    }
+    const detail = stderr ? firstLine(stderr) : result.error;
+    if (detail) {
+      message += `: ${detail}`;
+    } else {
+      message += ": no error output";
+    }
+    if (hint) {
+      message += `. ${hint}`;
+    }
+    throw new Error(message);
+  }
+  if (outcome.enabled === false) {
+    const restored = await run(herdrBinary, ["plugin", "disable", outcome.pluginId]);
+    if (restored.status !== 0) {
+      throw new Error(`${outcome.pluginId} update failed while restoring disabled state`);
+    }
+  }
+}
+
+export async function updatePlugins(
+  run: Runner,
+  herdrBinary: string,
+  report: (message: string) => void,
+): Promise<void> {
+  const { outcomes, localCount } = await collectOutcomes(run, herdrBinary);
+  report(formatReport(outcomes, localCount));
+
+  const errors = outcomes.filter((outcome) => outcome.classification === "error");
+  if (errors.length > 0) {
+    const names = errors.map((outcome) => outcome.pluginId).join(", ");
+    throw new Error(`Refusing to update plugins: ${names} could not be classified`);
+  }
+
+  const behind = sortForUpdate(
+    outcomes.filter((outcome) => outcome.classification === "behind"),
+  );
+  for (const outcome of behind) {
+    await reinstallPlugin(run, herdrBinary, outcome);
+  }
+}

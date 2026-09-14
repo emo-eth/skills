@@ -5,8 +5,7 @@ import { spawn } from "node:child_process";
 import { resolveHerdrBinary } from "./core.ts";
 
 const PLUGIN_ID = "hard-update-restart";
-const includeExtensions = process.argv.includes("--extensions");
-const entrypoint = includeExtensions ? "runtimes-and-extensions" : "runtimes";
+const entrypoint = "all";
 const herdrBinary = resolveHerdrBinary();
 
 function delay(milliseconds: number): Promise<void> {

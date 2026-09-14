@@ -1,36 +1,22 @@
 id = "hard-update-restart"
 name = "Hard Update Restart"
-version = "0.1.0"
-min_herdr_version = "0.8.2"
-description = "Update Herdr, OMP, and Pi, then restart the Herdr server so restored agents use the new runtimes."
+version = "0.2.0"
+min_herdr_version = "0.9.0"
+description = "Update runtimes and plugins, then hard-restart Herdr and verify native agent recovery."
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
-id = "runtimes"
-title = "Update runtimes and hard-restart Herdr"
-description = "Update Herdr, OMP, and Pi. Stop every pane, start a new Herdr server, and restore supported agent sessions."
+id = "all"
+title = "Update everything and hard-restart"
+description = "Update Herdr, OMP, Pi, and installed plugins/extensions; restart this session and resume recoverable agents after reconnecting."
 contexts = ["global", "workspace", "pane"]
 command = ["node", "--experimental-strip-types", "src/schedule-updater.ts"]
 
-[[actions]]
-id = "runtimes-and-extensions"
-title = "Update runtimes + extensions and hard-restart Herdr"
-description = "Also update installed OMP plugins and Pi extensions before the hard restart."
-contexts = ["global", "workspace", "pane"]
-command = ["node", "--experimental-strip-types", "src/schedule-updater.ts", "--extensions"]
-
 [[panes]]
-id = "runtimes"
-title = "Update runtimes"
+id = "all"
+title = "Update everything and hard-restart"
 placement = "popup"
 width = "90%"
 height = 24
 command = ["node", "--experimental-strip-types", "src/updater.ts"]
 
-[[panes]]
-id = "runtimes-and-extensions"
-title = "Update runtimes and extensions"
-placement = "popup"
-width = "90%"
-height = 24
-command = ["node", "--experimental-strip-types", "src/updater.ts", "--extensions"]

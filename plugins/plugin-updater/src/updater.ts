@@ -11,13 +11,15 @@ import {
   firstLine,
   formatReport,
   installSpec,
-  minHerdrHint,
   reinstallArgs,
+  reinstallPlugin,
   resolveHerdrBinary,
   runCommand,
   shortSha,
   sortForUpdate,
   type CheckOutcome,
+  type ExecResult,
+  type Runner,
 } from "./core.ts";
 
 const herdrBinary = resolveHerdrBinary();
@@ -34,15 +36,14 @@ function stateLog(message: string): void {
   );
 }
 
-function spawnVisible(
+const visibleRunner: Runner = (
   executable: string,
   args: string[],
-): Promise<{ status: number | null; stderr: string }> {
-  const { promise, resolve } = Promise.withResolvers<{
-    status: number | null;
-    stderr: string;
-  }>();
+  options?: { cwd?: string },
+): Promise<ExecResult> => {
+  const { promise, resolve } = Promise.withResolvers<ExecResult>();
   const child = spawn(executable, args, {
+    cwd: options?.cwd,
     env: process.env,
     stdio: ["ignore", "inherit", "pipe"],
   });
@@ -50,10 +51,14 @@ function spawnVisible(
   child.stderr?.on("data", (chunk: Buffer) => {
     stderr += chunk.toString("utf8");
   });
-  child.once("error", (error: Error) => resolve({ status: null, stderr: error.message }));
-  child.once("close", (code: number | null) => resolve({ status: code, stderr }));
+  child.once("error", (error: Error) =>
+    resolve({ status: null, stdout: "", stderr: error.message, error: error.message }),
+  );
+  child.once("close", (code: number | null) =>
+    resolve({ status: code, stdout: "", stderr }),
+  );
   return promise;
-}
+};
 
 function printPreview(outcome: CheckOutcome): void {
   console.log(`-- ${outcome.pluginId}  (${installSpec(outcome.source)})`);
@@ -74,29 +79,17 @@ function printPreview(outcome: CheckOutcome): void {
 async function reinstall(outcome: CheckOutcome): Promise<boolean> {
   const args = reinstallArgs(outcome);
   console.log(`\n==> ${herdrBinary} ${args.join(" ")}`);
-  const result = await spawnVisible(herdrBinary, args);
-  if (result.status === 0) {
-    if (outcome.enabled === false) {
-      const restored = await spawnVisible(herdrBinary, ["plugin", "disable", outcome.pluginId]);
-      if (restored.status !== 0) {
-        console.error(`${outcome.pluginId} update FAILED while restoring disabled state`);
-        stateLog(`failed to restore disabled state for ${outcome.pluginId}`);
-        return false;
-      }
-    }
+  try {
+    await reinstallPlugin(visibleRunner, herdrBinary, outcome);
     console.log(`${outcome.pluginId} updated.`);
     stateLog(`updated ${outcome.pluginId} to ${shortSha(outcome.remoteSha)}`);
     return true;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`${outcome.pluginId} update FAILED: ${message}`);
+    stateLog(`failed ${outcome.pluginId}: ${firstLine(message)}`);
+    return false;
   }
-  const stderr = result.stderr.trim();
-  console.error(`${outcome.pluginId} update FAILED (exit ${result.status ?? "signal"}):`);
-  console.error(stderr || "no error output");
-  const hint = minHerdrHint(stderr);
-  if (hint) {
-    console.error(`Hint: ${hint}`);
-  }
-  stateLog(`failed ${outcome.pluginId}: ${firstLine(stderr) || "no error output"}`);
-  return false;
 }
 async function scheduleSelfUpdate(outcome: CheckOutcome): Promise<void> {
   const helperPath = fileURLToPath(new URL("./self-update.ts", import.meta.url));

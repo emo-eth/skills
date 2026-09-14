@@ -1,25 +1,79 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { updatePlugins } from "../../plugin-updater/src/core.ts";
 import {
-  environmentOutsideHerdr,
+  readWorkerRequest,
+  releaseActiveLock,
   resolveHerdrBinary,
-  restartHerdr,
+  runHardRestartPipeline,
+  saveAgentsSnapshot,
+  spawnDetachedServer,
+  writeStatusAtomic,
+  type CommandRunner,
+  type ExecResult,
+  type WorkerRequest,
+  type WorkerStatus,
 } from "./core.ts";
 
-const herdrBinary = resolveHerdrBinary();
-const stateDir = process.env.HERDR_PLUGIN_STATE_DIR;
+const jobDir = process.argv[2];
+if (!jobDir) {
+  console.error("usage: restart-helper.ts <job-dir>");
+  process.exit(1);
+}
+
+const requestPath = join(jobDir, "request.json");
+const logPath = join(jobDir, "output.log");
 
 function appendLog(message: string): void {
-  if (!stateDir) {
-    return;
+  mkdirSync(jobDir, { recursive: true });
+  appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
+}
+
+function publishStatus(status: WorkerStatus): void {
+  writeStatusAtomic(jobDir, status);
+  appendLog(`${status.phase}: ${status.message}`);
+  if (status.error) {
+    appendLog(`error:\n${status.error}`);
   }
-  mkdirSync(stateDir, { recursive: true });
-  appendFileSync(
-    join(stateDir, "hard-update-restart.log"),
-    `${new Date().toISOString()} ${message}\n`,
+  if (status.missing?.length) {
+    appendLog(`missing panes: ${status.missing.join(", ")}`);
+  }
+}
+
+function runCommand(
+  executable: string,
+  args: string[],
+  options?: { env?: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number },
+): Promise<ExecResult> {
+  const { promise, resolve } = Promise.withResolvers<ExecResult>();
+  const child = spawn(executable, args, {
+    cwd: options?.cwd,
+    env: options?.env ?? process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  const timer = setTimeout(
+    () => child.kill("SIGKILL"),
+    options?.timeoutMs ?? 120_000,
   );
+  child.stdout?.on("data", (chunk: Buffer) => {
+    stdout += chunk.toString("utf8");
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString("utf8");
+  });
+  child.once("error", (error: Error) => {
+    clearTimeout(timer);
+    resolve({ status: null, stdout, stderr, error: error.message });
+  });
+  child.once("close", (code: number | null) => {
+    clearTimeout(timer);
+    resolve({ status: code, stdout, stderr });
+  });
+  return promise;
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -28,81 +82,46 @@ function delay(milliseconds: number): Promise<void> {
   return promise;
 }
 
+let request: WorkerRequest | undefined;
 try {
-  await restartHerdr({
-    delay: async () => {
-      await delay(1_000);
-    },
-    stop: async () => {
-      appendLog("stopping Herdr server");
-      const stopped = spawnSync(herdrBinary, ["server", "stop"], {
-        encoding: "utf8",
-        env: process.env,
-        timeout: 30_000,
-      });
-      if (stopped.status !== 0) {
-        const detail = stopped.stderr.trim() || stopped.stdout.trim() || "unknown stop failure";
-        throw new Error(detail);
-      }
-    },
-    update: async () => {
-      appendLog("updating Herdr outside the stopped session");
-      const updated = spawnSync(herdrBinary, ["update"], {
-        encoding: "utf8",
-        env: environmentOutsideHerdr(process.env),
-        timeout: 300_000,
-      });
-      if (updated.stdout.trim()) {
-        appendLog(`Herdr update output:\n${updated.stdout.trim()}`);
-      }
-      if (updated.stderr.trim()) {
-        appendLog(`Herdr update diagnostics:\n${updated.stderr.trim()}`);
-      }
-      if (updated.status !== 0) {
-        throw new Error(
-          updated.stderr.trim() || updated.stdout.trim() || "unknown Herdr update failure",
-        );
-      }
-    },
-    start: async () => {
-      appendLog("starting replacement Herdr server");
-      const server = spawn(herdrBinary, ["server"], {
-        detached: true,
-        env: process.env,
-        stdio: "ignore",
-      });
-      const { promise, resolve, reject } = Promise.withResolvers<void>();
-      server.once("error", reject);
-      server.once("spawn", resolve);
-      await promise;
-      server.unref();
-    },
-    waitUntilReady: async () => {
-      const deadline = Date.now() + 30_000;
-      while (Date.now() < deadline) {
-        const status = spawnSync(herdrBinary, ["status", "server", "--json"], {
-          encoding: "utf8",
-          env: process.env,
-          timeout: 2_000,
-        });
-        if (status.status === 0) {
-          try {
-            const parsed = JSON.parse(status.stdout) as { status?: unknown; version?: unknown };
-            if (parsed.status === "running") {
-              appendLog(`replacement Herdr server ready at version ${String(parsed.version)}`);
-              return;
-            }
-          } catch {
-            // The server can become reachable before a complete status response is available.
-          }
-        }
-        await delay(100);
-      }
-      throw new Error("replacement Herdr server did not become ready within 30 seconds");
-    },
+  request = readWorkerRequest(requestPath);
+  const herdrBinary = resolveHerdrBinary(request.herdrBinary);
+  publishStatus({
+    phase: "starting",
+    message: "Hard update restart worker started",
   });
+
+  const finalStatus = await runHardRestartPipeline({
+    request: { ...request, herdrBinary },
+    jobDir,
+    publishStatus,
+    log: appendLog,
+    saveAgents: (agents) => {
+      saveAgentsSnapshot(jobDir, agents);
+    },
+    run: runCommand as CommandRunner,
+    delay,
+    startServer: async () => {
+      await spawnDetachedServer(herdrBinary, request!.target, process.env);
+    },
+    updatePlugins,
+    now: () => Date.now(),
+  });
+
+  if (finalStatus.phase !== "complete") {
+    process.exitCode = 1;
+  }
 } catch (error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  appendLog(`hard restart failed: ${message}`);
+  const stack = error instanceof Error && error.stack ? `\n${error.stack}` : "";
+  publishStatus({
+    phase: "failed",
+    message: "Hard update restart worker failed",
+    error: `${message}${stack}`,
+  });
   process.exitCode = 1;
+} finally {
+  if (request) {
+    releaseActiveLock(request, jobDir);
+  }
 }

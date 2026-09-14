@@ -1,12 +1,48 @@
-import { accessSync, constants } from "node:fs";
+import { spawn } from "node:child_process";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 
-export type PlannedCommand = {
-  label: string;
-  executable: string;
-  args: string[];
+export type RestartTarget = {
+  session: string | null;
+  socket: string;
 };
 
-export type AgentDrainPhase = "before_updates" | "before_restart";
+export type WorkerRequest = {
+  target: RestartTarget;
+  herdrBinary: string;
+  cwd: string;
+  activeLockPath?: string;
+};
+
+export type WorkerStatus = {
+  phase: string;
+  message: string;
+  missing?: string[];
+  error?: string;
+};
+
+export type NativeSessionRef = {
+  agent: string;
+  kind: "id" | "path";
+  source: string;
+  value: string;
+};
+
+export type SavedAgentSnapshot = {
+  paneId: string;
+  agent: string;
+  nativeSession: NativeSessionRef;
+};
 
 export type UnsettledAgent = {
   paneId: string;
@@ -22,26 +58,63 @@ export type AgentDrainDependencies = {
   onChange: (agents: UnsettledAgent[]) => void;
 };
 
-export type RefreshDependencies = {
-  preflight: () => Promise<void>;
-  waitForAgents: (phase: AgentDrainPhase) => Promise<void>;
-  run: (command: PlannedCommand) => Promise<void>;
-  scheduleRestart: () => Promise<void>;
+export type ExecResult = {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error?: string;
 };
 
-export type RestartDependencies = {
-  delay: () => Promise<void>;
-  stop: () => Promise<void>;
-  update: () => Promise<void>;
-  start: () => Promise<void>;
-  waitUntilReady: () => Promise<void>;
+export type CommandRunner = (
+  executable: string,
+  args: string[],
+  options?: { env?: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number },
+) => Promise<ExecResult>;
+
+export const AGENT_RESTORE_TIMEOUT_MS = 5 * 60 * 1000;
+
+export type HardRestartDependencies = {
+  request: WorkerRequest;
+  jobDir: string;
+  publishStatus: (status: WorkerStatus) => void;
+  log: (message: string) => void;
+  saveAgents: (agents: SavedAgentSnapshot[]) => void;
+  run: CommandRunner;
+  delay: (milliseconds: number) => Promise<void>;
+  startServer: () => Promise<void>;
+  updatePlugins: (
+    run: (
+      executable: string,
+      args: string[],
+      options?: { cwd?: string },
+    ) => Promise<ExecResult>,
+    herdrBinary: string,
+    report: (message: string) => void,
+  ) => Promise<void>;
+  now: () => number;
 };
+
+const SETTLED_AGENT_STATES: Record<string, true> = {
+  idle: true,
+  done: true,
+};
+
+const NESTED_HERDR_ENV_KEYS = [
+  "HERDR_ENV",
+  "HERDR_PANE_ID",
+  "HERDR_TAB_ID",
+  "HERDR_WORKSPACE_ID",
+  "HERDR_PLUGIN_STATE_DIR",
+] as const;
 
 type HerdrStatus = {
   status?: unknown;
   running?: unknown;
+  session?: unknown;
+  socket?: unknown;
   capabilities?: {
     detached_server_daemon?: unknown;
+    endpoint_protocol_generation?: unknown;
   };
 };
 
@@ -51,32 +124,14 @@ type HerdrAgentListPayload = {
   };
 };
 
-const SETTLED_AGENT_STATES: Record<string, true> = {
-  idle: true,
-  done: true,
+type AgentListRecord = {
+  pane_id?: unknown;
+  name?: unknown;
+  agent?: unknown;
+  agent_status?: unknown;
+  agent_session?: unknown;
+  cwd?: unknown;
 };
-
-export function updatePlan(includeExtensions: boolean): PlannedCommand[] {
-  const commands: PlannedCommand[] = [
-    { label: "OMP", executable: "omp", args: ["update"] },
-  ];
-
-  if (includeExtensions) {
-    commands.push({
-      label: "OMP plugins",
-      executable: "omp",
-      args: ["update", "--plugins"],
-    });
-  }
-
-  commands.push({
-    label: includeExtensions ? "Pi and extensions" : "Pi",
-    executable: "pi",
-    args: includeExtensions ? ["update", "--all"] : ["update", "--self"],
-  });
-
-  return commands;
-}
 
 export function resolveHerdrBinary(injectedPath = process.env.HERDR_BIN_PATH): string {
   if (injectedPath) {
@@ -93,12 +148,19 @@ export function resolveHerdrBinary(injectedPath = process.env.HERDR_BIN_PATH): s
 export function environmentOutsideHerdr(
   environment: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
-  const result = { ...environment };
-  delete result.HERDR_ENV;
+  const result: NodeJS.ProcessEnv = { ...environment };
+  for (const key of NESTED_HERDR_ENV_KEYS) {
+    delete result[key];
+  }
+  for (const key of Object.keys(result)) {
+    if (key.startsWith("HERDR_PLUGIN_")) {
+      delete result[key];
+    }
+  }
   return result;
 }
 
-export function assertRestartableServerStatus(raw: string): void {
+export function readRestartTarget(raw: string): RestartTarget {
   let status: HerdrStatus;
   try {
     status = JSON.parse(raw) as HerdrStatus;
@@ -111,6 +173,125 @@ export function assertRestartableServerStatus(raw: string): void {
   }
   if (status.capabilities?.detached_server_daemon !== true) {
     throw new Error("this Herdr server cannot launch a detached replacement server");
+  }
+  const generation = status.capabilities?.endpoint_protocol_generation;
+  if (typeof generation !== "number" || generation < 1) {
+    throw new Error("this Herdr server does not expose a supported endpoint protocol");
+  }
+
+  const session = status.session;
+  if (session !== null && typeof session !== "string") {
+    throw new Error("Herdr returned an invalid server session");
+  }
+  if (typeof status.socket !== "string" || status.socket.length === 0) {
+    throw new Error("Herdr returned an invalid server socket");
+  }
+
+  return {
+    session: session ?? null,
+    socket: status.socket,
+  };
+}
+
+export function readWorkerRequest(path: string): WorkerRequest {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new Error(`invalid worker request at ${path}`);
+  }
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new Error("worker request must be an object");
+  }
+  const record = payload as Record<string, unknown>;
+  const target = record.target;
+  if (typeof target !== "object" || target === null || Array.isArray(target)) {
+    throw new Error("worker request is missing target");
+  }
+  const targetRecord = target as Record<string, unknown>;
+  const session = targetRecord.session;
+  if (session !== null && typeof session !== "string") {
+    throw new Error("worker request target.session must be null or a string");
+  }
+  if (typeof targetRecord.socket !== "string" || targetRecord.socket.length === 0) {
+    throw new Error("worker request target.socket must be a non-empty string");
+  }
+  if (typeof record.herdrBinary !== "string" || record.herdrBinary.length === 0) {
+    throw new Error("worker request herdrBinary must be a non-empty string");
+  }
+  if (typeof record.cwd !== "string" || record.cwd.length === 0) {
+    throw new Error("worker request cwd must be a non-empty string");
+  }
+  const activeLockPath = record.activeLockPath;
+  if (
+    activeLockPath !== undefined &&
+    (typeof activeLockPath !== "string" || activeLockPath.length === 0)
+  ) {
+    throw new Error("worker request activeLockPath must be a non-empty string when provided");
+  }
+
+  return {
+    target: {
+      session: session ?? null,
+      socket: targetRecord.socket,
+    },
+    herdrBinary: record.herdrBinary,
+    cwd: record.cwd,
+    ...(typeof activeLockPath === "string" ? { activeLockPath } : {}),
+  };
+}
+
+export function writeStatusAtomic(jobDir: string, status: WorkerStatus): void {
+  mkdirSync(jobDir, { recursive: true });
+  const destination = join(jobDir, "status.json");
+  const temporary = join(jobDir, `status.json.${process.pid}.tmp`);
+  writeFileSync(temporary, `${JSON.stringify(status, null, 2)}\n`);
+  renameSync(temporary, destination);
+}
+
+export function saveAgentsSnapshot(jobDir: string, agents: SavedAgentSnapshot[]): void {
+  mkdirSync(jobDir, { recursive: true });
+  writeFileSync(join(jobDir, "agents.json"), `${JSON.stringify(agents, null, 2)}\n`);
+}
+
+export function targetEnvironment(
+  base: NodeJS.ProcessEnv,
+  target: RestartTarget,
+): NodeJS.ProcessEnv {
+  const env = environmentOutsideHerdr(base);
+  env.HERDR_SOCKET_PATH = target.socket;
+  if (target.session !== null) {
+    env.HERDR_SESSION = target.session;
+  } else {
+    delete env.HERDR_SESSION;
+  }
+  return env;
+}
+
+export function herdrInvocationArgs(target: RestartTarget, command: string[]): string[] {
+  if (target.session !== null) {
+    return ["--session", target.session, ...command];
+  }
+  return command;
+}
+
+function nonBlankString(value: unknown, message: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(message);
+  }
+  return value;
+}
+
+function nativeSessionKey(ref: NativeSessionRef): string {
+  return `${ref.source}|${ref.kind}|${ref.value}`;
+}
+
+function assertRegularSessionFile(path: string, paneId: string): void {
+  if (!existsSync(path)) {
+    throw new Error(`pane ${paneId} native agent session path does not exist: ${path}`);
+  }
+  if (!statSync(path).isFile()) {
+    throw new Error(`pane ${paneId} native agent session path is not a regular file: ${path}`);
   }
 }
 
@@ -131,13 +312,7 @@ export function unsettledAgentsFromList(raw: string): UnsettledAgent[] {
     if (typeof rawAgent !== "object" || rawAgent === null || Array.isArray(rawAgent)) {
       throw new Error("Herdr returned an invalid agent record");
     }
-    const value = rawAgent as {
-      pane_id?: unknown;
-      name?: unknown;
-      agent?: unknown;
-      agent_status?: unknown;
-      cwd?: unknown;
-    };
+    const value = rawAgent as AgentListRecord;
     const paneId = value.pane_id;
     const agent = value.agent;
     const status = value.agent_status;
@@ -157,6 +332,176 @@ export function unsettledAgentsFromList(raw: string): UnsettledAgent[] {
     });
   }
   return unsettled;
+}
+
+function parseNativeSessionRef(
+  paneId: string,
+  agent: string,
+  rawSession: unknown,
+): NativeSessionRef {
+  if (typeof rawSession !== "object" || rawSession === null || Array.isArray(rawSession)) {
+    throw new Error(`pane ${paneId} is missing a recoverable native agent session`);
+  }
+  const record = rawSession as Record<string, unknown>;
+  const sessionAgent = nonBlankString(
+    record.agent,
+    `pane ${paneId} has an empty native agent session agent`,
+  );
+  const source = nonBlankString(
+    record.source,
+    `pane ${paneId} has an empty native agent session source`,
+  );
+  const kind = record.kind;
+  const value = nonBlankString(
+    record.value,
+    `pane ${paneId} has an empty native agent session value`,
+  );
+  if (sessionAgent !== agent) {
+    throw new Error(`pane ${paneId} has a mismatched native agent session`);
+  }
+  if (source !== `herdr:${agent}`) {
+    throw new Error(`pane ${paneId} has an unsupported native agent session source`);
+  }
+  if (kind !== "id" && kind !== "path") {
+    throw new Error(`pane ${paneId} has an invalid native agent session kind`);
+  }
+  if (kind === "path") {
+    assertRegularSessionFile(value, paneId);
+  }
+  return {
+    agent,
+    kind,
+    source,
+    value,
+  };
+}
+
+export function captureNativeSessionRefs(raw: string): SavedAgentSnapshot[] {
+  let payload: HerdrAgentListPayload;
+  try {
+    payload = JSON.parse(raw) as HerdrAgentListPayload;
+  } catch {
+    throw new Error("Herdr returned invalid agent-list JSON");
+  }
+  if (!Array.isArray(payload.result?.agents)) {
+    throw new Error("Herdr returned an invalid agent-list response");
+  }
+
+  const saved: SavedAgentSnapshot[] = [];
+  const seenPaneIds = new Set<string>();
+  const seenNativeRefs = new Map<string, string>();
+  for (const rawAgent of payload.result.agents) {
+    if (typeof rawAgent !== "object" || rawAgent === null || Array.isArray(rawAgent)) {
+      throw new Error("Herdr returned an invalid agent record");
+    }
+    const record = rawAgent as AgentListRecord;
+    const paneId = record.pane_id;
+    const agent = record.agent;
+    const status = record.agent_status;
+    if (typeof paneId !== "string" || typeof agent !== "string" || typeof status !== "string") {
+      throw new Error("Herdr returned an incomplete agent record");
+    }
+    if (!SETTLED_AGENT_STATES[status]) {
+      throw new Error(`pane ${paneId} is not settled (${status})`);
+    }
+    if (seenPaneIds.has(paneId)) {
+      throw new Error(`duplicate pane id in agent list: ${paneId}`);
+    }
+    seenPaneIds.add(paneId);
+    const nativeSession = parseNativeSessionRef(paneId, agent, record.agent_session);
+    const nativeKey = nativeSessionKey(nativeSession);
+    const otherPane = seenNativeRefs.get(nativeKey);
+    if (otherPane !== undefined) {
+      throw new Error(
+        `duplicate native agent session across panes ${otherPane} and ${paneId}`,
+      );
+    }
+    seenNativeRefs.set(nativeKey, paneId);
+    saved.push({
+      paneId,
+      agent,
+      nativeSession,
+    });
+  }
+  return saved;
+}
+
+function nativeSessionMatches(
+  expected: NativeSessionRef,
+  current: unknown,
+): boolean {
+  if (typeof current !== "object" || current === null || Array.isArray(current)) {
+    return false;
+  }
+  const record = current as Record<string, unknown>;
+  return (
+    record.agent === expected.agent &&
+    record.source === expected.source &&
+    record.kind === expected.kind &&
+    record.value === expected.value
+  );
+}
+
+function agentRecordIsRestored(
+  snapshot: SavedAgentSnapshot,
+  record: AgentListRecord | undefined,
+): "restored" | "pending" | "missing" {
+  if (record === undefined) {
+    return "missing";
+  }
+  const agent = record.agent;
+  const status = record.agent_status;
+  if (typeof agent !== "string" || agent !== snapshot.agent) {
+    return "pending";
+  }
+  if (typeof status !== "string" || status === "unknown" || !SETTLED_AGENT_STATES[status]) {
+    return "pending";
+  }
+  if (nativeSessionMatches(snapshot.nativeSession, record.agent_session)) {
+    return "restored";
+  }
+  return "pending";
+}
+
+export function restoredPaneIds(
+  saved: SavedAgentSnapshot[],
+  raw: string,
+): { restored: string[]; pending: string[]; missing: string[] } {
+  let payload: HerdrAgentListPayload;
+  try {
+    payload = JSON.parse(raw) as HerdrAgentListPayload;
+  } catch {
+    throw new Error("Herdr returned invalid agent-list JSON");
+  }
+  if (!Array.isArray(payload.result?.agents)) {
+    throw new Error("Herdr returned an invalid agent-list response");
+  }
+
+  const currentByPane = new Map<string, AgentListRecord>();
+  for (const rawAgent of payload.result.agents) {
+    if (typeof rawAgent !== "object" || rawAgent === null || Array.isArray(rawAgent)) {
+      continue;
+    }
+    const record = rawAgent as AgentListRecord;
+    if (typeof record.pane_id === "string") {
+      currentByPane.set(record.pane_id, record);
+    }
+  }
+
+  const restored: string[] = [];
+  const pending: string[] = [];
+  const missing: string[] = [];
+  for (const snapshot of saved) {
+    const outcome = agentRecordIsRestored(snapshot, currentByPane.get(snapshot.paneId));
+    if (outcome === "restored") {
+      restored.push(snapshot.paneId);
+    } else if (outcome === "pending") {
+      pending.push(snapshot.paneId);
+    } else {
+      missing.push(snapshot.paneId);
+    }
+  }
+  return { restored, pending, missing };
 }
 
 export async function waitForAgentDrain(
@@ -185,36 +530,444 @@ export async function waitForAgentDrain(
   }
 }
 
-export async function performRefresh(
-  includeExtensions: boolean,
-  dependencies: RefreshDependencies,
-): Promise<void> {
-  await dependencies.preflight();
-  await dependencies.waitForAgents("before_updates");
-  for (const command of updatePlan(includeExtensions)) {
-    await dependencies.run(command);
+function serverStatusMatchesTarget(raw: string, target: RestartTarget): boolean {
+  try {
+    const parsed = readRestartTarget(raw);
+    return parsed.session === target.session && parsed.socket === target.socket;
+  } catch {
+    return false;
   }
-  await dependencies.waitForAgents("before_restart");
-  await dependencies.scheduleRestart();
 }
 
-export async function restartHerdr(dependencies: RestartDependencies): Promise<void> {
-  await dependencies.delay();
-  await dependencies.stop();
-
-  let updateFailed = false;
-  let updateError: unknown;
+function serverIsNotRunning(raw: string): boolean {
+  let status: HerdrStatus;
   try {
-    await dependencies.update();
+    status = JSON.parse(raw) as HerdrStatus;
+  } catch {
+    return false;
+  }
+  return status.status === "not_running" || status.running === false;
+}
+
+function commandFailure(label: string, result: ExecResult): Error {
+  const detailParts: string[] = [];
+  if (result.stderr.trim()) {
+    detailParts.push(result.stderr.trim());
+  }
+  if (result.stdout.trim()) {
+    detailParts.push(result.stdout.trim());
+  }
+  if (result.error) {
+    detailParts.push(result.error);
+  }
+  const detail = detailParts.join("\n\n") || "unknown command failure";
+  const suffix = result.status === null ? "" : ` (exit ${result.status})`;
+  return new Error(`${label} failed${suffix}:\n${detail}`);
+}
+
+function logCommandEvidence(
+  deps: HardRestartDependencies,
+  label: string,
+  executable: string,
+  args: string[],
+  result: ExecResult,
+): void {
+  deps.log(`${label}: ${executable} ${args.join(" ")} (exit ${result.status ?? "null"})`);
+  if (result.stdout.trim()) {
+    deps.log(`${label} stdout:\n${result.stdout.trim()}`);
+  }
+  if (result.stderr.trim()) {
+    deps.log(`${label} stderr:\n${result.stderr.trim()}`);
+  }
+}
+
+async function runHerdr(
+  deps: HardRestartDependencies,
+  env: NodeJS.ProcessEnv,
+  command: string[],
+  label: string,
+  timeoutMs = 120_000,
+): Promise<ExecResult> {
+  const args = herdrInvocationArgs(deps.request.target, command);
+  const result = await deps.run(deps.request.herdrBinary, args, {
+    env,
+    cwd: deps.request.cwd,
+    timeoutMs,
+  });
+  logCommandEvidence(deps, label, deps.request.herdrBinary, args, result);
+  if (result.status !== 0) {
+    throw commandFailure(label, result);
+  }
+  return result;
+}
+
+async function runUpdateCommand(
+  deps: HardRestartDependencies,
+  executable: string,
+  args: string[],
+  label: string,
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 300_000,
+): Promise<void> {
+  const result = await deps.run(executable, args, { env, cwd: deps.request.cwd, timeoutMs });
+  logCommandEvidence(deps, label, executable, args, result);
+  if (result.status !== 0) {
+    throw commandFailure(label, result);
+  }
+}
+
+async function readAgentList(
+  deps: HardRestartDependencies,
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  const result = await deps.run(
+    deps.request.herdrBinary,
+    herdrInvocationArgs(deps.request.target, ["agent", "list"]),
+    { env, cwd: deps.request.cwd, timeoutMs: 30_000 },
+  );
+  if (result.status !== 0) {
+    throw commandFailure("agent list", result);
+  }
+  return result.stdout;
+}
+
+function formatBlockingAgents(agents: UnsettledAgent[]): string {
+  return agents
+    .map((agent) => {
+      const identity = agent.name || agent.paneId;
+      const location = agent.cwd ? ` at ${agent.cwd}` : "";
+      return `${identity}: ${agent.agent} is ${agent.status}${location}`;
+    })
+    .join("; ");
+}
+
+async function drainAndCaptureAgents(
+  deps: HardRestartDependencies,
+  targetEnv: NodeJS.ProcessEnv,
+): Promise<SavedAgentSnapshot[]> {
+  while (true) {
+    await waitForAgentDrain({
+      read: async () => unsettledAgentsFromList(await readAgentList(deps, targetEnv)),
+      delay: async () => {
+        await deps.delay(1_000);
+      },
+      onChange: (agents) => {
+        const blocking = formatBlockingAgents(agents);
+        deps.log(`Blocking agents: ${blocking}`);
+        deps.publishStatus({
+          phase: "draining-agents",
+          message: `Waiting for active agents to become idle or done: ${blocking}`,
+        });
+      },
+    });
+
+    deps.publishStatus({
+      phase: "capturing-agents",
+      message: "Capturing recoverable native agent sessions",
+    });
+    const agentList = await readAgentList(deps, targetEnv);
+    const unsettled = unsettledAgentsFromList(agentList);
+    if (unsettled.length > 0) {
+      const blocking = formatBlockingAgents(unsettled);
+      deps.log(`Capture found unsettled agents; draining again: ${blocking}`);
+      deps.publishStatus({
+        phase: "draining-agents",
+        message: `Agents became active again before capture: ${blocking}`,
+      });
+      continue;
+    }
+    return captureNativeSessionRefs(agentList);
+  }
+}
+
+function pluginUpdaterRunner(
+  deps: HardRestartDependencies,
+  env: NodeJS.ProcessEnv,
+): (executable: string, args: string[], options?: { cwd?: string }) => Promise<ExecResult> {
+  return async (executable, args, options) => {
+    if (executable === deps.request.herdrBinary) {
+      return deps.run(
+        executable,
+        herdrInvocationArgs(deps.request.target, args),
+        { env, cwd: deps.request.cwd, timeoutMs: 300_000 },
+      );
+    }
+    return deps.run(executable, args, {
+      env,
+      cwd: options?.cwd ?? deps.request.cwd,
+      timeoutMs: 300_000,
+    });
+  };
+}
+
+async function waitForServerReady(
+  deps: HardRestartDependencies,
+  env: NodeJS.ProcessEnv,
+  deadlineMs: number,
+): Promise<void> {
+  const deadline = deps.now() + deadlineMs;
+  let polls = 0;
+  while (deps.now() < deadline) {
+    const result = await deps.run(
+      deps.request.herdrBinary,
+      herdrInvocationArgs(deps.request.target, ["status", "server", "--json"]),
+      { env, cwd: deps.request.cwd, timeoutMs: 5_000 },
+    );
+    polls += 1;
+    if (result.status === 0 && serverStatusMatchesTarget(result.stdout, deps.request.target)) {
+      if (polls > 1) {
+        deps.log(`Replacement server ready after ${polls} status polls`);
+      }
+      return;
+    }
+    if (polls === 1 || polls % 20 === 0) {
+      deps.log(`Waiting for replacement server (${polls} polls)`);
+    }
+    await deps.delay(100);
+  }
+  throw new Error("replacement Herdr server did not become ready for the requested target");
+}
+
+async function waitForServerStopped(
+  deps: HardRestartDependencies,
+  env: NodeJS.ProcessEnv,
+  deadlineMs: number,
+): Promise<void> {
+  const deadline = deps.now() + deadlineMs;
+  let polls = 0;
+  while (deps.now() < deadline) {
+    const result = await deps.run(
+      deps.request.herdrBinary,
+      herdrInvocationArgs(deps.request.target, ["status", "server", "--json"]),
+      { env, cwd: deps.request.cwd, timeoutMs: 5_000 },
+    );
+    polls += 1;
+    if (result.status === 0 && serverIsNotRunning(result.stdout)) {
+      if (polls > 1) {
+        deps.log(`Server stopped after ${polls} status polls`);
+      }
+      return;
+    }
+    if (polls === 1 || polls % 20 === 0) {
+      deps.log(`Waiting for server stop (${polls} polls)`);
+    }
+    await deps.delay(100);
+  }
+  throw new Error("Herdr server did not stop");
+}
+
+async function waitForAgentRestore(
+  deps: HardRestartDependencies,
+  env: NodeJS.ProcessEnv,
+  saved: SavedAgentSnapshot[],
+  deadlineMs: number,
+  updateError?: Error,
+): Promise<{ restored: string[]; missing: string[] }> {
+  const deadline = deps.now() + deadlineMs;
+  let polls = 0;
+  while (deps.now() < deadline) {
+    const raw = await readAgentList(deps, env);
+    const progress = restoredPaneIds(saved, raw);
+    polls += 1;
+    if (progress.pending.length === 0 && progress.missing.length === 0) {
+      return { restored: progress.restored, missing: [] };
+    }
+    if (polls === 1 || polls % 15 === 0) {
+      const waiting = [...progress.pending, ...progress.missing];
+      deps.publishStatus({
+        phase: "awaiting-reconnect",
+        message: `Waiting for native agent sessions to reconnect (${waiting.join(", ")})`,
+        ...(updateError ? { error: updateError.message } : {}),
+      });
+    }
+    await deps.delay(1_000);
+  }
+  const raw = await readAgentList(deps, env);
+  const progress = restoredPaneIds(saved, raw);
+  return {
+    restored: progress.restored,
+    missing: [...progress.pending, ...progress.missing],
+  };
+}
+
+export function activeLockPathFor(request: WorkerRequest, jobDir: string): string {
+  return request.activeLockPath ?? join(dirname(jobDir), "active");
+}
+
+export function releaseActiveLock(request: WorkerRequest, jobDir: string): void {
+  const activeLockPath = activeLockPathFor(request, jobDir);
+  const lockFile = join(activeLockPath, "job.json");
+  if (!existsSync(lockFile)) {
+    return;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(readFileSync(lockFile, "utf8"));
+  } catch {
+    return;
+  }
+  const recorded =
+    typeof payload === "object" && payload !== null && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>).jobDir
+      : undefined;
+  if (recorded !== jobDir) {
+    return;
+  }
+  rmSync(activeLockPath, { recursive: true, force: true });
+}
+
+async function runAllUpdates(
+  deps: HardRestartDependencies,
+  updateEnv: NodeJS.ProcessEnv,
+): Promise<void> {
+  await runHerdr(deps, updateEnv, ["update"], "Herdr update", 300_000);
+  await runUpdateCommand(deps, "omp", ["update"], "OMP update", updateEnv);
+  await runUpdateCommand(deps, "omp", ["update", "--plugins"], "OMP plugin update", updateEnv);
+  await runUpdateCommand(deps, "pi", ["update", "--all"], "Pi update", updateEnv);
+  await deps.updatePlugins(
+    pluginUpdaterRunner(deps, updateEnv),
+    deps.request.herdrBinary,
+    (message) => {
+      deps.log(message);
+      deps.publishStatus({
+        phase: "updating",
+        message,
+      });
+    },
+  );
+}
+
+export async function runHardRestartPipeline(
+  deps: HardRestartDependencies,
+): Promise<WorkerStatus> {
+  const targetEnv = targetEnvironment(process.env, deps.request.target);
+  const updateEnv = targetEnv;
+  let savedAgents: SavedAgentSnapshot[] = [];
+  let updateError: Error | undefined;
+  const initialStatus = await deps.run(
+    deps.request.herdrBinary,
+    herdrInvocationArgs(deps.request.target, ["status", "server", "--json"]),
+    { env: targetEnv, cwd: deps.request.cwd, timeoutMs: 10_000 },
+  );
+  if (initialStatus.status !== 0 || !serverStatusMatchesTarget(initialStatus.stdout, deps.request.target)) {
+    throw new Error("The selected Herdr server no longer matches the confirmed session and socket; nothing was stopped.");
+  }
+
+  deps.publishStatus({
+    phase: "draining-agents",
+    message: "Waiting for active agents to become idle or done",
+  });
+  savedAgents = await drainAndCaptureAgents(deps, targetEnv);
+  deps.saveAgents(savedAgents);
+  try {
+    deps.publishStatus({
+      phase: "updating",
+      message: "Updating runtimes and plugins before restarting Herdr",
+    });
+    await runAllUpdates(deps, updateEnv);
   } catch (error: unknown) {
-    updateFailed = true;
-    updateError = error;
+    updateError = error instanceof Error ? error : new Error(String(error));
+  }
+  savedAgents = await drainAndCaptureAgents(deps, targetEnv);
+  deps.saveAgents(savedAgents);
+
+  deps.publishStatus({
+    phase: "stopping-server",
+    message: "Stopping the Herdr server",
+  });
+  const stopArgs = herdrInvocationArgs(deps.request.target, ["server", "stop"]);
+  const stopResult = await deps.run(
+    deps.request.herdrBinary,
+    stopArgs,
+    { env: targetEnv, cwd: deps.request.cwd, timeoutMs: 30_000 },
+  );
+  if (stopResult.status !== 0) {
+    throw commandFailure("server stop", stopResult);
   }
 
-  await dependencies.start();
-  await dependencies.waitUntilReady();
-
-  if (updateFailed) {
-    throw updateError;
+  try {
+    logCommandEvidence(deps, "server stop", deps.request.herdrBinary, stopArgs, stopResult);
+    await waitForServerStopped(deps, targetEnv, 30_000);
+  } catch (error: unknown) {
+    const stopError = error instanceof Error ? error : new Error(String(error));
+    updateError = new Error([updateError?.message, stopError.message].filter(Boolean).join("\n\n"));
+  } finally {
+    try {
+      await deps.startServer();
+      deps.publishStatus({
+        phase: "starting-server",
+        message: "Starting replacement Herdr server",
+      });
+      await waitForServerReady(deps, targetEnv, 30_000);
+    } catch (error: unknown) {
+      const restartError = error instanceof Error ? error : new Error(String(error));
+      const status: WorkerStatus = {
+        phase: "failed",
+        message: "Replacement Herdr server could not be started or verified",
+        error: [restartError.message, updateError?.message].filter(Boolean).join("\n\n"),
+      };
+      deps.publishStatus(status);
+      return status;
+    }
   }
+
+  deps.publishStatus({
+    phase: "awaiting-reconnect",
+    message: "Waiting for native agent sessions to reconnect",
+    ...(updateError ? { error: updateError.message } : {}),
+  });
+
+  const restore = await waitForAgentRestore(
+    deps,
+    targetEnvironment(process.env, deps.request.target),
+    savedAgents,
+    AGENT_RESTORE_TIMEOUT_MS,
+    updateError,
+  );
+
+  if (restore.missing.length > 0) {
+    const status: WorkerStatus = {
+      phase: "failed",
+      message: "Replacement server is running but some native agent sessions did not reconnect",
+      missing: restore.missing,
+      ...(updateError ? { error: updateError.message } : {}),
+    };
+    deps.publishStatus(status);
+    return status;
+  }
+
+  if (updateError) {
+    const status: WorkerStatus = {
+      phase: "failed",
+      message: "Replacement server is running and agents reconnected, but updates failed",
+      error: updateError.message,
+    };
+    deps.publishStatus(status);
+    return status;
+  }
+
+  const status: WorkerStatus = {
+    phase: "complete",
+    message: "Updates finished and native agent sessions reconnected",
+  };
+  deps.publishStatus(status);
+  return status;
+}
+
+export function spawnDetachedServer(
+  herdrBinary: string,
+  target: RestartTarget,
+  baseEnv: NodeJS.ProcessEnv,
+): Promise<void> {
+  const server = spawn(herdrBinary, herdrInvocationArgs(target, ["server"]), {
+    detached: true,
+    env: targetEnvironment(baseEnv, target),
+    stdio: "ignore",
+  });
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  server.once("error", reject);
+  server.once("spawn", resolve);
+  return promise.then(() => {
+    server.unref();
+  });
 }
