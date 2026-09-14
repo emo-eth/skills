@@ -15,7 +15,13 @@ import { createInterface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { environmentOutsideHerdr, readRestartTarget, resolveHerdrBinary } from "./core.ts";
+import {
+  discoverMeshTargets,
+  environmentOutsideHerdr,
+  readRestartTarget,
+  resolveHerdrBinary,
+  type FleetTarget,
+} from "./core.ts";
 
 async function main(): Promise<void> {
   if (!process.stdin.isTTY) {
@@ -35,15 +41,31 @@ async function main(): Promise<void> {
   }
   const target = readRestartTarget(status.stdout);
   const reattach = target.session ? `herdr --session ${target.session}` : "herdr";
+  const meshTargets = discoverMeshTargets(herdrBinary, target, (cmd, args) => {
+    const res = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 });
+    return { status: res.status, stdout: res.stdout || "" };
+  });
+
   console.log("Update everything and hard-restart");
   console.log("");
+  if (meshTargets.length > 1) {
+    console.log("Mesh machines discovered:");
+    for (const t of meshTargets) {
+      if (t.kind === "local") {
+        console.log(`  • Local (${t.session ? `session: ${t.session}` : "current session"})`);
+      } else {
+        console.log(`  • ${t.label} (SSH: ${t.sshTarget}, session: ${t.session})`);
+      }
+    }
+    console.log("");
+  }
   console.log("1. Update Herdr, OMP, and Pi runtimes.");
   console.log("2. Update OMP plugins, Pi extensions, and tracked GitHub Herdr plugins.");
-  console.log("3. Restart this Herdr session and verify saved conversations return.");
+  console.log("3. Restart Herdr session(s) and verify saved conversations return.");
   console.log("Pinned and locally linked Herdr plugins stay untouched.");
   console.log("Configs already on disk are loaded by the new processes; configs are not replaced.");
   console.log("");
-  console.log("This stops EVERY pane process, including shells and dev servers.");
+  console.log("This stops EVERY pane process in selected session(s), including shells and dev servers.");
   console.log("Non-agent processes return as fresh shells, not running commands.");
   console.log("Working, blocked, and unknown agents must settle first.");
   console.log("An agent without a recoverable native session prevents shutdown.");
@@ -51,18 +73,27 @@ async function main(): Promise<void> {
   console.log("");
 
   const input = createInterface({ input: process.stdin, output: process.stdout });
-  let confirmed = false;
+  let choice = "";
   try {
-    confirmed = (await input.question('Type "update" to continue; anything else cancels: ')).trim() === "update";
+    const prompt =
+      meshTargets.length > 1
+        ? 'Type "all" (or "update") to restart all machines, "local" for this machine only, or anything else to cancel: '
+        : 'Type "update" to continue; anything else cancels: ';
+    choice = (await input.question(prompt)).trim().toLowerCase();
   } catch {
-    confirmed = false;
+    choice = "";
   } finally {
     input.close();
   }
-  if (!confirmed) {
+  const isAll = choice === "all" || choice === "update";
+  const isLocal = choice === "local";
+  if (!isAll && !isLocal) {
     console.log("Cancelled. Nothing changed.");
     return;
   }
+
+  const scope: "fleet" | "local" = isAll && meshTargets.length > 1 ? "fleet" : "local";
+  const selectedTargets: FleetTarget[] = scope === "fleet" ? meshTargets : [meshTargets[0]];
 
   mkdirSync(stateDir, { recursive: true });
   const activeDir = join(stateDir, "active");
@@ -92,7 +123,14 @@ async function main(): Promise<void> {
     );
     writeFileSync(
       join(jobDir, "request.json"),
-      JSON.stringify({ target, herdrBinary, cwd: jobDir, activeLockPath: activeDir }),
+      JSON.stringify({
+        target,
+        targets: selectedTargets,
+        scope,
+        herdrBinary,
+        cwd: jobDir,
+        activeLockPath: activeDir,
+      }),
     );
     writeFileSync(join(activeDir, "job.json"), JSON.stringify({ jobDir }));
     writeFileSync(join(stateDir, "latest-job.json"), JSON.stringify({ jobDir, reattach }));

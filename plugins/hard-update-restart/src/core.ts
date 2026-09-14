@@ -15,10 +15,23 @@ import { dirname, join } from "node:path";
 export type RestartTarget = {
   session: string | null;
   socket: string;
+  kind?: "local" | "remote";
+  label?: string;
+  sshTarget?: string;
+};
+
+export type FleetTarget = {
+  kind: "local" | "remote";
+  label: string;
+  session: string | null;
+  socket?: string;
+  sshTarget?: string;
 };
 
 export type WorkerRequest = {
   target: RestartTarget;
+  targets?: FleetTarget[];
+  scope?: "local" | "fleet";
   herdrBinary: string;
   cwd: string;
   activeLockPath?: string;
@@ -93,6 +106,66 @@ export type HardRestartDependencies = {
   ) => Promise<void>;
   now: () => number;
 };
+
+export type FleetRestartDependencies = {
+  request: WorkerRequest;
+  jobDir: string;
+  targets: FleetTarget[];
+  publishStatus: (status: WorkerStatus) => void;
+  log: (message: string) => void;
+  run: CommandRunner;
+  delay: (milliseconds: number) => Promise<void>;
+  startServer?: (target: FleetTarget) => Promise<void>;
+  updatePlugins: HardRestartDependencies["updatePlugins"];
+};
+
+export function shellEscape(arg: string): string {
+  if (/^[a-zA-Z0-9_./:=@-]+$/.test(arg)) {
+    return arg;
+  }
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+export function createRemoteRunner(
+  sshTarget: string,
+  baseRunner: CommandRunner,
+): CommandRunner {
+  return async (executable, args, options) => {
+    const remoteCmd = [executable, ...args].map(shellEscape).join(" ");
+    const fullCmd = `export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"; ${remoteCmd}`;
+    const sshArgs = [
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=10",
+      sshTarget,
+      fullCmd,
+    ];
+    return baseRunner("ssh", sshArgs, options);
+  };
+}
+
+export async function spawnRemoteServer(
+  sshTarget: string,
+  target: RestartTarget,
+  baseRunner: CommandRunner,
+): Promise<void> {
+  const sessionArg = target.session !== null ? `--session ${shellEscape(target.session)} ` : "";
+  const fullCmd = `export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"; nohup herdr ${sessionArg}server >/dev/null 2>&1 &`;
+  const result = await baseRunner("ssh", [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=10",
+    sshTarget,
+    fullCmd,
+  ]);
+  if (result.status !== 0) {
+    throw new Error(
+      `failed to start remote server on ${sshTarget}: ${result.stderr || result.error || "exit " + result.status}`,
+    );
+  }
+}
 
 const SETTLED_AGENT_STATES: Record<string, true> = {
   idle: true,
@@ -230,13 +303,35 @@ export function readWorkerRequest(path: string): WorkerRequest {
     throw new Error("worker request activeLockPath must be a non-empty string when provided");
   }
 
+  const scope =
+    record.scope === "fleet" || record.scope === "local" ? record.scope : "local";
+  const targets: FleetTarget[] = [];
+  if (Array.isArray(record.targets)) {
+    for (const rawItem of record.targets) {
+      if (typeof rawItem === "object" && rawItem !== null && !Array.isArray(rawItem)) {
+        const item = rawItem as Record<string, unknown>;
+        const kind = item.kind === "remote" ? "remote" : "local";
+        const label = typeof item.label === "string" && item.label.length > 0 ? item.label : kind;
+        const session = typeof item.session === "string" ? item.session : null;
+        const socket = typeof item.socket === "string" ? item.socket : undefined;
+        const sshTarget = typeof item.sshTarget === "string" ? item.sshTarget : undefined;
+        targets.push({ kind, label, session, socket, sshTarget });
+      }
+    }
+  }
+
   return {
     target: {
       session: session ?? null,
       socket: targetRecord.socket,
+      ...(targetRecord.kind === "remote" || targetRecord.kind === "local" ? { kind: targetRecord.kind } : {}),
+      ...(typeof targetRecord.label === "string" ? { label: targetRecord.label } : {}),
+      ...(typeof targetRecord.sshTarget === "string" ? { sshTarget: targetRecord.sshTarget } : {}),
     },
     herdrBinary: record.herdrBinary,
     cwd: record.cwd,
+    scope,
+    ...(targets.length > 0 ? { targets } : {}),
     ...(typeof activeLockPath === "string" ? { activeLockPath } : {}),
   };
 }
@@ -338,6 +433,7 @@ function parseNativeSessionRef(
   paneId: string,
   agent: string,
   rawSession: unknown,
+  isLocal: boolean = true,
 ): NativeSessionRef {
   if (typeof rawSession !== "object" || rawSession === null || Array.isArray(rawSession)) {
     throw new Error(`pane ${paneId} is missing a recoverable native agent session`);
@@ -365,7 +461,7 @@ function parseNativeSessionRef(
   if (kind !== "id" && kind !== "path") {
     throw new Error(`pane ${paneId} has an invalid native agent session kind`);
   }
-  if (kind === "path") {
+  if (kind === "path" && isLocal) {
     assertRegularSessionFile(value, paneId);
   }
   return {
@@ -376,7 +472,7 @@ function parseNativeSessionRef(
   };
 }
 
-export function captureNativeSessionRefs(raw: string): SavedAgentSnapshot[] {
+export function captureNativeSessionRefs(raw: string, isLocal: boolean = true): SavedAgentSnapshot[] {
   let payload: HerdrAgentListPayload;
   try {
     payload = JSON.parse(raw) as HerdrAgentListPayload;
@@ -408,7 +504,7 @@ export function captureNativeSessionRefs(raw: string): SavedAgentSnapshot[] {
       throw new Error(`duplicate pane id in agent list: ${paneId}`);
     }
     seenPaneIds.add(paneId);
-    const nativeSession = parseNativeSessionRef(paneId, agent, record.agent_session);
+    const nativeSession = parseNativeSessionRef(paneId, agent, record.agent_session, isLocal);
     const nativeKey = nativeSessionKey(nativeSession);
     const otherPane = seenNativeRefs.get(nativeKey);
     if (otherPane !== undefined) {
@@ -533,7 +629,10 @@ export async function waitForAgentDrain(
 function serverStatusMatchesTarget(raw: string, target: RestartTarget): boolean {
   try {
     const parsed = readRestartTarget(raw);
-    return parsed.session === target.session && parsed.socket === target.socket;
+    const sessionMatches = parsed.session === target.session;
+    const socketMatches =
+      target.kind === "remote" || target.socket === "" || parsed.socket === target.socket;
+    return sessionMatches && socketMatches;
   } catch {
     return false;
   }
@@ -676,7 +775,7 @@ async function drainAndCaptureAgents(
       });
       continue;
     }
-    return captureNativeSessionRefs(agentList);
+    return captureNativeSessionRefs(agentList, deps.request.target.kind !== "remote");
   }
 }
 
@@ -952,6 +1051,147 @@ export async function runHardRestartPipeline(
   };
   deps.publishStatus(status);
   return status;
+}
+
+export type HerdrMachineRecord = {
+  id: string;
+  label: string;
+  target: string;
+  session: string;
+  enabled: boolean;
+  selected?: boolean;
+};
+
+export function discoverMeshTargets(
+  herdrBinary: string,
+  localTarget: RestartTarget,
+  run: (cmd: string, args: string[]) => { status: number | null; stdout: string },
+): FleetTarget[] {
+  const targets: FleetTarget[] = [
+    {
+      kind: "local",
+      label: "Local",
+      session: localTarget.session,
+      socket: localTarget.socket,
+    },
+  ];
+  try {
+    const res = run(herdrBinary, ["machine", "list", "--json"]);
+    if (res.status === 0 && res.stdout.trim()) {
+      const machines = JSON.parse(res.stdout) as HerdrMachineRecord[];
+      for (const m of machines) {
+        if (m.enabled && m.target) {
+          targets.push({
+            kind: "remote",
+            label: m.label || m.target,
+            sshTarget: m.target,
+            session: m.session || "default",
+          });
+        }
+      }
+    }
+  } catch {
+    // If machine list fails, fall back to local only
+  }
+  return targets;
+}
+
+export async function runFleetRestartPipeline(
+  deps: FleetRestartDependencies,
+): Promise<WorkerStatus> {
+  const targets = deps.targets;
+  deps.log(`Starting fleet restart across ${targets.length} targets: ${targets.map((t) => t.label).join(", ")}`);
+  deps.publishStatus({
+    phase: "fleet-starting",
+    message: `Starting fleet restart across ${targets.length} targets: ${targets.map((t) => t.label).join(", ")}`,
+  });
+
+  const targetStatuses = new Map<string, WorkerStatus>();
+  const updateAggregateStatus = (label: string, status: WorkerStatus) => {
+    targetStatuses.set(label, status);
+    deps.publishStatus({
+      phase: status.phase === "complete" ? "fleet-progress" : status.phase,
+      message: `[${label}] ${status.message}`,
+      ...(status.error ? { error: `[${label}] ${status.error}` } : {}),
+    });
+  };
+
+  const tasks = targets.map(async (target) => {
+    const isRemote = target.kind === "remote";
+    const runner =
+      isRemote && target.sshTarget
+        ? createRemoteRunner(target.sshTarget, deps.run)
+        : deps.run;
+    const startServer = deps.startServer
+      ? () => deps.startServer!(target)
+      : isRemote && target.sshTarget
+      ? () => spawnRemoteServer(target.sshTarget!, target as RestartTarget, deps.run)
+      : () => spawnDetachedServer(deps.request.herdrBinary, target as RestartTarget, process.env);
+    const targetRequest: WorkerRequest = {
+      target: {
+        kind: target.kind,
+        label: target.label,
+        session: target.session,
+        socket: target.socket ?? "",
+        sshTarget: target.sshTarget,
+      },
+      herdrBinary: deps.request.herdrBinary,
+      cwd: deps.request.cwd,
+      scope: "local",
+    };
+
+    const targetDeps: HardRestartDependencies = {
+      request: targetRequest,
+      jobDir: deps.jobDir,
+      publishStatus: (st) => updateAggregateStatus(target.label, st),
+      log: (msg) => deps.log(`[${target.label}] ${msg}`),
+      saveAgents: () => {},
+      run: runner,
+      delay: deps.delay,
+      startServer,
+      updatePlugins: deps.updatePlugins,
+      now: deps.now,
+    };
+
+    try {
+      const result = await runHardRestartPipeline(targetDeps);
+      targetStatuses.set(target.label, result);
+      return { target, result };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const failedStatus: WorkerStatus = {
+        phase: "failed",
+        message: `Restart failed on ${target.label}`,
+        error,
+      };
+      targetStatuses.set(target.label, failedStatus);
+      return { target, result: failedStatus };
+    }
+  });
+
+  const results = await Promise.all(tasks);
+  const failures = results.filter((r) => r.result.phase !== "complete");
+
+  if (failures.length > 0) {
+    const failedNames = failures.map((f) => f.target.label).join(", ");
+    const errorDetails = failures
+      .map((f) => `[${f.target.label}] ${f.result.error || f.result.message}`)
+      .join("\n");
+    const finalStatus: WorkerStatus = {
+      phase: "failed",
+      message: `Fleet restart failed on: ${failedNames}`,
+      error: errorDetails,
+    };
+    deps.publishStatus(finalStatus);
+    return finalStatus;
+  }
+
+  const finalStatus: WorkerStatus = {
+    phase: "complete",
+    message: `Fleet restart completed successfully across all ${targets.length} machines (${targets.map((t) => t.label).join(", ")})`,
+  };
+  deps.publishStatus(finalStatus);
+  return finalStatus;
 }
 
 export function spawnDetachedServer(

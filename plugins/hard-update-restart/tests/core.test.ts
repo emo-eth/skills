@@ -5,7 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { captureNativeSessionRefs, restoredPaneIds } from "../src/core.ts";
+import {
+  captureNativeSessionRefs,
+  createRemoteRunner,
+  discoverMeshTargets,
+  restoredPaneIds,
+  runFleetRestartPipeline,
+  shellEscape,
+  type CommandRunner,
+  type FleetTarget,
+  type WorkerStatus,
+} from "../src/core.ts";
 
 const session = { agent: "omp", source: "herdr:omp", kind: "id", value: "conversation-a" };
 const agent = { pane_id: "w1:p1", agent: "omp", agent_status: "idle", agent_session: session };
@@ -165,4 +175,127 @@ test("a stale session reference is not sufficient evidence of recovery", () => {
     assert.deepEqual(restoredPaneIds(saved, list([record])).restored, []);
   }
   assert.deepEqual(restoredPaneIds(saved, list([agent])).restored, ["w1:p1"]);
+});
+
+test("shellEscape correctly handles safe and unsafe characters", () => {
+  assert.equal(shellEscape("simple"), "simple");
+  assert.equal(shellEscape("/path/to/file.json"), "/path/to/file.json");
+  assert.equal(shellEscape("with spaces"), "'with spaces'");
+  assert.equal(shellEscape("foo'bar"), "'foo'\\''bar'");
+  assert.equal(shellEscape(""), "''");
+});
+
+test("discoverMeshTargets extracts local and enabled remote machines", () => {
+  const local = { session: "default", socket: "/tmp/herdr.sock" };
+  const mockMachineList = JSON.stringify([
+    { id: "1", label: "spark0", target: "spark0", session: "default", enabled: true },
+    { id: "2", label: "disabled-node", target: "disabled", session: "default", enabled: false },
+    { id: "3", label: "mbp-16-24", target: "mbp-16-24", session: "custom", enabled: true },
+  ]);
+  const targets = discoverMeshTargets("herdr", local, () => ({
+    status: 0,
+    stdout: mockMachineList,
+  }));
+  assert.equal(targets.length, 3);
+  assert.deepEqual(targets[0], { kind: "local", label: "Local", session: "default", socket: "/tmp/herdr.sock" });
+  assert.deepEqual(targets[1], { kind: "remote", label: "spark0", sshTarget: "spark0", session: "default" });
+  assert.deepEqual(targets[2], { kind: "remote", label: "mbp-16-24", sshTarget: "mbp-16-24", session: "custom" });
+});
+
+test("createRemoteRunner wraps commands into SSH invocation", async () => {
+  const recorded: { executable: string; args: string[] }[] = [];
+  const mockRunner: CommandRunner = async (executable, args) => {
+    recorded.push({ executable, args });
+    return { status: 0, stdout: "ok\n", stderr: "" };
+  };
+  const runner = createRemoteRunner("spark0", mockRunner);
+  const res = await runner("herdr", ["--session", "default", "agent", "list"]);
+  assert.equal(res.status, 0);
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].executable, "ssh");
+  assert.equal(recorded[0].args[0], "-o");
+  assert.equal(recorded[0].args[1], "BatchMode=yes");
+  assert.equal(recorded[0].args[4], "spark0");
+  assert.match(recorded[0].args[5], /export PATH=/);
+  assert.match(recorded[0].args[5], /herdr --session default agent list/);
+});
+
+test("captureNativeSessionRefs with isLocal false skips local file check", () => {
+  const remoteSession = { agent: "omp", source: "herdr:omp", kind: "path", value: "/remote/path/to/session.jsonl" };
+  const remoteAgent = { pane_id: "w1:p1", agent: "omp", agent_status: "idle", agent_session: remoteSession };
+  // On local, this throws because /remote/path does not exist locally
+  assert.throws(() => captureNativeSessionRefs(list([remoteAgent]), true), /does not exist/);
+  // With isLocal: false, it successfully captures the remote session ref
+  const saved = captureNativeSessionRefs(list([remoteAgent]), false);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].nativeSession.value, "/remote/path/to/session.jsonl");
+});
+
+test("runFleetRestartPipeline coordinates multiple targets and aggregates completion", async () => {
+  const targets: FleetTarget[] = [
+    { kind: "local", label: "Local", session: "default", socket: "/tmp/test.sock" },
+    { kind: "remote", label: "spark0", sshTarget: "spark0", session: "default" },
+  ];
+  const statuses: WorkerStatus[] = [];
+  const logs: string[] = [];
+  const serverState = new Map<string, boolean>([
+    ["Local", true],
+    ["spark0", true],
+  ]);
+  const mockRunner: CommandRunner = async (cmd, args) => {
+    const full = `${cmd} ${args.join(" ")}`;
+    const label = full.includes("spark0") ? "spark0" : "Local";
+    if (full.includes("server stop")) {
+      serverState.set(label, false);
+      return { status: 0, stdout: "ok\n", stderr: "" };
+    }
+    if (full.includes("status server --json")) {
+      const isRunning = serverState.get(label) !== false;
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          status: isRunning ? "running" : "not_running",
+          running: isRunning,
+          session: "default",
+          socket: "/tmp/test.sock",
+          capabilities: { detached_server_daemon: true, endpoint_protocol_generation: 1 },
+        }),
+        stderr: "",
+      };
+    }
+    if (full.includes("agent list")) {
+      return { status: 0, stdout: list([agent]), stderr: "" };
+    }
+    return { status: 0, stdout: "ok\n", stderr: "" };
+  };
+  let fakeTime = 1000;
+  const finalStatus = await runFleetRestartPipeline({
+    request: {
+      target: { session: "default", socket: "/tmp/local.sock" },
+      targets,
+      scope: "fleet",
+      herdrBinary: "herdr",
+      cwd: "/tmp",
+    },
+    jobDir: "/tmp",
+    targets,
+    publishStatus: (st) => statuses.push(st),
+    log: (msg) => logs.push(msg),
+    run: mockRunner,
+    delay: async () => {},
+    startServer: async (t) => {
+      serverState.set(t.label, true);
+    },
+    updatePlugins: async () => {},
+    now: () => {
+      fakeTime += 10;
+      return fakeTime;
+    },
+  });
+
+
+  assert.equal(finalStatus.phase, "complete");
+  assert.match(finalStatus.message, /Fleet restart completed successfully/);
+  assert.equal(statuses.some((s) => s.message.includes("[Local]")), true);
+  assert.equal(statuses.some((s) => s.message.includes("[spark0]")), true);
 });

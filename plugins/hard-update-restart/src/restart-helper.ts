@@ -7,6 +7,7 @@ import {
   readWorkerRequest,
   releaseActiveLock,
   resolveHerdrBinary,
+  runFleetRestartPipeline,
   runHardRestartPipeline,
   saveAgentsSnapshot,
   spawnDetachedServer,
@@ -91,23 +92,37 @@ try {
     message: "Hard update restart worker started",
   });
 
-  const finalStatus = await runHardRestartPipeline({
-    request: { ...request, herdrBinary },
-    jobDir,
-    publishStatus,
-    log: appendLog,
-    saveAgents: (agents) => {
-      saveAgentsSnapshot(jobDir, agents);
-    },
-    run: runCommand as CommandRunner,
-    delay,
-    startServer: async () => {
-      await spawnDetachedServer(herdrBinary, request!.target, process.env);
-    },
-    updatePlugins,
-    now: () => Date.now(),
-  });
-
+  let finalStatus: WorkerStatus;
+  if (request.scope === "fleet" && request.targets && request.targets.length > 1) {
+    finalStatus = await runFleetRestartPipeline({
+      request: { ...request, herdrBinary },
+      jobDir,
+      targets: request.targets,
+      publishStatus,
+      log: appendLog,
+      run: runCommand as CommandRunner,
+      delay,
+      updatePlugins,
+      now: () => Date.now(),
+    });
+  } else {
+    finalStatus = await runHardRestartPipeline({
+      request: { ...request, herdrBinary },
+      jobDir,
+      publishStatus,
+      log: appendLog,
+      saveAgents: (agents) => {
+        saveAgentsSnapshot(jobDir, agents);
+      },
+      run: runCommand as CommandRunner,
+      delay,
+      startServer: async () => {
+        await spawnDetachedServer(herdrBinary, request!.target, process.env);
+      },
+      updatePlugins,
+      now: () => Date.now(),
+    });
+  }
   if (finalStatus.phase !== "complete") {
     process.exitCode = 1;
   }
