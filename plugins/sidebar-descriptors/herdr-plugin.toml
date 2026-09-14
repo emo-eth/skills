@@ -1,0 +1,59 @@
+id = "sidebar-descriptors"
+name = "Sidebar Descriptors"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Publish workspace and worktree sidebar tokens for agent panes."
+platforms = ["linux", "macos"]
+
+[[startup]]
+command = ["sh", "run.sh"]
+
+[[actions]]
+id = "refresh"
+title = "Refresh sidebar descriptors"
+contexts = ["global"]
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "workspace.created"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "workspace.closed"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "workspace.focused"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "worktree.created"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "worktree.opened"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "worktree.removed"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "pane.created"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "pane.closed"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "pane.focused"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["sh", "run.sh"]
+
+[[events]]
+on = "tab.focused"
+command = ["sh", "run.sh"]
