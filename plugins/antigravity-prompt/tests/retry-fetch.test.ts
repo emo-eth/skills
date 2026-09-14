@@ -33,22 +33,31 @@ test("retries unspecified 429s without changing the request or buffering success
 	assert.ok(waits[1] >= 4000 && waits[1] < 8000);
 });
 
-test("bounds additional retries across stock transport attempts and preserves the final error", async () => {
+test("scopes retry budget per generation request so sequential and concurrent requests receive independent budgets", async () => {
 	const responses: Response[] = [];
 	const waits: number[] = [];
 	const retry = createGeminiRetryFetch({
 		fetch: async () => { const response = generic429(); responses.push(response); return response; },
 		providerRetryWait: async ms => { waits.push(ms); },
 	});
-	const final = await retry(url, init);
+	const first = await retry(url, init);
 	assert.equal(responses.length, 4);
-	assert.equal(final, responses[3]);
-	assert.deepEqual(await final.json(), exhausted);
-	assert.ok(waits[2] >= 8000 && waits[2] < 16000);
-	const next = await retry(url, init);
-	assert.equal(next, responses[4]);
+	assert.equal(first, responses[3]);
+	assert.deepEqual(await first.json(), exhausted);
 	assert.equal(waits.length, 3);
-	assert.deepEqual(await next.json(), exhausted);
+	assert.ok(waits[2] >= 8000 && waits[2] < 16000);
+
+	const second = await retry(url, init);
+	assert.equal(responses.length, 8);
+	assert.equal(second, responses[7]);
+	assert.equal(waits.length, 6);
+	assert.deepEqual(await second.json(), exhausted);
+
+	const [concA, concB] = await Promise.all([retry(url, init), retry(url, init)]);
+	assert.equal(responses.length, 16);
+	assert.equal(waits.length, 12);
+	assert.deepEqual(await concA.json(), exhausted);
+	assert.deepEqual(await concB.json(), exhausted);
 });
 
 test("preserves explicit quota, reset, authentication, and unrecognized responses", async () => {

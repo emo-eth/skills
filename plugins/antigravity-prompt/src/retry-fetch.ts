@@ -32,11 +32,11 @@ async function isUnspecifiedExhaustion(response: Response): Promise<boolean> {
 export function createGeminiRetryFetch(options: SimpleStreamOptions = {}): Fetch {
 	const fetch: Fetch = options.fetch ?? globalThis.fetch;
 	const wait = options.providerRetryWait ?? ((delayMs, signal) => sleep(delayMs, undefined, { signal }));
-	let retries = 0;
 	const retryFetch: Fetch = async (input, init) => {
 		if (!isGenerationRequest(input, init)) return fetch(input, init);
 		const signals = [options.signal, init?.signal].filter((signal): signal is AbortSignal => !!signal);
 		const signal = signals.length ? AbortSignal.any(signals) : undefined;
+		let retries = 0;
 		while (true) {
 			signal?.throwIfAborted();
 			const response = await fetch(input, init);

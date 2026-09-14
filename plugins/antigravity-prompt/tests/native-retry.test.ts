@@ -48,7 +48,7 @@ test("stock transport exhausts on six rejections; wrapped transport emits one na
 	assert.equal(events.filter(event => event.type === "toolcall_end").length, 1);
 	assert.equal(events.filter(event => event.type === "error").length, 0);
 	assert.equal(recovering.calls(), 7);
-	assert.equal(waits.length, 3);
+	assert.equal(waits.length, 5);
 	assert.equal(new Set(recovering.models).size, 1);
 	assert.ok(recovering.models[0].startsWith("gemini-3.8-flash"));
 });
