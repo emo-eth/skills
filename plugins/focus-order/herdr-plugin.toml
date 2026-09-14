@@ -1,9 +1,12 @@
 id = "focus-order"
 name = "Focus Order"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.7.0"
 description = "Keep attention on the highest-ranked urgent agent."
 platforms = ["linux", "macos", "windows"]
+
+[[build]]
+command = ["npm", "ci", "--omit=dev", "--ignore-scripts"]
 
 [[startup]]
 command = ["node", "--experimental-strip-types", "src/herdr/guard.ts"]
