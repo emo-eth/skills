@@ -29,6 +29,14 @@ Every `herdr_broker_*` tool returns dual-layer content:
 
 Delegation is asynchronous: `herdr_broker_delegate` queues the workstream and returns the ID immediately. Report the ID and status right away—never block or poll waiting for completion. Completion arrives later through `herdr_broker_updates` or `herdr_broker_status`.
 
+## v0 attention signals
+
+The broker is the durable alert channel. A voice session does not receive a push while it is closed, so never claim that it did.
+
+At the start of a relevant broker voice turn, check `herdr_broker_updates` with the latest remembered cursor. Also check `herdr_broker_status` for `waiting`, `blocked`, and `failed` workstreams when the user asks what needs attention or returns after a break. If a workstream needs a decision, speak that concise attention summary before handling the user's new request.
+
+Persist the returned `cursor` in the conversation and use it on the next updates call. Do not dump raw events or terminal output; summarize the workstream, state, evidence, and the one decision needed.
+
 ## Fallback route: CLI wrapper
 
 If MCP tools are not mounted in this session and local shell access is available, run `$HOME/.local/bin/voicebroker` directly with `--json`:
