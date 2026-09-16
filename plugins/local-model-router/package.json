@@ -1,0 +1,46 @@
+{
+  "name": "@emo-eth/local-model-router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "keywords": [
+    "pi-package",
+    "omp-package",
+    "local-model-router",
+    "inference-api"
+  ],
+  "bin": {
+    "local-model-router": "./src/cli.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./src/pi.ts"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./src/omp.ts"
+    ]
+  },
+  "exports": {
+    ".": "./src/router.ts",
+    "./server": "./src/server.ts",
+    "./config": "./src/config.ts",
+    "./pi": "./src/pi.ts",
+    "./omp": "./src/omp.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:bun": "bun test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@oh-my-pi/pi-coding-agent": "17.2.15",
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

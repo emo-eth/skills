@@ -100,6 +100,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 - Compression preserves a working vertical slice and reports gaps honestly. [D8]
 - MCP is optional and never enforces deadlines. [D9]
 - Session history is one designated CASS-backed tailnet corpus; callers never pick or contact a source machine at query time. [D41]
+- Local model router delivers exact contracts over tailnet inference; placement across boxes is invisible to callers and capacity exhaustion fails fast. [D42]
 
 ## Topic index
 
@@ -122,7 +123,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Executable repository audit | `docs/log/2026-09-06-executable-verification.md` | thirteen plugin packages, `tools/`, non-pstack executable skill helpers | package checks, native runners, isolated CLI/script smokes; explicit external-service and host gaps | source-verified and isolated-runtime-verified |
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 36 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |
 | Focus order deployment | Herdr 0.9.0 missing-runtime-dependency repair described above | `plugins/focus-order/herdr-plugin.toml`, `package.json`, `package-lock.json` | clean-package build/start smoke, 113 Node tests, typecheck, live Herdr manager navigation, popup launch and event-hook success | verified-live for named macOS scenarios |
-| Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
+| Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md`, `prd.md`, D42 | `plugins/local-model-router/`, `skills/local-model-router/` | 9 Node/Bun unit tests and live-verification smoke testing exact contracts, fail-fast 429/503, invisibility, and Pi-grain stats | verified-live |
 | Session history | `docs/prds/2026-09-02-session-history/vibe.md`, `prd.md`, D41 | `plugins/session-history/`, `skills/session-history/` | PRD approved 2026-09-15; `npm test` (15 Python, 17 Node, Pi and OMP native runner tests), `npm run check`, live CASS 0.7.1 installed via tap and verified | verified-live |
 | Agent memory | `docs/prds/2026-09-02-agent-memory/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 38 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, symlink/custom-build update protection, restart-only mode, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |

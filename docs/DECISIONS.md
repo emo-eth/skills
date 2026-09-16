@@ -467,3 +467,14 @@ Source: user chat on docs/prds/2026-09-02-session-history/prd.md, 2026-09-15
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## D42 - 2026-09-16 - Local model router delivers exact contracts and invisible placement
+
+Decision: The local model router (`plugins/local-model-router/`) exposes a standard OpenAI-compatible inference API across the user's home fleet (`spark0`, `spark1`, `emo-win`, `localhost`). Model IDs are exact contracts specifying weights, quantization, context window, and generation semantics invariant across physical placements. Placement remains completely invisible to callers. Saturated fleet capacity fails fast with HTTP 429 and unloaded/unreachable models fail fast with HTTP 503 without infinite queueing or silent truncation. Operators inspect Pi-grain execution metrics (TTFT, decode duration, tokens/sec, token counts) and placement provenance via diagnostic endpoints and harness tools (`router_status`, `router_stats`, `/router`).
+Why: Implements the approved feel contract in `docs/prds/2026-09-02-local-model-router/vibe.md` and fulfills the inference-api contract.
+Alternatives: Fleet console where callers pick physical machines (rejected by V1/V2: leaks topology and breaks standard provider mental model); silent fallback to lower quantization or shorter context to force fit (rejected by V2/V3: damages reasoning output); unbounded queueing during saturation (rejected by V3: stalls agent execution loops).
+Consequences: Callers configure standard OpenAI client settings targeting the router base URL. The router owns load balancing, cache affinity, and capacity fail-fast. Fleet topology and GPU metrics are surfaced only to operators in diagnostics and harness session views.
+Source: user chat and approved docs/prds/2026-09-02-local-model-router/vibe.md, 2026-09-16
+Status: active
+Scope: v0
+Load-bearing: yes

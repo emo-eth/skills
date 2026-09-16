@@ -1,0 +1,18 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "local-model-router",
+  "version": "0.1.0",
+  "description": "Tailnet-wide OpenAI-compatible local model inference router with exact model contracts, invisible placement, fail-fast capacity, fair responsiveness, and Pi-grain operator telemetry.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "local-model-router",
+    "inference-api",
+    "fleet-routing",
+    "pi-grain-stats",
+    "tailnet-inference"
+  ]
+}
