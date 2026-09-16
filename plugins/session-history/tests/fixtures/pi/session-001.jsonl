@@ -1,0 +1,4 @@
+{"type":"session","id":"sess-pi-001","timestamp":"2026-09-10T13:55:00Z","cwd":"/proj","title":"Database choice"}
+{"type":"message","id":"m1","timestamp":"2026-09-10T14:00:00Z","message":{"role":"user","content":[{"type":"text","text":"We decided to use PostgreSQL for the primary datastore."}]}}
+{"type":"message","id":"m2","timestamp":"2026-09-10T14:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"We decided not to use PostgreSQL; SQLite is sufficient for v1."}]}}
+{"type":"message","id":"m3","timestamp":"2026-09-10T14:02:00Z","message":{"role":"assistant","content":[{"type":"text","text":"TODO: finish migration script before release."}]}}

@@ -1,0 +1,24 @@
+{
+  "session_id": "sess-claude-004",
+  "title": "Claude harness mapping",
+  "messages": [
+    {
+      "uuid": "c1",
+      "type": "user",
+      "timestamp": "2026-09-13T11:45:00Z",
+      "message": {
+        "role": "user",
+        "content": "Claude Code history must map to harness claude in results."
+      }
+    },
+    {
+      "uuid": "c2",
+      "type": "assistant",
+      "timestamp": "2026-09-13T11:46:00Z",
+      "message": {
+        "role": "assistant",
+        "content": "Normalization layer converts claude-code agent strings to harness claude."
+      }
+    }
+  ]
+}

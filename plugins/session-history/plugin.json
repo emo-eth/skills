@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "session-history",
+  "version": "0.1.0",
+  "description": "Cross-agent session history recall with provenance-preserving search, inspect, expand, resume, and lifecycle controls.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "session history",
+    "cass",
+    "agent tools",
+    "recall"
+  ]
+}

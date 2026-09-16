@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "session-history": {
+      "command": "python3",
+      "args": ["./scripts/session-history.py", "mcp"],
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}

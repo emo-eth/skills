@@ -456,3 +456,14 @@ Source: chat feedback during the surgical Plannotator review of `docs/vibe.md`, 
 Status: active
 Scope: all agent work
 Load-bearing: yes
+
+## D41 - 2026-09-15 - Session history is the approved CASS-backed tailnet corpus
+
+Decision: Implement the session-history PRD as written: one designated CASS-backed tailnet service pulls included local and remote sessions into a retained corpus and serves every search through an authenticated MCP wrapper and a human CLI. Callers must not choose or contact a source machine at query time. The first complete product covers Pi, OMP, Codex, and Claude, hybrid lexical-plus-semantic retrieval, two-second client-visible search, five-minute freshness with ongoing checkpoints, focused resume packets, session-scoped follow-up queries, source/session exclusion, disconnect-without-delete, and explicit purge.
+Why: "i think it's prob fine just start buliding it" - user in chat, 2026-09-15, after the PRD incorporated the interview and grill decisions.
+Alternatives: Keep the PRD in draft and continue design questions (rejected: the user approved building); build a from-scratch indexer instead of CASS (rejected: the PRD already selected a CASS-backed service); expose `cass` shell access as the agent contract (rejected by R1).
+Consequences: `plugins/session-history/` is the implementation location. CASS is the engine, not the agent-facing interface. Cloud-chat ingestion and automated redaction remain explicit fast follows. Direct CASS TUI/shell use is not an acceptable agent path.
+Source: user chat on docs/prds/2026-09-02-session-history/prd.md, 2026-09-15
+Status: active
+Scope: v0
+Load-bearing: yes

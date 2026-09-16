@@ -5,3 +5,4 @@
 .pi/
 __pycache__/
 *.pyc
+.omp/
