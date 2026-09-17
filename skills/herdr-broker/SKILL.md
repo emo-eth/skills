@@ -29,6 +29,8 @@ Every `herdr_broker_*` tool returns dual-layer content:
 
 Delegation is asynchronous: `herdr_broker_delegate` queues the workstream and returns the ID immediately. Report the ID and status right away—never block or poll waiting for completion. Completion arrives later through `herdr_broker_updates` or `herdr_broker_status`.
 
+The voice conversation is the chief of staff briefing, not a worker. One utterance may contain several intents in any order. Route each separately: new work is `herdr_broker_delegate` only after an explicit handoff; existing work is `status`, `message`, `connect`, or `cancel`. Do not collapse unrelated requests into one workstream. Do not start project work inside this conversation.
+
 ## v0 attention signals
 
 The broker is the durable alert channel. A voice session does not receive a push while it is closed, so never claim that it did.
@@ -50,7 +52,8 @@ If MCP tools are not mounted in this session and local shell access is available
 ## Routing rules
 
 - Vague health checks are never delegation. "Try the Herder Voice broker", "does the broker work", "is the broker up", "what is running", "anything new?" map to `status` (plus `updates` when the user asks for news). Run `delegate` only when the user actually hands over work to do.
-- One request, one action. If the user asks two things ("check on the deploy and start a new one"), execute each action separately and report both results.
+- Several things at once are several actions. If the user briefs more than one thing ("check the deploy, start the rate-limit audit, and bump the importer"), route each intent separately and report each result. Never fold them into a single workstream.
+- "What's waiting on me" / "catch me up" / a fresh session after a break: speak the overview first from `waiting`, `blocked`, and `failed` workstreams, then handle new requests. The words are the overview; do not send the user to another surface.
 
 ## Speech transcription
 
