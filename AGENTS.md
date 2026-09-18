@@ -10,6 +10,8 @@ Personal agent skills, distributed via [`npx skills`](https://github.com/vercel-
 
 This repo is the single source of truth for these skills across all of my machines. Every device installs from here and updates from here.
 
+The repo philosophy vibe is `docs/vibe.md`. The home system, fleet, and sync contract is the `system-vibe` skill. Do not mix them.
+
 ## The core rule: push to `main` immediately
 
 **Any edit to a skill must be committed, pushed, and merged into `main` right away.** No feature branches, no draft PRs sitting around for skill changes — `main` is what `npx skills update` pulls, so an unpushed edit exists on exactly one machine and drifts from every other one.
