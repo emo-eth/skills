@@ -33,3 +33,11 @@ title = "Shelve"
 description = "Hide this chair. Never remove the tree. Write a sitting note if dirty or working."
 contexts = ["workspace", "pane"]
 command = ["node", "--experimental-strip-types", "src/main.ts", "shelve"]
+
+[[actions]]
+id = "funeral"
+title = "Funeral"
+description = "Remove this tree only when Linear is Done, git is clean, and any Done/Acceptance/Validation lists are operator-approved. Does not mark Linear Done."
+contexts = ["workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/main.ts", "funeral"]
+
