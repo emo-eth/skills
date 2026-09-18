@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -8,16 +9,40 @@ import {
   capture,
   helpText,
   parseCliArgs,
+  parseCommand,
   workspaceFromCli,
   workspacesFromCli,
   type CaptureDeps,
 } from "./capture.ts";
+import { captureInputFromEnv } from "./event.ts";
 import { parseCreatedIssue } from "./ticket.ts";
 
-const herdrBin = process.env.HERDR_BIN_PATH ?? "herdr";
-const linearBin = process.env.LINEAR_BIN ?? "linear";
+const EXTRA_BIN_DIRS = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  join(homedir(), ".local/bin"),
+];
 
+export function resolveBin(name: string, env: NodeJS.ProcessEnv, override?: string): string {
+  if (override?.trim()) return override;
+  const dirs = [
+    ...(env.PATH ?? "").split(":").filter(Boolean),
+    ...EXTRA_BIN_DIRS,
+  ];
+  for (const dir of dirs) {
+    const candidate = join(dir, name);
+    if (existsSync(candidate)) return candidate;
+  }
+  return name;
+}
+
+function spawnEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const path = [...EXTRA_BIN_DIRS, env.PATH ?? ""].filter(Boolean).join(":");
+  return { ...env, PATH: path };
+}
 export function createDeps(env: NodeJS.ProcessEnv = process.env): CaptureDeps {
+  const herdrBin = resolveBin("herdr", env, env.HERDR_BIN_PATH);
+  const linearBin = resolveBin("linear", env, env.LINEAR_BIN);
   return {
     async readFile(path) {
       try {
@@ -79,14 +104,29 @@ export function createDeps(env: NodeJS.ProcessEnv = process.env): CaptureDeps {
 }
 
 async function main(): Promise<void> {
+  const env = process.env;
+  const command = parseCommand(process.argv, env);
   const parsed = parseCliArgs(process.argv);
   if (parsed.help) {
     process.stdout.write(helpText());
     return;
   }
+  if (command === "skip") return;
+  if (command !== "capture") {
+    throw new Error(`action ${command} is not in this slice`);
+  }
+  const fromEvent = captureInputFromEnv(env);
+  const workspaceId = parsed.workspaceId ?? fromEvent?.workspaceId ?? env.HERDR_WORKSPACE_ID;
+  const path = parsed.path ?? fromEvent?.path;
   const result = await capture(
-    { ...parsed, cwd: process.cwd(), env: process.env, team: parsed.team ?? process.env.TICKET_BOUND_TEAM ?? "EMO" },
-    createDeps(),
+    {
+      ...fromEvent,
+      ...parsed,
+      cwd: path || workspaceId ? undefined : process.cwd(),
+      env,
+      team: parsed.team ?? env.TICKET_BOUND_TEAM ?? "EMO",
+    },
+    createDeps(env),
   );
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
@@ -97,7 +137,7 @@ function run(
   env: NodeJS.ProcessEnv,
 ): Promise<{ stdout: string; stderr: string }> {
   const { promise, resolve, reject } = Promise.withResolvers<{ stdout: string; stderr: string }>();
-  const child = spawn(executable, args, { env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(executable, args, { env: spawnEnv(env), stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   const timer = setTimeout(() => child.kill("SIGKILL"), 45_000);

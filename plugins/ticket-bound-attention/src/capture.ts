@@ -47,15 +47,22 @@ export type CaptureDeps = {
   reportTicket(workspaceId: string, identifier: string): Promise<void>;
 };
 
+export const PLUGIN_COMMANDS = ["capture", "desk", "shelve", "funeral"] as const;
+export type PluginCommand = (typeof PLUGIN_COMMANDS)[number];
+
 const HELP = `Capture or bind a Linear ticket for a worktree.
 
 Usage:
-  node --experimental-strip-types src/main.ts [--workspace ID] [--path PATH] [--name NAME]
+  node --experimental-strip-types src/main.ts [capture] [--workspace ID] [--path PATH] [--name NAME]
 
 Binds GOAL.md / .herdr-ticket when a Linear id is already present.
 Otherwise creates a team EMO issue with Intention, Vibe, Done-when, and Map.
 Chair names are for humans, never ticket numbers. No form. No focus steal.
 `;
+
+export function isPluginCommand(value: string | undefined): value is PluginCommand {
+  return value !== undefined && (PLUGIN_COMMANDS as readonly string[]).includes(value);
+}
 
 export function parseCliArgs(argv: string[]): CaptureInput & { help?: boolean } {
   const input: CaptureInput = {};
@@ -79,11 +86,25 @@ export function parseCliArgs(argv: string[]): CaptureInput & { help?: boolean } 
       input.team = required(args, i += 1, arg);
       continue;
     }
+    if (isPluginCommand(arg)) continue;
     if (arg.startsWith("-")) throw new Error(`Unknown flag: ${arg}`);
     if (/^w[0-9A-Za-z]+$/.test(arg)) input.workspaceId = arg;
     else input.path = arg;
   }
   return input;
+}
+
+export function parseCommand(argv: string[], env: NodeJS.ProcessEnv = {}): PluginCommand | "skip" {
+  const eventName = env.HERDR_PLUGIN_EVENT;
+  if (eventName) return isCaptureEventName(eventName) ? "capture" : "skip";
+  const action = env.HERDR_PLUGIN_ACTION_ID;
+  if (isPluginCommand(action)) return action;
+  const first = argv.slice(2).find((arg) => !arg.startsWith("-"));
+  return isPluginCommand(first) ? first : "capture";
+}
+
+function isCaptureEventName(eventName: string): boolean {
+  return eventName === "worktree.created" || eventName === "worktree.opened";
 }
 
 export function helpText(): string {
