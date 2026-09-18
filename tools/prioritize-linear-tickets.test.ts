@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { fetchAssignedNotCompleted } from "./linear-client.ts";
+import { fetchAssignedNotCompleted, matchesProject } from "./linear-client.ts";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
 const cli = join(toolsDir, "prioritize-linear-tickets.ts");
@@ -91,7 +91,8 @@ if [ "$1" = "api" ]; then
               title: t.title,
               priority: t.priority,
               state: { name: "Todo", type: "triage" },
-              team: { key: "NAT" },
+              team: { key: t.teamKey ?? "NAT" },
+              project: t.project ?? null,
             })),
           },
         },
@@ -124,7 +125,13 @@ exit 1
 }
 
 type FakeDb = {
-  tickets: Array<{ id: string; title: string; priority?: number }>;
+  tickets: Array<{
+    id: string;
+    title: string;
+    priority?: number;
+    teamKey?: string;
+    project?: { id?: string; name?: string; slugId?: string } | null;
+  }>;
 };
 
 async function createRoot(db: FakeDb): Promise<string> {
@@ -279,6 +286,200 @@ test("top-k apply checkpoint resumes only the failed update on rerun", async () 
     assert.equal(second.code, 0, `stdout: ${second.stdout} stderr: ${second.stderr}`);
     assert.deepEqual(await readLog(root), [`update ${failedId} priority 1`]);
     await assert.rejects(readFile(stateFile, "utf8"), /ENOENT/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("matchesProject matches by name, UUID, slugId, and slugified name", () => {
+  const project = {
+    id: "de4dacd2-f20f-4ed7-8c43-069e3e173bd4",
+    name: "Creatordex",
+    slugId: "6c237567bcda",
+  };
+  assert.equal(matchesProject(project, "Creatordex"), true);
+  assert.equal(matchesProject(project, "creatordex"), true);
+  assert.equal(matchesProject(project, "de4dacd2-f20f-4ed7-8c43-069e3e173bd4"), true);
+  assert.equal(matchesProject(project, "DE4DACD2-F20F-4ED7-8C43-069E3E173BD4"), true);
+  assert.equal(matchesProject(project, "6c237567bcda"), true);
+  assert.equal(matchesProject(project, "6C237567BCDA"), true);
+  assert.equal(matchesProject(project, "other-project"), false);
+  assert.equal(matchesProject(null, "Creatordex"), false);
+  assert.equal(matchesProject(undefined, "Creatordex"), false);
+
+  const multiWord = { id: "p-uuid-1", name: "Japan Trip 2026", slugId: "10c28f2c7860" };
+  assert.equal(matchesProject(multiWord, "japan-trip-2026"), true);
+  assert.equal(matchesProject(multiWord, "Japan Trip 2026"), true);
+  assert.equal(matchesProject(multiWord, "10c28f2c7860"), true);
+});
+
+test("fetchAssignedNotCompleted filters by project and combines with team", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "Ticket in Creatordex",
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+      {
+        id: "EMO-2",
+        title: "Ticket in Japan Trip",
+        teamKey: "EMO",
+        project: { id: "uuid-2", name: "Japan Trip 2026", slugId: "slug-2" },
+      },
+      {
+        id: "NAT-1",
+        title: "Ticket in NAT Creatordex",
+        teamKey: "NAT",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+    ],
+  });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${join(root, "bin")}:${previousPath ?? ""}`;
+  process.env.LINEAR_FAKE_STATE = join(root, "db.json");
+  try {
+    const byName = await fetchAssignedNotCompleted({ project: "Creatordex" });
+    assert.deepEqual(byName.map((t) => t.id), ["EMO-1", "NAT-1"]);
+
+    const byUuid = await fetchAssignedNotCompleted({ project: "uuid-2" });
+    assert.deepEqual(byUuid.map((t) => t.id), ["EMO-2"]);
+
+    const bySlug = await fetchAssignedNotCompleted({ project: "slug-1" });
+    assert.deepEqual(bySlug.map((t) => t.id), ["EMO-1", "NAT-1"]);
+
+    const bySlugified = await fetchAssignedNotCompleted({ project: "japan-trip-2026" });
+    assert.deepEqual(bySlugified.map((t) => t.id), ["EMO-2"]);
+
+    const combined = await fetchAssignedNotCompleted({ team: "EMO", project: "Creatordex" });
+    assert.deepEqual(combined.map((t) => t.id), ["EMO-1"]);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    delete process.env.LINEAR_FAKE_STATE;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI displays --project in help", async () => {
+  const root = await createRoot({ tickets: [] });
+  try {
+    const result = await runCli(["--help"], {
+      cwd: root,
+      env: childEnv(root, {}),
+      stdinData: "",
+      timeoutMs: 15000,
+    });
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /--project\s+<target>\s+only rank issues in this project/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI rejects --project without argument", async () => {
+  const root = await createRoot({ tickets: [] });
+  try {
+    const result = await runCli(["--project"], {
+      cwd: root,
+      env: childEnv(root, {}),
+      stdinData: "",
+      timeoutMs: 15000,
+    });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /--project needs a project name, UUID, or slug/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI filters by --project and only updates that project's tickets", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-10",
+        title: "Project Alpha ticket",
+        priority: 0,
+        teamKey: "EMO",
+        project: { id: "alpha-uuid", name: "Alpha", slugId: "alpha-slug" },
+      },
+      {
+        id: "EMO-20",
+        title: "Project Beta ticket",
+        priority: 0,
+        teamKey: "EMO",
+        project: { id: "beta-uuid", name: "Beta", slugId: "beta-slug" },
+      },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const result = await runCli(
+      ["--bin", "--team", "EMO", "--project", "Alpha", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "y\ny\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.signal, null, `killed: ${result.stderr}`);
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    const calls = await readLog(root);
+    assert.deepEqual(calls, ["update EMO-10 priority 1"]);
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as {
+      tickets: Array<{ id: string; priority: number }>;
+    };
+    const alpha = db.tickets.find((t) => t.id === "EMO-10");
+    const beta = db.tickets.find((t) => t.id === "EMO-20");
+    assert.equal(alpha?.priority, 1);
+    assert.equal(beta?.priority, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI detects project mismatch on checkpoint resume", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "Alpha ticket",
+        priority: 0,
+        project: { id: "alpha-uuid", name: "Alpha", slugId: "alpha-slug" },
+      },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 2,
+        mode: "bin",
+        snapshot: "dummy",
+        tiers: { "EMO-1": 0 },
+        applying: {
+          source: "linear",
+          team: undefined,
+          project: "Alpha",
+          updates: { "EMO-1": 1 },
+        },
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    const result = await runCli(["--bin", "--project", "Beta", "--state", stateFile], {
+      cwd: root,
+      env: childEnv(root, {}),
+      stdinData: "",
+      timeoutMs: 15000,
+    });
+    assert.equal(result.code, 1);
+    assert.match(
+      result.stderr,
+      /saved application checkpoint used project Alpha but this run uses Beta/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
