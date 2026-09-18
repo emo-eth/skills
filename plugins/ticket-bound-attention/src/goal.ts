@@ -107,21 +107,32 @@ export function upsertGoal(
       "",
     ].join("\n");
   }
-  let text = existing.replace(/\r\n/g, "\n");
-  if (/^Linear(?: parent)?:\s*/im.test(text)) {
-    text = text.replace(/^Linear(?: parent)?:\s*.*$/im, bindLine);
-  } else {
-    const lines = text.split("\n");
-    if (lines[0]?.startsWith("# ")) {
-      let i = 1;
-      while (i < lines.length && lines[i]?.trim() === "") i += 1;
-      lines.splice(1, i - 1, "", bindLine);
-      text = lines.join("\n");
-    } else {
-      text = `${bindLine}\n\n${text}`;
-    }
-  }
+  const text = upsertBindLine(existing.replace(/\r\n/g, "\n"), bindLine);
   return upsertMapSection(text, map);
+}
+
+function upsertBindLine(markdown: string, bindLine: string): string {
+  const lines = markdown.split("\n");
+  const kept: string[] = [];
+  let seen = false;
+  for (const line of lines) {
+    if (/^Linear(?: parent)?:\s*/i.test(line)) {
+      if (!seen) {
+        kept.push(bindLine);
+        seen = true;
+      }
+      continue;
+    }
+    kept.push(line);
+  }
+  if (seen) return kept.join("\n");
+  if (kept[0]?.startsWith("# ")) {
+    let i = 1;
+    while (i < kept.length && kept[i]?.trim() === "") i += 1;
+    kept.splice(1, i - 1, "", bindLine);
+    return kept.join("\n");
+  }
+  return `${bindLine}\n\n${markdown}`;
 }
 
 function upsertMapSection(markdown: string, map: MapInfo): string {

@@ -1,4 +1,4 @@
-import { basename, join, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import {
   extractSection,
@@ -92,7 +92,7 @@ export function helpText(): string {
 
 export async function capture(input: CaptureInput, deps: CaptureDeps): Promise<CaptureResult> {
   const resolved = await resolveTarget(input, deps);
-  refuseTicketNumber(resolved.chairName, "chair");
+  if (resolved.label) refuseTicketNumber(resolved.label, "chair");
   const workName = input.name ?? resolved.chairName;
   refuseTicketNumber(workName, "name");
   const title = humanTitle(workName);
@@ -182,7 +182,7 @@ async function resolveTarget(input: CaptureInput, deps: CaptureDeps): Promise<Re
   if (checkout && !explicitPath) path = checkout;
 
   const label = workspace?.label;
-  const chairName = input.name ?? label ?? basename(path);
+  const chairName = label ?? basename(path);
   return {
     path,
     workspaceId: workspace?.workspace_id,
@@ -259,4 +259,3 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-export { join };

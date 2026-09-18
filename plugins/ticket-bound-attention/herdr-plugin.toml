@@ -2,7 +2,7 @@ id = "ticket-bound-attention"
 name = "Ticket-bound attention"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Create or bind a Linear ticket when a Herdr worktree is created or opened. Human names, no form."
+description = "Create or bind a Linear ticket for a worktree. Human names, no form."
 platforms = ["linux", "macos", "windows"]
 
 [[actions]]
@@ -10,12 +10,4 @@ id = "capture"
 title = "Capture Linear ticket"
 description = "Create or bind a Linear ticket for this worktree. Idempotent. Human names."
 contexts = ["global", "workspace", "pane"]
-command = ["node", "--experimental-strip-types", "src/capture.ts"]
-
-[[events]]
-on = "worktree.created"
-command = ["node", "--experimental-strip-types", "src/capture.ts"]
-
-[[events]]
-on = "worktree.opened"
-command = ["node", "--experimental-strip-types", "src/capture.ts"]
+command = ["node", "--experimental-strip-types", "src/main.ts"]
