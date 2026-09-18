@@ -85,6 +85,7 @@ test("create writes face, GOAL.md, ticket file, and metadata", async () => {
     assert.match(fake.creates[0]?.description ?? "", /## Map/);
     const goal = await readFile(join(tree, "GOAL.md"), "utf8");
     assert.match(goal, /Linear: \[EMO-501\]\(/);
+    assert.match(goal, /Standing: you already know this ticket/);
     assert.match(goal, /- Herdr: billing-checkout \(w9Z\)/);
     assert.match(goal, new RegExp(`- Worktree: \`${tree}\``));
     const ticket = await readFile(join(tree, ".herdr-ticket"), "utf8");

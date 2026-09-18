@@ -4,6 +4,9 @@ import { linearUrl, ticketRefFromText, type TicketRef } from "./ticket.ts";
 
 export const TICKET_FILE = ".herdr-ticket";
 
+export const STANDING =
+  "Standing: you already know this ticket. Update Linear only when Intention, Vibe, Done-when, or Map change. Ping command center `w2D:p1`. Never raw-remove this worktree; use the funeral action.";
+
 export type MapInfo = {
   path: string;
   label?: string;
@@ -102,6 +105,8 @@ export function upsertGoal(
       `# Goal: ${title}`,
       "",
       bindLine,
+      "",
+      STANDING,
       "",
       ticketFace({ ...face, map }).trimEnd(),
       "",
