@@ -3,7 +3,7 @@ import test from "node:test";
 import { installLinearCommand, type RuntimeContext, type RuntimeHost } from "../src/host.ts";
 import linearOmpExtension from "../src/omp.ts";
 import linearPiExtension from "../src/pi.ts";
-import type { LinearRunner } from "../src/record.ts";
+import type { ClassifierAgent, LinearRunner } from "../src/record.ts";
 
 type Command = {
   description: string;
@@ -30,6 +30,24 @@ class FakeHost implements RuntimeHost {
 }
 
 type Notice = { message: string; level?: string };
+
+const testClassifier: ClassifierAgent = async (prompt) =>
+  JSON.stringify({
+    title: prompt.user.includes("Fix memory leak")
+      ? "Fix memory leak in buffer pool"
+      : prompt.user.includes("Interactive issue")
+        ? "Interactive issue"
+        : prompt.user.includes("Direct issue")
+          ? "Direct issue without confirmation"
+          : prompt.user.includes("Event tracked")
+            ? "Event tracked issue"
+            : "Test issue",
+    project: "Saddle",
+    reviewBucket: "Review bucket: 09 Smithers, harnesses, and agent workflows",
+    type: "Bug",
+    priority: 2,
+    team: "EMO",
+  });
 
 function createTestContext(options: {
   sessionId?: string;
@@ -116,7 +134,7 @@ test("confirmation flow creates issue and notifies user without modifying transc
     };
   };
 
-  installLinearCommand(host, "OMP", "omp", { runner: mockRunner });
+  installLinearCommand(host, "OMP", "omp", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear");
   assert.ok(command);
 
@@ -149,7 +167,7 @@ test("cancellation flow skips runner and notifies cancellation", async () => {
     return { stdout: "", stderr: "", exitCode: 0 };
   };
 
-  installLinearCommand(host, "OMP", "omp", { runner: mockRunner });
+  installLinearCommand(host, "OMP", "omp", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context, notices, confirmCalls } = createTestContext({
@@ -178,7 +196,7 @@ test("interactive input flow prompts when command args are empty", async () => {
     };
   };
 
-  installLinearCommand(host, "Pi", "pi", { runner: mockRunner });
+  installLinearCommand(host, "Pi", "pi", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context, notices, inputCalls, confirmCalls } = createTestContext({
@@ -205,7 +223,7 @@ test("interactive input cancellation exits early", async () => {
     return { stdout: "", stderr: "", exitCode: 0 };
   };
 
-  installLinearCommand(host, "Pi", "pi", { runner: mockRunner });
+  installLinearCommand(host, "Pi", "pi", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context, notices, inputCalls, confirmCalls } = createTestContext({
@@ -223,7 +241,7 @@ test("interactive input cancellation exits early", async () => {
 
 test("bare command in non-interactive mode notifies error usage", async () => {
   const host = new FakeHost();
-  installLinearCommand(host, "OMP", "omp");
+  installLinearCommand(host, "OMP", "omp", { classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context, notices } = createTestContext({
@@ -244,13 +262,13 @@ test("non-interactive execution creates issue directly without confirmation prom
   const mockRunner: LinearRunner = async (_cmd, args) => {
     runnerCalls.push(args);
     return {
-      stdout: "Created issue EMO-502: Direct issue\n",
+      stdout: "Created issue EMO-502: Direct issue without confirmation\n",
       stderr: "",
       exitCode: 0,
     };
   };
 
-  installLinearCommand(host, "OMP", "omp", { runner: mockRunner });
+  installLinearCommand(host, "OMP", "omp", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context, notices, confirmCalls } = createTestContext({
@@ -273,7 +291,7 @@ test("runner error notifies with error level", async () => {
     exitCode: 1,
   });
 
-  installLinearCommand(host, "OMP", "omp", { runner: mockRunner });
+  installLinearCommand(host, "OMP", "omp", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context, notices } = createTestContext({
@@ -296,7 +314,7 @@ test("lifecycle events record turn and model in session state", async () => {
     return { stdout: "Created issue EMO-503: Event tracked issue\n", stderr: "", exitCode: 0 };
   };
 
-  installLinearCommand(host, "OMP", "omp", { runner: mockRunner });
+  installLinearCommand(host, "OMP", "omp", { runner: mockRunner, classifier: testClassifier });
   const command = host.commands.get("linear")!;
 
   const { context } = createTestContext({

@@ -16,6 +16,7 @@ import {
   parseCommandArgs,
   priorityLabel,
   resolveLinearBinary,
+  type ClassifierAgent,
   type LinearRunner,
 } from "../src/record.ts";
 
@@ -134,42 +135,140 @@ test("normalizers map issue types and priorities", () => {
   assert.equal(priorityLabel(4), "Low");
 });
 
-test("classifyLinearIssue applies heuristic classification for Bug, Feature, Improvement", () => {
-  const bug = classifyLinearIssue("Fix broken token refresh in auth flow");
+test("classifyLinearIssue delegates routing to ClassifierAgent", async () => {
+  const mockClassifier: ClassifierAgent = async () =>
+    JSON.stringify({
+      title: "Agent routed title",
+      description: "Agent synthesized description",
+      project: "Saddle",
+      reviewBucket: "Review bucket: 09 Smithers, harnesses, and agent workflows",
+      type: "Feature",
+      priority: 2,
+      team: "EMO",
+    });
+
+  const classified = await classifyLinearIssue(
+    "some ambiguous thought",
+    {},
+    { classifier: mockClassifier },
+  );
+
+  assert.equal(classified.title, "Agent routed title");
+  assert.equal(classified.project, "Saddle");
+  assert.equal(
+    classified.reviewBucket,
+    "Review bucket: 09 Smithers, harnesses, and agent workflows",
+  );
+  assert.equal(classified.type, "Feature");
+  assert.equal(classified.priority, 2);
+  assert.equal(classified.team, "EMO");
+});
+
+test("explicit flags override classifier agent routing", async () => {
+  const mockClassifier: ClassifierAgent = async () =>
+    JSON.stringify({
+      title: "Agent title",
+      project: "Saddle",
+      reviewBucket: "Review bucket: 09 Smithers, harnesses, and agent workflows",
+      type: "Feature",
+      priority: 2,
+    });
+
+  const classified = await classifyLinearIssue(
+    '--project Creatordex --priority 1 --type Bug --title "Explicit title" some thought',
+    {},
+    { classifier: mockClassifier },
+  );
+
+  assert.equal(classified.title, "Explicit title");
+  assert.equal(classified.project, "Creatordex");
+  assert.equal(classified.type, "Bug");
+  assert.equal(classified.priority, 1);
+});
+
+test("graceful fallback when classifier agent fails", async () => {
+  const failingClassifier: ClassifierAgent = async () => {
+    throw new Error("Classifier timeout");
+  };
+
+  const classified = await classifyLinearIssue(
+    "Fix startup crash in bootloader",
+    { cwd: "/test/path" },
+    { classifier: failingClassifier },
+  );
+
+  assert.equal(classified.title, "Fix startup crash in bootloader");
+  assert.equal(classified.type, "Bug");
+  assert.equal(classified.priority, 3);
+});
+
+test("classifyLinearIssue applies heuristic fallback for Bug, Feature, Improvement", async () => {
+  const emptyClassifier: ClassifierAgent = async () => "";
+  const bug = await classifyLinearIssue(
+    "Fix broken token refresh in auth flow",
+    {},
+    { classifier: emptyClassifier },
+  );
   assert.equal(bug.type, "Bug");
   assert.ok(bug.labels.includes("Bug"));
 
-  const feat = classifyLinearIssue("Add support for WebGPU acceleration");
+  const feat = await classifyLinearIssue(
+    "Add support for WebGPU acceleration",
+    {},
+    { classifier: emptyClassifier },
+  );
   assert.equal(feat.type, "Feature");
-  assert.ok(bug.labels.includes("Bug"));
+  assert.ok(feat.labels.includes("Feature"));
 
-  const imp = classifyLinearIssue("Optimize cache lookup performance");
+  const imp = await classifyLinearIssue(
+    "Optimize cache lookup performance",
+    {},
+    { classifier: emptyClassifier },
+  );
   assert.equal(imp.type, "Improvement");
   assert.ok(imp.labels.includes("Improvement"));
 });
 
-test("classifyLinearIssue infers priority from keywords", () => {
-  const urgent = classifyLinearIssue("Urgent blocker: server fails to boot");
+test("classifyLinearIssue infers priority from keywords in fallback", async () => {
+  const emptyClassifier: ClassifierAgent = async () => "";
+  const urgent = await classifyLinearIssue(
+    "Urgent blocker: server fails to boot",
+    {},
+    { classifier: emptyClassifier },
+  );
   assert.equal(urgent.priority, 1);
 
-  const minor = classifyLinearIssue("Minor: tweak margin on button");
+  const minor = await classifyLinearIssue(
+    "Minor: tweak margin on button",
+    {},
+    { classifier: emptyClassifier },
+  );
   assert.equal(minor.priority, 4);
 
-  const normal = classifyLinearIssue("Update documentation for setup");
+  const normal = await classifyLinearIssue(
+    "Update documentation for setup",
+    {},
+    { classifier: emptyClassifier },
+  );
   assert.equal(normal.priority, 3);
 });
 
-test("classifyLinearIssue infers project and review bucket from ambient context", () => {
-  const classified = classifyLinearIssue("Fix ranking algorithm", {
-    cwd: "/Users/emo/src/creatordex",
-    git: {
-      repo: "https://github.com/emo-eth/creatordex",
-      branch: "main",
-      worktree: "/Users/emo/src/creatordex",
+test("classifyLinearIssue infers project and review bucket from ambient context in fallback", async () => {
+  const emptyClassifier: ClassifierAgent = async () => "";
+  const classified = await classifyLinearIssue(
+    "Fix ranking algorithm",
+    {
+      cwd: "/Users/emo/src/creatordex",
+      git: {
+        repo: "https://github.com/emo-eth/creatordex",
+        branch: "main",
+        worktree: "/Users/emo/src/creatordex",
+      },
+      turn: 3,
+      model: "anthropic/claude-3-7-sonnet",
     },
-    turn: 3,
-    model: "anthropic/claude-3-7-sonnet",
-  });
+    { classifier: emptyClassifier },
+  );
 
   assert.equal(classified.project, "Creatordex");
   assert.equal(

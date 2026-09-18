@@ -33,8 +33,17 @@ echo "https://linear.app/emo-eth/issue/EMO-777/native-omp-test"
   chmodSync(mockBin, 0o755);
 
   const previousBin = process.env.LINEAR_BIN_PATH;
+  const previousMockClassifier = process.env.LINEAR_CLASSIFIER_MOCK;
   process.env.LINEAR_BIN_PATH = mockBin;
-
+  process.env.LINEAR_CLASSIFIER_MOCK = JSON.stringify({
+    title: "Fix crash on boot",
+    description: "Synthesized description",
+    project: "Saddle",
+    reviewBucket: "Review bucket: 09 Smithers, harnesses, and agent workflows",
+    type: "Bug",
+    priority: 1,
+    team: "EMO",
+  });
   const sessionManager = SessionManager.create(pluginRoot, join(root, "sessions"));
   const { session } = await createAgentSession({
     cwd: pluginRoot,
@@ -115,6 +124,8 @@ echo "https://linear.app/emo-eth/issue/EMO-777/native-omp-test"
     await session.dispose();
     if (previousBin === undefined) delete process.env.LINEAR_BIN_PATH;
     else process.env.LINEAR_BIN_PATH = previousBin;
+    if (previousMockClassifier === undefined) delete process.env.LINEAR_CLASSIFIER_MOCK;
+    else process.env.LINEAR_CLASSIFIER_MOCK = previousMockClassifier;
     rmSync(root, { recursive: true, force: true });
   }
 }, 30_000);

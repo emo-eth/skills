@@ -70,7 +70,9 @@ export type AmbientContext = {
 export type ParsedCommandArgs = {
   raw: string;
   title?: string;
+  explicitTitle?: string;
   description?: string;
+  explicitDescription?: string;
   project?: string;
   reviewBucket?: string;
   type?: LinearIssueType;
@@ -118,6 +120,19 @@ export type CreatedLinearIssue = {
   url?: string;
   title: string;
   rawOutput: string;
+};
+
+export type ClassifierPrompt = {
+  system: string;
+  user: string;
+};
+
+export type ClassifierAgent = (prompt: ClassifierPrompt) => Promise<string>;
+
+export type ClassifyOptions = {
+  classifier?: ClassifierAgent;
+  modelRegistry?: unknown;
+  model?: unknown;
 };
 
 export function priorityLabel(priority: LinearPriority): string {
@@ -246,8 +261,8 @@ export function parseCommandArgs(rawInput: string): ParsedCommandArgs {
   let reviewBucket: string | undefined;
   let type: LinearIssueType | undefined;
   let priority: LinearPriority | undefined;
-  let title: string | undefined;
-  let description: string | undefined;
+  let explicitTitle: string | undefined;
+  let explicitDescription: string | undefined;
   const labels: string[] = [];
 
   for (let index = 0; index < tokens.length; index += 1) {
@@ -278,15 +293,15 @@ export function parseCommandArgs(rawInput: string): ParsedCommandArgs {
       index += 1;
       priority = normalizePriority(tokens[index]);
     } else if (token.startsWith("--title=")) {
-      title = token.slice(8).trim();
+      explicitTitle = token.slice(8).trim();
     } else if ((token === "--title" || token === "-t") && index + 1 < tokens.length) {
       index += 1;
-      title = tokens[index];
+      explicitTitle = tokens[index];
     } else if (token.startsWith("--description=") || token.startsWith("--desc=")) {
-      description = token.slice(token.indexOf("=") + 1).trim();
+      explicitDescription = token.slice(token.indexOf("=") + 1).trim();
     } else if ((token === "--description" || token === "--desc" || token === "-d") && index + 1 < tokens.length) {
       index += 1;
-      description = tokens[index];
+      explicitDescription = tokens[index];
     } else if (token.startsWith("--label=")) {
       const labelVal = token.slice(8).trim();
       if (labelVal) labels.push(labelVal);
@@ -311,6 +326,8 @@ export function parseCommandArgs(rawInput: string): ParsedCommandArgs {
   }
   remainder = remainder.trim();
 
+  let title = explicitTitle;
+  let description = explicitDescription;
   if (!title && remainder) {
     const lines = remainder.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
     title = lines[0];
@@ -327,7 +344,9 @@ export function parseCommandArgs(rawInput: string): ParsedCommandArgs {
     ...(type ? { type } : {}),
     ...(priority !== undefined ? { priority } : {}),
     ...(title ? { title } : {}),
+    ...(explicitTitle ? { explicitTitle } : {}),
     ...(description ? { description } : {}),
+    ...(explicitDescription ? { explicitDescription } : {}),
     labels,
   };
 }
@@ -400,44 +419,184 @@ function matchKeywordPriority(text: string): LinearPriority {
   return 3;
 }
 
-export function classifyLinearIssue(
+export function buildClassifierSystemPrompt(): string {
+  return `You are an expert Linear issue triage assistant for the EMO team.
+Given raw user thoughts and ambient project/git/session context, analyze and route the issue into the team's taxonomy.
+
+Taxonomy:
+- Team: "${DEFAULT_LINEAR_TEAM}"
+- Projects:
+  - "Creatordex": Creatordex search, discovery, indexing, and data pipelines
+  - "Saddle": Agent-work coordination, intent preservation, demonstrating outcomes
+  - "BMO / Springfield": Migrated actionable BMO and Springfield work
+  - "Personal / Ops": Migrated actionable personal and operational work
+  - "Japan Trip 2026": Logistics, transit bookings, activities, and prep for Sep 20 - Oct 5 trip
+  - null if it does not fit any project
+- Review Buckets:
+  - "Review bucket: 01 Personal and life"
+  - "Review bucket: 02 Local AI and hardware"
+  - "Review bucket: 03 Mobile input and Shortcuts"
+  - "Review bucket: 04 Hermes runtime and reliability"
+  - "Review bucket: 05 Wiki, memory, and documentation"
+  - "Review bucket: 06 Music, gaming, and creative tools"
+  - "Review bucket: 07 Research, evaluations, and adoption"
+  - "Review bucket: 08 BMO products and control surfaces"
+  - "Review bucket: 09 Smithers, harnesses, and agent workflows"
+  - "Review bucket: 10 Protocols, security, and effect gates"
+- Issue Types:
+  - "Bug": Defect, crash, broken behavior, regression, error
+  - "Feature": New capability, major enhancement, integration
+  - "Improvement": Refactoring, polish, optimization, cleanup, tuning
+- Priorities:
+  - 1: Urgent (blockers, critical outages, emergency fixes)
+  - 2: High (important, next up)
+  - 3: Medium (normal backlog item, standard work)
+  - 4: Low (nice-to-have, minor polish, trivial)
+
+Output JSON only in this exact shape:
+{
+  "title": "Concise imperative title (max 80 chars)",
+  "description": "Clear Markdown description synthesizing the request and context",
+  "project": "Creatordex" | "Saddle" | "BMO / Springfield" | "Personal / Ops" | "Japan Trip 2026" | null,
+  "reviewBucket": "Review bucket: ...",
+  "type": "Bug" | "Feature" | "Improvement",
+  "priority": 1 | 2 | 3 | 4,
+  "team": "EMO"
+}`;
+}
+
+export function buildClassifierUserPrompt(input: string, ambient: AmbientContext = {}): string {
+  const parts: string[] = [`User request:\n${input}`];
+  const ambientDetails: string[] = [];
+  if (ambient.cwd) ambientDetails.push(`- Current working directory: ${ambient.cwd}`);
+  if (ambient.git?.repo) ambientDetails.push(`- Repository: ${ambient.git.repo}`);
+  if (ambient.git?.branch) ambientDetails.push(`- Branch: ${ambient.git.branch}`);
+  if (ambient.turn !== undefined) ambientDetails.push(`- Turn: ${ambient.turn}`);
+  if (ambient.model) ambientDetails.push(`- Model: ${ambient.model}`);
+  if (ambient.sessionId) ambientDetails.push(`- Session ID: ${ambient.sessionId}`);
+  if (ambientDetails.length > 0) {
+    parts.push(`Ambient context:\n${ambientDetails.join("\n")}`);
+  }
+  return parts.join("\n\n");
+}
+
+function extractJson(text: string): Record<string, unknown> | undefined {
+  const trimmed = text.trim();
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const target = codeBlockMatch ? codeBlockMatch[1] : trimmed;
+  const jsonMatch = target.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return undefined;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {}
+  return undefined;
+}
+
+type ModelRegistry = {
+  complete?: (
+    model: unknown,
+    prompt: { systemPrompt: string; messages: Array<{ role: string; content: string }> },
+  ) => Promise<{ text?: string }>;
+  getModel?: (name: string) => unknown;
+};
+
+async function runDefaultClassifier(
+  prompt: ClassifierPrompt,
+  options: { modelRegistry?: unknown; model?: unknown } = {},
+): Promise<string> {
+  if (process.env.LINEAR_CLASSIFIER_MOCK) {
+    return process.env.LINEAR_CLASSIFIER_MOCK;
+  }
+
+  const registry = options.modelRegistry;
+  if (registry && typeof registry === "object" && "complete" in registry && typeof registry.complete === "function") {
+    try {
+      const typedRegistry = registry as ModelRegistry;
+      const modelToUse = options.model ?? typedRegistry.getModel?.("smol");
+      const result = await typedRegistry.complete!(modelToUse, {
+        systemPrompt: prompt.system,
+        messages: [{ role: "user", content: prompt.user }],
+      });
+      if (result.text?.trim()) return result.text;
+    } catch {}
+  }
+
+  const { promise, resolve } = Promise.withResolvers<string>();
+  execFile(
+    "omp",
+    ["-p", prompt.user, "--system", prompt.system, "--no-session", "--no-tools", "--model", "smol"],
+    { encoding: "utf8", timeout: 3000 },
+    (error, stdout) => {
+      if (error || !stdout?.trim()) {
+        resolve("");
+      } else {
+        resolve(stdout.trim());
+      }
+    },
+  );
+  return promise;
+}
+
+export async function classifyLinearIssue(
   input: ParsedCommandArgs | string,
   ambient: AmbientContext = {},
-): ClassifiedIssue {
+  options: ClassifyOptions = {},
+): Promise<ClassifiedIssue> {
   const parsed = typeof input === "string" ? parseCommandArgs(input) : input;
-  const team = parsed.team ?? DEFAULT_LINEAR_TEAM;
-  const title = parsed.title?.trim() || "Untitled issue";
+  const rawThought = parsed.title ? `${parsed.title}${parsed.description ? `\n${parsed.description}` : ""}` : parsed.raw;
 
-  const searchable = [
-    title,
-    parsed.description ?? "",
-    ambient.git?.repo ?? "",
-    ambient.git?.worktree ?? "",
-    ambient.git?.branch ?? "",
-    ambient.cwd ?? "",
-  ].join(" ");
+  let routed: Record<string, unknown> | undefined;
+  const classifier = options.classifier ?? ((p) => runDefaultClassifier(p, options));
+  try {
+    const systemPrompt = buildClassifierSystemPrompt();
+    const userPrompt = buildClassifierUserPrompt(rawThought || "New issue", ambient);
+    const output = await classifier({ system: systemPrompt, user: userPrompt });
+    if (output) {
+      routed = extractJson(output);
+    }
+  } catch {}
+
+  const routedTitle = routed && typeof routed.title === "string" ? routed.title.trim() : undefined;
+  const routedDesc = routed && typeof routed.description === "string" ? routed.description.trim() : undefined;
+  const routedProject = routed && typeof routed.project === "string" ? normalizeProject(routed.project) : undefined;
+  const routedBucket = routed && typeof routed.reviewBucket === "string" ? normalizeReviewBucket(routed.reviewBucket) : undefined;
+  const routedType = routed && typeof routed.type === "string" ? normalizeIssueType(routed.type) : undefined;
+
+  let routedPriority: LinearPriority | undefined;
+  if (routed && "priority" in routed && (typeof routed.priority === "number" || typeof routed.priority === "string")) {
+    routedPriority = normalizePriority(routed.priority);
+  }
+  const routedTeam = routed && typeof routed.team === "string" ? routed.team.trim() : undefined;
+
+  const team = parsed.team ?? routedTeam ?? DEFAULT_LINEAR_TEAM;
+  const title = parsed.explicitTitle ?? routedTitle ?? parsed.title?.trim() ?? "Untitled issue";
 
   const project = parsed.project
-    ?? matchKeywordProject(searchable)
+    ?? routedProject
+    ?? matchKeywordProject([title, parsed.description ?? "", ambient.git?.repo ?? "", ambient.cwd ?? ""].join(" "))
     ?? (ambient.git?.repo?.toLowerCase().includes("creatordex") ? "Creatordex" : undefined);
 
-  let reviewBucket: LinearReviewBucket | undefined = parsed.reviewBucket as LinearReviewBucket | undefined;
+  let reviewBucket = (parsed.reviewBucket as LinearReviewBucket | undefined) ?? routedBucket;
   if (!reviewBucket) {
-    reviewBucket = matchKeywordReviewBucket(searchable);
+    reviewBucket = matchKeywordReviewBucket([title, parsed.description ?? "", ambient.git?.repo ?? "", ambient.cwd ?? ""].join(" "));
   }
   if (!reviewBucket) {
     if (project === "Creatordex") reviewBucket = "Review bucket: 08 BMO products and control surfaces";
     else if (project === "Personal / Ops" || project === "Japan Trip 2026") reviewBucket = "Review bucket: 01 Personal and life";
     else if (project === "Saddle") reviewBucket = "Review bucket: 09 Smithers, harnesses, and agent workflows";
-    else if (searchable.includes("skills") || searchable.includes("harness") || searchable.includes("plugin")) {
-      reviewBucket = "Review bucket: 09 Smithers, harnesses, and agent workflows";
-    } else {
-      reviewBucket = "Review bucket: 09 Smithers, harnesses, and agent workflows";
-    }
+    else reviewBucket = "Review bucket: 09 Smithers, harnesses, and agent workflows";
   }
 
-  const type = parsed.type ?? matchKeywordType(title + " " + (parsed.description ?? ""));
-  const priority = parsed.priority ?? matchKeywordPriority(title + " " + (parsed.description ?? ""));
+  const type = parsed.type
+    ?? routedType
+    ?? matchKeywordType(title + " " + (parsed.description ?? ""));
+
+  const priority = parsed.priority
+    ?? routedPriority
+    ?? matchKeywordPriority(title + " " + (parsed.description ?? ""));
 
   const labelsSet = new Set<string>();
   if (reviewBucket) labelsSet.add(reviewBucket);
@@ -448,7 +607,11 @@ export function classifyLinearIssue(
   const labels = Array.from(labelsSet);
 
   const bodyParts: string[] = [];
-  if (parsed.description?.trim()) {
+  if (parsed.explicitDescription) {
+    bodyParts.push(parsed.explicitDescription.trim());
+  } else if (routedDesc) {
+    bodyParts.push(routedDesc);
+  } else if (parsed.description?.trim()) {
     bodyParts.push(parsed.description.trim());
   } else if (title !== "Untitled issue") {
     bodyParts.push(title);
@@ -556,13 +719,14 @@ function defaultLinearRunner(
     { cwd: options.cwd, env: options.env, encoding: "utf8" },
     (error, stdout, stderr) => {
       if (error) {
-        const exitCode = typeof (error as { code?: unknown }).code === "number"
-          ? (error as { code: number }).code
-          : 1;
+        let exitCode = 1;
+        if (typeof error === "object" && "code" in error && typeof error.code === "number") {
+          exitCode = error.code === 0 ? 1 : error.code;
+        }
         resolve({
           stdout: stdout ?? "",
           stderr: stderr ? stderr : error.message,
-          exitCode: exitCode === 0 ? 1 : exitCode,
+          exitCode,
         });
         return;
       }

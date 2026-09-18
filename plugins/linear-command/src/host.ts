@@ -5,6 +5,7 @@ import {
   parseCommandArgs,
   priorityLabel,
   type AmbientContext,
+  type ClassifierAgent,
   type LinearRunner,
 } from "./record.ts";
 
@@ -20,6 +21,8 @@ export type RuntimeContext = {
   sessionFile?: string;
   turn?: number;
   model?: unknown;
+  modelRegistry?: unknown;
+  classifier?: ClassifierAgent;
   hasUI?: boolean;
   sessionManager?: SessionManager;
   ui?: {
@@ -48,6 +51,7 @@ type SessionState = {
 
 export type InstallOptions = {
   runner?: LinearRunner;
+  classifier?: ClassifierAgent;
 };
 
 function modelToString(model: unknown): string | undefined {
@@ -163,8 +167,12 @@ export function installLinearCommand(
       };
 
       const parsed = parseCommandArgs(rawArgs);
-      const classified = classifyLinearIssue(parsed, ambient);
-
+      const activeClassifier = context.classifier ?? options.classifier;
+      const classified = await classifyLinearIssue(parsed, ambient, {
+        classifier: activeClassifier,
+        modelRegistry: context.modelRegistry,
+        model: context.model,
+      });
       if (isInteractive && context.ui?.confirm) {
         const confirmed = await context.ui.confirm(
           `Create Linear issue: [${classified.type}] ${classified.title}`,

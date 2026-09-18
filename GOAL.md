@@ -15,7 +15,7 @@ Standing instruction: update Linear only when intention, vibe, done-when, or map
    - Accepts prompt arguments or prompts interactively when bare.
    - Out-of-band execution: does not append to the active session conversation journal, adding zero tokens to the primary context.
    - Collects ambient context (cwd, repo name, git branch, session/turn metadata).
-   - Classifies/maps taxonomy: Team (`EMO`), Projects (`Creatordex`, `Saddle`, `BMO / Springfield`, `Personal / Ops`), Review Buckets (`01 Personal and life` .. `10 Protocols, security, and effect gates`), Issue types (`Bug`, `Feature`, `Improvement`), Priority (1 Urgent .. 4 Low).
+   - Classifies/maps taxonomy via an out-of-band triage agent (LLM prompt with team EMO, projects, review buckets 01-10, types, priority) with explicit CLI flag overrides.
    - Interactive preview/confirmation via `ctx.ui.confirm` / `ctx.ui.input` when interactive UI is available.
    - Creates issue via `linear issue create` CLI execution, notifying the user with the issue identifier and URL.
 3. Tests:
@@ -34,6 +34,6 @@ Standing instruction: update Linear only when intention, vibe, done-when, or map
 ## Proposed Validation Plan
 - Run `npm test` in `plugins/linear-command/` covering:
   - Argument parsing & flag extraction.
-  - Project and review bucket taxonomy classification.
+  - Agent-based triage routing with prompt construction, structured JSON parsing, and fallback.
   - Confirmation and execution through mock runner.
   - Native OMP `ExtensionRunner` command invocation.
