@@ -41,3 +41,10 @@ description = "Remove this tree only when Linear is Done, git is clean, and any 
 contexts = ["workspace", "pane"]
 command = ["node", "--experimental-strip-types", "src/main.ts", "funeral"]
 
+[[actions]]
+id = "rank"
+title = "Rank to desk"
+description = "Propose sit versus hide from Linear priorities written by prioritize-linear-tickets. Does not open or close chairs."
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/main.ts", "rank"]
+

@@ -20,6 +20,8 @@ test("parseCommand uses event, action, or argv", () => {
   assert.equal(parseCommand(["node", "main.ts"], { HERDR_PLUGIN_ACTION_ID: "capture" }), "capture");
   assert.equal(parseCommand(["node", "main.ts", "capture", "--workspace", "w3Y"]), "capture");
   assert.equal(parseCommand(["node", "main.ts", "--workspace", "w3Y"]), "capture");
+  assert.equal(parseCommand(["node", "main.ts"], { HERDR_PLUGIN_ACTION_ID: "rank" }), "rank");
+  assert.equal(parseCommand(["node", "main.ts", "rank"]), "rank");
 });
 
 test("parseCliArgs skips the capture subcommand", () => {

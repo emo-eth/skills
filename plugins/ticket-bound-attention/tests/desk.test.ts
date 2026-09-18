@@ -16,6 +16,7 @@ function fakeDeps(options: {
   agents?: AgentRow[];
   missing?: Set<string>;
   issues?: Record<string, { identifier: string; title: string; state: string; url: string }>;
+  assigned?: import("../src/capture.ts").AssignedIssue[];
 }): { deps: PluginDeps; closed: string[]; removed: string[] } {
   const files = options.files ?? new Map();
   const closed: string[] = [];
@@ -40,6 +41,7 @@ function fakeDeps(options: {
         if (!issue) throw new Error(`missing issue ${identifier}`);
         return issue;
       },
+      async listAssignedIssues() { return options.assigned ?? []; },
     },
   };
 }

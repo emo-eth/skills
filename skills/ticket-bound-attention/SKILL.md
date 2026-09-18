@@ -15,4 +15,5 @@ You already know this tree's Linear ticket. Read it from the `Linear:` line near
 - Ping command center `w2D:p1` with `herdr agent prompt`, never OMP IRC. Use `--no-focus`.
 - Never call `herdr worktree remove`. Use the plugin `funeral` action. Herdr has no pre-remove intercept; funeral is the gate.
 - Never auto-close Linear tickets.
+- Rank proposes sit versus hide from Linear priorities. Confirm with the operator. Do not auto-seat.
 - Names are for humans, never ticket numbers.

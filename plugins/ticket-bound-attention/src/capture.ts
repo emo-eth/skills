@@ -55,6 +55,15 @@ export type CaptureDeps = {
   reportTicket(workspaceId: string, identifier: string): Promise<void>;
 };
 
+export type AssignedIssue = {
+  identifier: string;
+  title: string;
+  state?: string;
+  priority?: number;
+  url?: string;
+  parent?: string;
+};
+
 export type PluginDeps = CaptureDeps & {
   listAgents(): Promise<AgentRow[]>;
   closeWorkspace(id: string): Promise<void>;
@@ -62,9 +71,10 @@ export type PluginDeps = CaptureDeps & {
   gitPorcelain(path: string): Promise<string>;
   pathExists(path: string): Promise<boolean>;
   viewIssue(identifier: string): Promise<{ identifier: string; title: string; state: string; url: string }>;
+  listAssignedIssues(): Promise<AssignedIssue[]>;
 };
 
-export const PLUGIN_COMMANDS = ["capture", "desk", "shelve", "funeral"] as const;
+export const PLUGIN_COMMANDS = ["capture", "desk", "shelve", "funeral", "rank"] as const;
 export type PluginCommand = (typeof PLUGIN_COMMANDS)[number];
 
 const HELP = `Capture or bind a Linear ticket for a worktree.

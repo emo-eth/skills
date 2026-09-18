@@ -18,6 +18,7 @@ import {
 import { desk } from "./desk.ts";
 import { captureInputFromEnv } from "./event.ts";
 import { funeral } from "./funeral.ts";
+import { parseAssignedIssues, rank } from "./rank.ts";
 import { shelve } from "./shelve.ts";
 import { parseCreatedIssue } from "./ticket.ts";
 
@@ -44,6 +45,25 @@ function spawnEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const path = [...EXTRA_BIN_DIRS, env.PATH ?? ""].filter(Boolean).join(":");
   return { ...env, PATH: path };
 }
+
+const ASSIGNED_ISSUES_QUERY = `query {
+  viewer {
+    assignedIssues(first: 100) {
+      nodes {
+        id
+        identifier
+        title
+        url
+        priority
+        priorityLabel
+        state { name type }
+        parent { id identifier }
+        team { key }
+      }
+    }
+  }
+}`;
+
 export function createDeps(env: NodeJS.ProcessEnv = process.env): PluginDeps {
   const herdrBin = resolveBin("herdr", env, env.HERDR_BIN_PATH);
   const linearBin = resolveBin("linear", env, env.LINEAR_BIN);
@@ -145,6 +165,10 @@ export function createDeps(env: NodeJS.ProcessEnv = process.env): PluginDeps {
         url: payload.url ?? `https://linear.app/emo-eth/issue/${payload.identifier}`,
       };
     },
+    async listAssignedIssues() {
+      const result = await run(linearBin, ["api", "--paginate", ASSIGNED_ISSUES_QUERY], env);
+      return parseAssignedIssues(JSON.parse(result.stdout));
+    },
   };
 }
 
@@ -178,6 +202,10 @@ async function main(): Promise<void> {
   }
   if (command === "funeral") {
     process.stdout.write(`${JSON.stringify(await funeral(input, deps))}\n`);
+    return;
+  }
+  if (command === "rank") {
+    process.stdout.write(`${JSON.stringify(await rank(deps))}\n`);
     return;
   }
   const result = await capture(input, deps);
