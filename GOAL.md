@@ -16,12 +16,13 @@ Targeted attention over whole-backlog noise. Filter before ranking, preserve app
 
 ## Done-when
 
-1. `tools/linear-client.ts` fetches all open project issues across all assignees when `--project` is specified via `fetchProjectIssues`, supporting project name, UUID, or slug ID.
-2. `tools/prioritize-linear-tickets.ts` supports `--project <name|uuid|slug>` (all assignees, not assigned-to-me), combinable with `--team`.
-3. CLI `--help` includes updated `--project` usage specifying all assignees, not assigned-to-me.
-4. APPLY mode writes back updated priorities/ranks correctly to Linear.
-5. Unit tests for linear-client and prioritize-linear-tickets project filtering pass.
-6. Ready PR created and shipped/merged to origin/main.
+- `--project Creatordex` fetches ALL open tickets in that project: assigned to anyone, any priority (including Urgent). Then the operator ranks them (L/R/T).
+- Do NOT skip already-Urgent when `--project` is set.
+- Do NOT use viewer.assignedIssues for `--project`.
+- `--team EMO` is a team key. Never pass `--team creatordex`. `--project creatordex` is case-insensitive project name.
+- Proof: `./tools/prioritize-linear-tickets.ts -k 5 --project Creatordex --reset` must print TOP 5 of ~40+ tickets, not TOP 0, and must not print Skipping already-Urgent.
+- Ticket-scoped tests. Ready PR. Ship/merge origin/main (operator said ship this flag).
+- Check in via standup INBOX.md with Linear HTTPS + PR HTTPS. Never prompt w2D:p1.
 
 ## Map
 

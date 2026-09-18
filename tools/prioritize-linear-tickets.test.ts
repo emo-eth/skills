@@ -432,8 +432,8 @@ test("prioritize-linear-tickets CLI displays --project in help", async () => {
     });
     assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
     assert.match(result.stdout, /--project\s+<target>\s+rank all open issues in this project/);
-    assert.match(result.stdout, /all assignees/);
-    assert.match(result.stdout, /not assigned-to-me/);
+    assert.match(result.stdout, /any assignee/);
+    assert.match(result.stdout, /any priority/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -701,6 +701,57 @@ test("prioritize-linear-tickets CLI --project ranks all open project issues acro
     assert.equal(alpha1?.priority, 1);
     assert.equal(alpha2?.priority, 1);
     assert.equal(beta?.priority, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI --project includes already-Urgent tickets", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "Urgent ticket in Creatordex",
+        priority: 1,
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+        assignedToMe: false,
+      },
+      {
+        id: "EMO-2",
+        title: "High ticket in Creatordex",
+        priority: 2,
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+        assignedToMe: true,
+      },
+      {
+        id: "EMO-3",
+        title: "Urgent ticket in other project",
+        priority: 1,
+        teamKey: "EMO",
+        project: { id: "uuid-2", name: "Japan Trip 2026", slugId: "slug-2" },
+        assignedToMe: true,
+      },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const result = await runCli(
+      ["-k", "1", "--project", "creatordex", "--dry-run", "--reset", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.signal, null, `killed: ${result.stderr}`);
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.doesNotMatch(result.stdout, /Skipping .* already-Urgent/);
+    assert.match(result.stdout, /Prioritizing 2 tickets, top 1/);
+    assert.match(result.stdout, /TOP 1 of 2 tickets/);
+    assert.match(result.stdout, /project creatordex/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

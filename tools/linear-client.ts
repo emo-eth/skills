@@ -142,6 +142,7 @@ export async function fetchProjectIssues(options: {
   args.push(
     "--project",
     resolvedTarget,
+    "--all-assignees",
     "-s",
     "triage",
     "-s",

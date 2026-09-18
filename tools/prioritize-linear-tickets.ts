@@ -196,8 +196,8 @@ Options:
       --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
                            star-linear-tickets.ts for Urgent)
       --team <key>          only rank issues in this team (e.g. NAT); default all
-      --project <target>    rank all open issues in this project across all
-                            assignees (name, UUID, or slug; not assigned-to-me)
+      --project <target>    rank all open issues in this project (any assignee,
+                            any priority; name, UUID, or slug)
       --bin                 triage your no-priority tickets into Urgent/High/
                             Medium/Low by binary-searching the tiers
                             (~2 comparisons each); moves them out of no-priority
@@ -757,10 +757,9 @@ async function main(): Promise<void> {
         ? await fetchProjectIssues({ project: args.project, team: args.team })
         : await fetchAssignedNotCompleted({ team: args.team }))
     : await loadTickets(args.input);
-  if (usingLinear) {
-    // Existing Urgent tickets already occupy "do now"; keep them out of the
-    // top-k ranking so they don't consume a k slot or get re-quizzed. They
-    // stay Urgent and untouched.
+  if (usingLinear && !args.project) {
+    // Assigned-to-me ranking only: existing Urgent tickets already occupy
+    // "do now". --project ranking includes every open issue at any priority.
     const excludedUrgent = tickets.filter((t) => String(t.priority) === "1");
     if (excludedUrgent.length > 0) {
       console.log(
