@@ -19,3 +19,17 @@ command = ["node", "--experimental-strip-types", "src/main.ts", "capture"]
 [[events]]
 on = "worktree.opened"
 command = ["node", "--experimental-strip-types", "src/main.ts", "capture"]
+
+[[actions]]
+id = "desk"
+title = "Desk"
+description = "List open chairs versus bound tickets and flag orphans."
+contexts = ["global", "workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/main.ts", "desk"]
+
+[[actions]]
+id = "shelve"
+title = "Shelve"
+description = "Hide this chair. Never remove the tree. Write a sitting note if dirty or working."
+contexts = ["workspace", "pane"]
+command = ["node", "--experimental-strip-types", "src/main.ts", "shelve"]

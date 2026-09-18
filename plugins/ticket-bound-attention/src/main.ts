@@ -6,15 +6,19 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  agentsFromCli,
   capture,
   helpText,
   parseCliArgs,
   parseCommand,
   workspaceFromCli,
   workspacesFromCli,
-  type CaptureDeps,
+  type PluginDeps,
 } from "./capture.ts";
+import { desk } from "./desk.ts";
 import { captureInputFromEnv } from "./event.ts";
+import { funeral } from "./funeral.ts";
+import { shelve } from "./shelve.ts";
 import { parseCreatedIssue } from "./ticket.ts";
 
 const EXTRA_BIN_DIRS = [
@@ -40,7 +44,7 @@ function spawnEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const path = [...EXTRA_BIN_DIRS, env.PATH ?? ""].filter(Boolean).join(":");
   return { ...env, PATH: path };
 }
-export function createDeps(env: NodeJS.ProcessEnv = process.env): CaptureDeps {
+export function createDeps(env: NodeJS.ProcessEnv = process.env): PluginDeps {
   const herdrBin = resolveBin("herdr", env, env.HERDR_BIN_PATH);
   const linearBin = resolveBin("linear", env, env.LINEAR_BIN);
   return {
@@ -100,6 +104,47 @@ export function createDeps(env: NodeJS.ProcessEnv = process.env): CaptureDeps {
         `ticket=${identifier}`,
       ], env);
     },
+    async listAgents() {
+      const result = await run(herdrBin, ["agent", "list"], env);
+      return agentsFromCli(JSON.parse(result.stdout));
+    },
+    async closeWorkspace(id) {
+      await run(herdrBin, ["workspace", "close", id], env);
+    },
+    async removeWorktree(workspaceId) {
+      await run(herdrBin, ["worktree", "remove", "--workspace", workspaceId, "--trust-repository"], env);
+    },
+    async gitPorcelain(path) {
+      const result = await run("git", ["-C", path, "status", "--porcelain"], env);
+      return result.stdout;
+    },
+    async pathExists(path) {
+      return existsSync(path);
+    },
+    async viewIssue(identifier) {
+      const result = await run(linearBin, [
+        "issue",
+        "view",
+        identifier,
+        "--json",
+        "--no-comments",
+        "--no-pager",
+      ], env);
+      const payload = JSON.parse(result.stdout) as {
+        identifier?: string;
+        title?: string;
+        url?: string;
+        state?: { name?: string };
+      };
+      const state = payload.state?.name;
+      if (!payload.identifier || !state) throw new Error(`linear issue view ${identifier} missing state`);
+      return {
+        identifier: payload.identifier,
+        title: payload.title ?? identifier,
+        state,
+        url: payload.url ?? `https://linear.app/emo-eth/issue/${payload.identifier}`,
+      };
+    },
   };
 }
 
@@ -112,22 +157,30 @@ async function main(): Promise<void> {
     return;
   }
   if (command === "skip") return;
-  if (command !== "capture") {
-    throw new Error(`action ${command} is not in this slice`);
-  }
+  const deps = createDeps(env);
   const fromEvent = captureInputFromEnv(env);
   const workspaceId = parsed.workspaceId ?? fromEvent?.workspaceId ?? env.HERDR_WORKSPACE_ID;
   const path = parsed.path ?? fromEvent?.path;
-  const result = await capture(
-    {
-      ...fromEvent,
-      ...parsed,
-      cwd: path || workspaceId ? undefined : process.cwd(),
-      env,
-      team: parsed.team ?? env.TICKET_BOUND_TEAM ?? "EMO",
-    },
-    createDeps(env),
-  );
+  const input = {
+    ...fromEvent,
+    ...parsed,
+    cwd: path || workspaceId ? undefined : process.cwd(),
+    env,
+    team: parsed.team ?? env.TICKET_BOUND_TEAM ?? "EMO",
+  };
+  if (command === "desk") {
+    process.stdout.write(`${JSON.stringify(await desk(deps))}\n`);
+    return;
+  }
+  if (command === "shelve") {
+    process.stdout.write(`${JSON.stringify(await shelve(input, deps))}\n`);
+    return;
+  }
+  if (command === "funeral") {
+    process.stdout.write(`${JSON.stringify(await funeral(input, deps))}\n`);
+    return;
+  }
+  const result = await capture(input, deps);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 

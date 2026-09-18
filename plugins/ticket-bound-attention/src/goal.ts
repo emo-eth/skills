@@ -66,6 +66,16 @@ export function mapLines(map: MapInfo): string[] {
   return lines;
 }
 
+export function parseMapPath(markdown: string): string | undefined {
+  const map = extractSection(markdown, "Map") ?? markdown;
+  const match = map.match(/(?:Worktree|Path):\s*`([^`]+)`/i);
+  return match?.[1]?.trim();
+}
+
+export function sittingPath(tree: string): string {
+  return join(tree, "SITTING.md");
+}
+
 export function ticketFace(options: {
   intention?: string;
   vibe?: string;

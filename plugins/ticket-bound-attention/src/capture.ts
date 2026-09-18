@@ -17,6 +17,7 @@ export type WorkspaceInfo = {
   workspace_id: string;
   label: string;
   worktree?: { checkout_path?: string } | null;
+  tokens?: Record<string, string>;
 };
 
 export type CaptureInput = {
@@ -38,6 +39,13 @@ export type CaptureResult = {
   label?: string;
 };
 
+export type AgentRow = {
+  workspace_id: string;
+  pane_id: string;
+  agent_status: string;
+  agent?: string;
+};
+
 export type CaptureDeps = {
   readFile(path: string): Promise<string | undefined>;
   writeFile(path: string, contents: string): Promise<void>;
@@ -45,6 +53,15 @@ export type CaptureDeps = {
   getWorkspace(id: string): Promise<WorkspaceInfo | undefined>;
   listWorkspaces(): Promise<WorkspaceInfo[]>;
   reportTicket(workspaceId: string, identifier: string): Promise<void>;
+};
+
+export type PluginDeps = CaptureDeps & {
+  listAgents(): Promise<AgentRow[]>;
+  closeWorkspace(id: string): Promise<void>;
+  removeWorktree(workspaceId: string): Promise<void>;
+  gitPorcelain(path: string): Promise<string>;
+  pathExists(path: string): Promise<boolean>;
+  viewIssue(identifier: string): Promise<{ identifier: string; title: string; state: string; url: string }>;
 };
 
 export const PLUGIN_COMMANDS = ["capture", "desk", "shelve", "funeral"] as const;
@@ -262,13 +279,42 @@ function asWorkspace(row: Record<string, unknown>): WorkspaceInfo | undefined {
   const label = stringValue(row.label);
   if (!workspaceId || !label) return undefined;
   const worktree = asRecord(row.worktree);
+  const tokens = asTokens(row.tokens);
   return {
     workspace_id: workspaceId,
     label,
     worktree: worktree
       ? { checkout_path: stringValue(worktree.checkout_path) }
       : null,
+    ...(tokens ? { tokens } : {}),
   };
+}
+
+export function agentsFromCli(payload: unknown): AgentRow[] {
+  const root = unwrap(payload);
+  const agents = Array.isArray(root.agents) ? root.agents : [];
+  return agents.flatMap((row) => {
+    const rec = asRecord(row);
+    const workspaceId = rec ? stringValue(rec.workspace_id) : undefined;
+    const paneId = rec ? stringValue(rec.pane_id) : undefined;
+    if (!rec || !workspaceId || !paneId) return [];
+    return [{
+      workspace_id: workspaceId,
+      pane_id: paneId,
+      agent_status: stringValue(rec.agent_status) ?? "unknown",
+      agent: stringValue(rec.agent),
+    }];
+  });
+}
+
+function asTokens(value: unknown): Record<string, string> | undefined {
+  const rec = asRecord(value);
+  if (!rec) return undefined;
+  const tokens: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(rec)) {
+    if (typeof entry === "string" && entry.trim()) tokens[key] = entry;
+  }
+  return Object.keys(tokens).length > 0 ? tokens : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
