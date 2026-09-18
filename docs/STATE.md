@@ -87,6 +87,9 @@ The repository also includes `plugins/antigravity-prompt/` v0.2.1, an OMP-only p
 
 Three harness-surface feel contracts are approved: `docs/prds/2026-09-02-local-model-router/vibe.md`, `docs/prds/2026-09-02-session-history/vibe.md`, and `docs/prds/2026-09-02-agent-memory/vibe.md`. The router is a normal tailnet inference provider with exact model identities, fair responsiveness, fail-fast unavailable/capacity errors, invisible caller placement, and linked operator diagnostics. Session history is one provenance-preserving corpus across every user-approved connected source, searchable by any authenticated tailnet agent on explicit nudges or clear plot continuity, with concise cited answers and honest few-minute freshness. Agent memory is selective, provenance-bearing shared judgment with user governance, explicit conflicts, global and scoped applicability, and proactive high-confidence recall. The session-history PRD is approved [D41]; implementation and verification are complete as `plugins/session-history/` and `skills/session-history/`, exposing a CASS-backed service with stdio MCP, human CLI, native Pi and OMP extensions, two-second search deadline, resume packets, session-scoped queries, and exclusion/purge controls.
 
+
+The native command `/tenet` (`plugins/tenet/`) is a Yearn-shaped capture for standing setup invariants [D43]. It appends `tenet.v1` records to `~/.tenet/tenets.ndjson`. Recording does not verify or repair the invariant. Live OMP and Pi loads need a full process restart after plugin install.
+
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 ## Standing constraints
@@ -103,6 +106,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 - MCP is optional and never enforces deadlines. [D9]
 - Session history is one designated CASS-backed tailnet corpus; callers never pick or contact a source machine at query time. [D41]
 - Local model router delivers exact contracts over tailnet inference; placement across boxes is invisible to callers and capacity exhaustion fails fast. [D42]
+- Recording a tenet does not authorize repair or claim the invariant currently holds. [D43]
 
 ## Topic index
 
@@ -130,6 +134,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Session history | `docs/prds/2026-09-02-session-history/vibe.md`, `prd.md`, D41 | `plugins/session-history/`, `skills/session-history/` | PRD approved 2026-09-15; `npm test` (15 Python, 17 Node, Pi and OMP native runner tests), `npm run check`, live CASS 0.7.1 installed via tap and verified | verified-live |
 | Agent memory | `docs/prds/2026-09-02-agent-memory/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 38 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, symlink/custom-build update protection, restart-only mode, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |
+| Standing invariants (tenet) | `docs/DECISIONS.md` D43, `docs/log/2026-09-17-tenet-command.md` | `plugins/tenet/` | `docs/log/2026-09-17-tenet-command.md`, package `npm run check`, `npm test` | source-verified |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md`, `docs/review/2026-09-11-vibe-surgical-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md`, `.context/review/2026-09-11-vibe-surgical-round-1.md` | raw snapshots and answers docs | verified-live |

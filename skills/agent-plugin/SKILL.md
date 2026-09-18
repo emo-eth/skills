@@ -1,6 +1,6 @@
 ---
 name: agent-plugin
-description: Build or extend a native Agent Plugin for Pi and OMP, especially command-only tools like /yearn, /skiterate, and /bug. Use when the user asks to create a Pi or OMP plugin, native slash command, host adapter, or context-aware logger.
+description: Build or extend a native Agent Plugin for Pi and OMP, especially command-only tools like /yearn, /skiterate, /bug, and /tenet. Use when the user asks to create a Pi or OMP plugin, native slash command, host adapter, or context-aware logger.
 argument-hint: "[what the plugin should do]"
 ---
 
@@ -17,7 +17,7 @@ argument-hint: "[what the plugin should do]"
 - **GAP**: A capability or proof boundary that is not established and must not be promised.
 
 Use this skill for small native Pi and OMP tools. It is the fast path for
-command-and-record plugins like Yearn, Skiterate, and bug capture. It also
+command-and-record plugins like `/yearn`, `/skiterate`, `/bug`, and `/tenet` (Yearn, Skiterate, bug capture, and Tenet). It also
 covers hook and tool plugins when they use the same package and adapter shape.
 
 ## Operating contract

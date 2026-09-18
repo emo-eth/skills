@@ -168,6 +168,9 @@ class TestPapercutSyncE2E(unittest.TestCase):
         yearn_dir = seed_dir / "dot_yearn"
         yearn_dir.mkdir(parents=True)
         shutil.copy2(CHEZMOI_SOURCE_DIR / "dot_yearn/yearnings.ndjson", yearn_dir / "yearnings.ndjson")
+        tenet_dir = seed_dir / "dot_tenet"
+        tenet_dir.mkdir(parents=True)
+        shutil.copy2(CHEZMOI_SOURCE_DIR / "dot_tenet/tenets.ndjson", tenet_dir / "tenets.ndjson")
         
         bin_dir = seed_dir / "private_dot_local/bin"
         bin_dir.mkdir(parents=True)
@@ -260,13 +263,16 @@ class TestPapercutSyncE2E(unittest.TestCase):
         subprocess.run(["git", "-C", str(seed_dir), "config", "user.name", "Seed"], check=True)
         subprocess.run(["git", "-C", str(seed_dir), "config", "user.email", "seed@example.com"], check=True)
         shutil.copy2(CHEZMOI_SOURCE_DIR / ".chezmoi.toml.tmpl", seed_dir / ".chezmoi.toml.tmpl")
-        (seed_dir / ".chezmoiignore").write_text("PAPERCUTS.jsonl\n.yearn\n.yearn/**\nPAPERCUTS.md\n.gitattributes\n")
+        (seed_dir / ".chezmoiignore").write_text("PAPERCUTS.jsonl\n.yearn\n.yearn/**\n.tenet\n.tenet/**\nPAPERCUTS.md\n.gitattributes\n")
         shutil.copy2(CHEZMOI_SOURCE_DIR / ".gitattributes", seed_dir / ".gitattributes")
         shutil.copy2(CHEZMOI_SOURCE_DIR / "PAPERCUTS.jsonl", seed_dir / "PAPERCUTS.jsonl")
         shutil.copy2(CHEZMOI_SOURCE_DIR / "PAPERCUTS.md", seed_dir / "PAPERCUTS.md")
         yearn_dir = seed_dir / "dot_yearn"
         yearn_dir.mkdir(parents=True)
         shutil.copy2(CHEZMOI_SOURCE_DIR / "dot_yearn/yearnings.ndjson", yearn_dir / "yearnings.ndjson")
+        tenet_dir = seed_dir / "dot_tenet"
+        tenet_dir.mkdir(parents=True)
+        shutil.copy2(CHEZMOI_SOURCE_DIR / "dot_tenet/tenets.ndjson", tenet_dir / "tenets.ndjson")
 
         bin_dir = seed_dir / "private_dot_local/bin"
         bin_dir.mkdir(parents=True)
@@ -302,21 +308,31 @@ class TestPapercutSyncE2E(unittest.TestCase):
         m2_papercuts = home2 / "PAPERCUTS.jsonl"
         m1_yearnings = home1 / ".yearn/yearnings.ndjson"
         m2_yearnings = home2 / ".yearn/yearnings.ndjson"
+        m1_tenets = home1 / ".tenet/tenets.ndjson"
+        m2_tenets = home2 / ".tenet/tenets.ndjson"
 
         rec_m1_p = {"schema": "springfield.papercut.v3", "id": str(uuid.uuid4()), "message": "M1 Papercut"}
         rec_m2_p = {"schema": "springfield.papercut.v3", "id": str(uuid.uuid4()), "message": "M2 Papercut"}
         rec_m1_y = {"schema": "yearn.v1", "id": str(uuid.uuid4()), "wish": "M1 Wish"}
         rec_m2_y = {"schema": "yearn.v1", "id": str(uuid.uuid4()), "wish": "M2 Wish"}
+        rec_m1_t = {"schema": "tenet.v1", "id": str(uuid.uuid4()), "tenet": "M1 Tenet"}
+        rec_m2_t = {"schema": "tenet.v1", "id": str(uuid.uuid4()), "tenet": "M2 Tenet"}
 
         with open(m1_papercuts, "a") as f:
             f.write(json.dumps(rec_m1_p) + "\n")
         with open(m1_yearnings, "a") as f:
             f.write(json.dumps(rec_m1_y) + "\n")
+        m1_tenets.parent.mkdir(parents=True, exist_ok=True)
+        with open(m1_tenets, "a") as f:
+            f.write(json.dumps(rec_m1_t) + "\n")
 
         with open(m2_papercuts, "a") as f:
             f.write(json.dumps(rec_m2_p) + "\n")
         with open(m2_yearnings, "a") as f:
             f.write(json.dumps(rec_m2_y) + "\n")
+        m2_tenets.parent.mkdir(parents=True, exist_ok=True)
+        with open(m2_tenets, "a") as f:
+            f.write(json.dumps(rec_m2_t) + "\n")
 
         # Machine 1 syncs and pushes
         env1 = os.environ.copy()
@@ -358,15 +374,23 @@ class TestPapercutSyncE2E(unittest.TestCase):
         self.assertIn(rec_m1_y["id"], m1_y_ids)
         self.assertIn(rec_m2_y["id"], m2_y_ids)
 
-        # Verify privacy modes on yearnings
+        m1_t_ids = {json.loads(l)["id"] for l in m1_tenets.read_text().splitlines() if l.strip()}
+        m2_t_ids = {json.loads(l)["id"] for l in m2_tenets.read_text().splitlines() if l.strip()}
+        self.assertEqual(m1_t_ids, m2_t_ids)
+        self.assertIn(rec_m1_t["id"], m1_t_ids)
+        self.assertIn(rec_m2_t["id"], m2_t_ids)
+
         y_dir_mode = oct((home1 / ".yearn").stat().st_mode & 0o777)
         self.assertEqual(y_dir_mode, "0o700")
+        t_dir_mode = oct((home1 / ".tenet").stat().st_mode & 0o777)
+        self.assertEqual(t_dir_mode, "0o700")
 
     def test_spark_chezmoiignore_rules(self):
         """Verify .chezmoiignore rules for Spark and Darwin."""
         content = (CHEZMOI_SOURCE_DIR / ".chezmoiignore").read_text()
         self.assertIn("PAPERCUTS.jsonl", content)
         self.assertIn(".yearn/yearnings.ndjson", content)
+        self.assertIn(".tenet/tenets.ndjson", content)
         self.assertIn("PAPERCUTS.md", content)
         self.assertIn(".gitattributes", content)
         self.assertIn("!run_after_reconcile-logs.sh", content)

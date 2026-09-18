@@ -478,3 +478,14 @@ Source: user chat and approved docs/prds/2026-09-02-local-model-router/vibe.md, 
 Status: active
 Scope: v0
 Load-bearing: yes
+
+## D43 - 2026-09-17 - Tenet captures standing invariants without authorizing repair
+
+Decision: Tenet is standing invariants that should remain true; distinct from yearn (wishes), papercut (friction), bug (defects). Recording does not authorize repair or claim the invariant currently holds. First live record: always be able to open files in Cursor remotely when SSH'd or Herdr'd to tailnet devices (`fe2f11a1-8a16-44a2-97cf-17f917c389ef`).
+Why: Users need a lightweight native harness command to record standing invariants they want always true about their harness, computer, or setup, separate from wishing for new features (`/yearn`), noting transient friction (`/papercut`), or reporting broken behavior (`/bug`). Invariants should be captured immediately in-context without coupling recording to immediate remediation.
+Alternatives: Overload `/yearn` for standing invariants (rejected: yearns are wishes/desires, while tenets are standing rules/invariants); auto-trigger repairs upon recording (rejected: recording must be lightweight and safe, distinct from repair authorization).
+Consequences: `plugins/tenet/` implements the `@emo-eth/tenet-extension` package with Pi and OMP adapters registering `/tenet`. Records conform to `tenet.v1` and append to `~/.tenet/tenets.ndjson`. Neither host nor agent infers authorization to repair from recording alone.
+Source: user prompt contract and decision specification, 2026-09-17
+Status: active
+Scope: v0
+Load-bearing: yes
