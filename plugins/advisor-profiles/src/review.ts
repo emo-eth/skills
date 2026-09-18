@@ -1,4 +1,5 @@
 import type { AdvisorConfig } from "./config.ts";
+import { matchAdvisorWhen } from "./when.ts";
 
 export const DEFAULT_MAX_TRANSCRIPT_CHARS = 48_000;
 
@@ -17,6 +18,7 @@ export type VerdictResult = Verdict | { kind: "error"; message: string };
 export type AdvisorOutcome =
   | { kind: "pass" }
   | { kind: "note"; severity: AdvisorSeverity; note: string; suppressedDuplicate: boolean }
+  | { kind: "skipped"; reason: string }
   | { kind: "no_model"; reason: string }
   | { kind: "error"; message: string };
 
@@ -50,6 +52,10 @@ export type AdvisorReviewInput = {
   transcript: TranscriptMessage[];
   dedupe: Set<string>;
   maxTranscriptChars?: number;
+  cwd?: string;
+  lastUserMessage?: string;
+  currentTurnPaths?: string[];
+  loadedWatchdogDirs?: string[];
   resolveModel: (advisor: AdvisorConfig) => ResolvedReviewModel;
   complete: (model: ReviewModel, system: string, user: string) => Promise<string>;
   record: (advisor: AdvisorConfig, outcome: AdvisorOutcome) => void;
@@ -199,6 +205,18 @@ async function reviewAdvisor(
   serialized: string,
   input: AdvisorReviewInput,
 ): Promise<AdvisorOutcome> {
+  if (advisor.when) {
+    const matched = matchAdvisorWhen(advisor.when, {
+      cwd: input.cwd ?? process.cwd(),
+      lastUserMessage: input.lastUserMessage,
+      currentTurnPaths: input.currentTurnPaths,
+      loadedWatchdogDirs: input.loadedWatchdogDirs,
+    });
+    if (!matched.matches) {
+      return { kind: "skipped", reason: matched.reason };
+    }
+  }
+
   let resolved: ResolvedReviewModel;
   try {
     resolved = input.resolveModel(advisor);

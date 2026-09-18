@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from . import render, review, session, watchdog
+from . import render, review, session, watchdog, when
 from .review import AdvisorOutcome, Reviewer
 from .session import SessionData, SessionStore
 
@@ -81,6 +81,7 @@ class AdvisorProfilesPlugin:
                 user_msg,
                 assistant_response or "",
                 conversation_history,
+                cwd=watchdog.cwd(),
             )
             self._apply_outcomes(session_id, data, outcomes)
         except Exception as exc:
@@ -166,6 +167,8 @@ class AdvisorProfilesPlugin:
             entry["note"] = outcome.note
         if outcome.error:
             entry["error"] = outcome.error
+        if outcome.reason:
+            entry["reason"] = outcome.reason
         if outcome.model:
             entry["model"] = outcome.model
         return entry

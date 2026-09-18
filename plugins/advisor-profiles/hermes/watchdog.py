@@ -4,9 +4,11 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import yaml
+
+from .when import AdvisorWhen, parse_advisor_when
 
 WATCHDOG_FILENAME = "WATCHDOG.yml"
 MAX_IMPORT_CHARS = 40_000
@@ -30,7 +32,7 @@ class Advisor:
     model: Optional[str] = None
     tools: Tuple[str, ...] = ()
     enabled: bool = True
-
+    when: Optional[AdvisorWhen] = None
     def __post_init__(self) -> None:
         object.__setattr__(self, "slug", slugify(self.name))
 
@@ -146,7 +148,14 @@ def parse_watchdog(path: Path, read_text: Callable[[Path], str]) -> Tuple[Dict[s
         enabled = entry.get("enabled", True)
         if not isinstance(enabled, bool):
             enabled = True
-        advisor = Advisor(name=name, model=model, tools=tools, instructions=instructions, enabled=enabled)
+        when: Optional[AdvisorWhen] = None
+        if "when" in entry:
+            parsed_when, when_err = parse_advisor_when(entry.get("when"))
+            if when_err is not None:
+                warnings.append(f"{path.name}: advisor '{name}' has invalid 'when' condition ({when_err}); skipping")
+                continue
+            when = parsed_when
+        advisor = Advisor(name=name, model=model, tools=tools, instructions=instructions, enabled=enabled, when=when)
         advisors[advisor.slug] = advisor
     return advisors, shared, warnings
 

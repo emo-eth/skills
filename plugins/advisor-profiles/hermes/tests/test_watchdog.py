@@ -234,6 +234,25 @@ class WatchdogTests(unittest.TestCase):
         roster = load_roster(self.home, self.project)
         self.assertEqual(roster.enabled_advisors(), ["alpha-one"])
 
+    def test_when_parsed_onto_advisor(self):
+        self._write(
+            self.project / "WATCHDOG.yml",
+            "advisors:\n  - name: vibe\n    when:\n      files: [vibe.md]\n      paths: ['src/**/*.ts']\n",
+        )
+        roster = load_roster(self.home, self.project)
+        advisor = roster.advisors["vibe"]
+        self.assertIsNotNone(advisor.when)
+        self.assertEqual(advisor.when.files, ("vibe.md",))
+        self.assertEqual(advisor.when.paths, ("src/**/*.ts",))
 
+    def test_unparseable_when_fails_closed_and_warns(self):
+        self._write(
+            self.project / "WATCHDOG.yml",
+            "advisors:\n  - name: broken\n    when: 'not a map'\n  - name: valid\n",
+        )
+        roster = load_roster(self.home, self.project)
+        self.assertNotIn("broken", roster.advisors)
+        self.assertIn("valid", roster.advisors)
+        self.assertTrue(any("broken" in w and "invalid 'when'" in w for w in roster.warnings))
 if __name__ == "__main__":
     unittest.main()

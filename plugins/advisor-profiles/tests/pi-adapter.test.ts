@@ -442,3 +442,77 @@ test("a host without the command seam still reviews settled runs", async () => {
 test("a host without the event seam fails closed without crashing", async () => {
   assert.equal(installAdvisorProfiles({}), undefined);
 });
+
+test("when files condition: no matching file skips complete; creating vibe.md calls the model", async () => {
+  const registry = new FakeRegistry();
+  const { root, host } = await setup(
+    {
+      "WATCHDOG.yml": WATCHDOG(
+        "  - name: vibe\n    when:\n      files: [vibe.md, docs/vibe.md]\n",
+      ),
+    },
+    registry,
+  );
+  await host.emit("session_start");
+  host.branch.push(...messageEntries(MESSAGES));
+
+  // Turn 1: vibe.md does not exist -> advisor is skipped, 0 model calls
+  await host.emit("agent_settled");
+  assert.equal(registry.calls.length, 0, "must not call model when files condition does not match");
+  await host.command("status");
+  const status1 = lastNotice(host);
+  assert.ok(status1.includes("skipped (when.files: none of [vibe.md, docs/vibe.md] exist)"));
+  assert.ok(status1.includes("when: files: vibe.md, docs/vibe.md"));
+
+  // Now create vibe.md in root (cwd)
+  await fs.writeFile(path.join(root, "vibe.md"), "vibe contract");
+
+  // Turn 2: vibe.md exists -> calls model
+  host.branch.push(...messageEntries([
+    { role: "user", content: "Check the vibe" },
+    { role: "assistant", content: [{ type: "text", text: "Checked" }] },
+  ]));
+  await host.emit("agent_settled");
+  assert.equal(registry.calls.length, 1, "creating vibe.md makes next review call the model");
+
+  await fs.rm(root, { recursive: true, force: true });
+});
+
+test("when paths condition only sees the current turn", async () => {
+  const registry = new FakeRegistry();
+  const { root, host } = await setup(
+    {
+      "WATCHDOG.yml": WATCHDOG(
+        "  - name: coder\n    when:\n      paths: ['src/**/*.ts']\n",
+      ),
+    },
+    registry,
+  );
+  await host.emit("session_start");
+
+  // Turn 1: user touched src/foo.ts -> matches paths
+  host.branch.push(...messageEntries([
+    { role: "user", content: "Edit src/foo.ts please" },
+    { role: "assistant", content: [{ type: "text", text: "Updated src/foo.ts" }] },
+  ]));
+  await host.emit("agent_settled");
+  assert.equal(registry.calls.length, 1, "Turn 1 matches paths and calls model");
+
+  // Turn 2: user only touches docs/readme.md (no src files in this turn)
+  host.branch.push(...messageEntries([
+    { role: "user", content: "Update docs/readme.md please" },
+    { role: "assistant", content: [{ type: "text", text: "Updated docs/readme.md" }] },
+  ]));
+  await host.emit("agent_settled");
+  assert.equal(registry.calls.length, 1, "Turn 2 paths must only see current turn; previous turn src/foo.ts is ignored");
+
+  await host.command("status");
+  const status = lastNotice(host);
+  assert.ok(status.includes("skipped (when.paths: no paths matched [src/**/*.ts])"));
+
+  await host.command("list");
+  const list = lastNotice(host);
+  assert.ok(list.includes("when: paths: src/**/*.ts"));
+
+  await fs.rm(root, { recursive: true, force: true });
+});

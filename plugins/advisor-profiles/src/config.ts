@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { type AdvisorWhen, parseAdvisorWhen } from "./when.ts";
 
 export const MAX_AT_IMPORT_DEPTH = 5;
 
@@ -11,11 +12,13 @@ export interface AdvisorConfig {
   tools?: string[];
   instructions?: string;
   enabled?: boolean;
+  when?: AdvisorWhen;
 }
 
 export interface DiscoveredAdvisors {
   advisors: AdvisorConfig[];
   sharedInstructions: string | undefined;
+  loadedWatchdogDirs?: string[];
 }
 
 export interface ConfigCandidate {
@@ -120,9 +123,9 @@ export async function discoverAdvisorConfigs(
 ): Promise<DiscoveredAdvisors> {
   const warn = options.onWarning ?? ((message: string) => console.warn(`[advisor-profile] ${message}`));
   const items = await collectConfigCandidates(cwd, agentDir, ["WATCHDOG.yml", "WATCHDOG.yaml"]);
+  const loadedWatchdogDirs = items.map((item) => path.dirname(item.path));
   const advisors = new Map<string, AdvisorConfig>();
   const sharedParts: string[] = [];
-
   for (const item of items) {
     let parsed: unknown;
     try {
@@ -131,7 +134,7 @@ export async function discoverAdvisorConfigs(
       warn(`failed to parse YAML at ${item.path}: ${String(error)}`);
       continue;
     }
-    const doc = validateWatchdogDoc(parsed);
+    const doc = validateWatchdogDoc(parsed, warn, item.path);
     if (!doc) {
       warn(`invalid WATCHDOG.yml schema at ${item.path}`);
       continue;
@@ -153,6 +156,7 @@ export async function discoverAdvisorConfigs(
         tools: entry.tools,
         instructions,
         enabled: entry.enabled,
+        when: entry.when,
       });
     }
   }
@@ -160,6 +164,7 @@ export async function discoverAdvisorConfigs(
   return {
     advisors: [...advisors.values()],
     sharedInstructions: sharedParts.length > 0 ? sharedParts.join("\n\n") : undefined,
+    loadedWatchdogDirs,
   };
 }
 
@@ -169,8 +174,8 @@ interface RawAdvisor {
   tools?: string[];
   instructions?: string;
   enabled?: boolean;
+  when?: AdvisorWhen;
 }
-
 interface RawWatchdogDoc {
   instructions?: string;
   advisors: RawAdvisor[];
@@ -180,7 +185,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validateWatchdogDoc(parsed: unknown): RawWatchdogDoc | undefined {
+function validateWatchdogDoc(
+  parsed: unknown,
+  warn?: (message: string) => void,
+  sourcePath?: string,
+): RawWatchdogDoc | undefined {
   if (!isRecord(parsed)) return undefined;
   if (parsed.instructions !== undefined && typeof parsed.instructions !== "string") return undefined;
   const advisors: RawAdvisor[] = [];
@@ -197,12 +206,23 @@ function validateWatchdogDoc(parsed: unknown): RawWatchdogDoc | undefined {
         if (!Array.isArray(entry.tools) || entry.tools.some((tool) => typeof tool !== "string")) continue;
         tools = entry.tools as string[];
       }
+      let when: AdvisorWhen | undefined;
+      if (entry.when !== undefined) {
+        const parsedWhen = parseAdvisorWhen(entry.when);
+        if (!parsedWhen.ok) {
+          const fileName = sourcePath ? path.basename(sourcePath) : "WATCHDOG.yml";
+          warn?.(`${fileName}: advisor '${entry.name}' has invalid 'when' condition (${parsedWhen.error}); skipping`);
+          continue;
+        }
+        when = parsedWhen.when;
+      }
       advisors.push({
         name: entry.name,
         model: entry.model as string | undefined,
         tools,
         instructions: entry.instructions as string | undefined,
         enabled: entry.enabled as boolean | undefined,
+        when,
       });
     }
   }

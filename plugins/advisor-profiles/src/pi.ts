@@ -12,6 +12,7 @@ import {
   type ReviewModel,
   type TranscriptMessage,
 } from "./review.ts";
+import { extractPathTokens, formatWhen } from "./when.ts";
 import { PERSIST_ENTRY_TYPE, SessionState } from "./state.ts";
 
 export type AdvisorProfilesOptions = {
@@ -116,6 +117,34 @@ export function installAdvisorProfiles(
 
       const dedupeBefore = state.dedupe.size;
       let followUpDelivered = false;
+      const branchEntries = ctx.sessionManager?.getBranch?.() ?? [];
+      let lastUserIndex = -1;
+      let lastUserMessage: string | undefined;
+      for (let i = branchEntries.length - 1; i >= 0; i--) {
+        const entry = branchEntries[i];
+        if (isRecord(entry) && entry.type === "message" && isRecord(entry.message) && entry.message.role === "user") {
+          lastUserIndex = i;
+          lastUserMessage = textOfMessage(entry.message);
+          break;
+        }
+      }
+      const turnEntries = lastUserIndex >= 0 ? branchEntries.slice(lastUserIndex) : branchEntries;
+      const turnPaths = new Set<string>();
+      for (const entry of turnEntries) {
+        if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
+        const msg = entry.message;
+        const text = textOfMessage(msg);
+        for (const token of extractPathTokens(text)) {
+          turnPaths.add(token);
+        }
+        if (typeof msg.toolName === "string") {
+          for (const token of extractPathTokens(msg.toolName)) {
+            turnPaths.add(token);
+          }
+        }
+      }
+      const currentTurnPaths = [...turnPaths];
+      const cwd = ctx.cwd ?? process.cwd();
       try {
         const result = await runAdvisorReviews({
           advisors,
@@ -123,6 +152,10 @@ export function installAdvisorProfiles(
           transcript: branchTranscript(ctx),
           dedupe: state.dedupe,
           maxTranscriptChars,
+          cwd,
+          lastUserMessage,
+          currentTurnPaths,
+          loadedWatchdogDirs: state.roster?.loadedWatchdogDirs,
           resolveModel: (advisor) => resolveModel(advisor, ctx),
           complete: (model, system, user) => completeReview(model, system, user, ctx),
           record: (advisor, outcome) => {
@@ -227,6 +260,7 @@ export function installAdvisorProfiles(
       flags.push("selected");
     }
     if (advisor.model) flags.push(`model: ${advisor.model}`);
+    if (advisor.when) flags.push(`when: ${formatWhen(advisor.when)}`);
     if (advisor.tools && advisor.tools.length > 0) flags.push(`tools: ${advisor.tools.join(",")} (unsupported in Pi)`);
     const outcome = state.statuses.get(slug);
     if (outcome) flags.push(`last: ${formatOutcome(outcome)}`);
@@ -245,6 +279,7 @@ export function installAdvisorProfiles(
       if (advisor.enabled === false) markers.push("disabled");
       if (state.selection.mode === "all" && advisor.enabled !== false) markers.push("selected");
       if (state.selection.mode === "one" && state.selection.slug === slug) markers.push("selected");
+      if (advisor.when) markers.push(`when: ${formatWhen(advisor.when)}`);
       return markers.length > 0 ? `- ${advisor.name} (${markers.join(", ")})` : `- ${advisor.name}`;
     });
     notify(ctx, `Advisors:\n${lines.join("\n")}`, "info");
@@ -370,13 +405,18 @@ function textOfMessage(message: unknown): string {
   if (!Array.isArray(message.content)) return "";
   const parts: string[] = [];
   for (const part of message.content) {
-    if (isRecord(part) && part.type === "text" && typeof part.text === "string") parts.push(part.text);
+    if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
+      parts.push(part.text);
+    } else {
+      parts.push(JSON.stringify(part));
+    }
   }
   return parts.join("\n");
 }
 
 function formatOutcome(outcome: AdvisorOutcome): string {
   if (outcome.kind === "pass") return "pass";
+  if (outcome.kind === "skipped") return `skipped (${outcome.reason})`;
   if (outcome.kind === "no_model") return `no_model (${outcome.reason})`;
   if (outcome.kind === "error") return `error (${outcome.message})`;
   if (outcome.suppressedDuplicate) return `${outcome.severity} (duplicate suppressed)`;

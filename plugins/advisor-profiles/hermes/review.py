@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
+from . import watchdog
 from .watchdog import Advisor, Roster
+from .when import match_advisor_when
 
 REVIEW_SCHEMA = {
     "type": "object",
@@ -34,7 +37,7 @@ class AdvisorOutcome:
     note: Optional[str] = None
     error: Optional[str] = None
     model: Optional[str] = None
-
+    reason: Optional[str] = None
     @property
     def normalized_note(self) -> str:
         return normalize_note(self.note) if self.note else ""
@@ -66,6 +69,7 @@ class Reviewer:
         user_message: str,
         assistant_response: str,
         conversation_history: Optional[Sequence[Dict[str, Any]]] = None,
+        cwd: Optional[Path] = None,
     ) -> List[AdvisorOutcome]:
         outcomes: List[AdvisorOutcome] = []
         for name in selection:
@@ -73,7 +77,7 @@ class Reviewer:
             if advisor is None:
                 outcomes.append(AdvisorOutcome(advisor=name, state="error", error="advisor no longer configured"))
                 continue
-            outcomes.append(self._review_advisor(roster, advisor, user_message, assistant_response, conversation_history))
+            outcomes.append(self._review_advisor(roster, advisor, user_message, assistant_response, conversation_history, cwd))
         return outcomes
 
     def _review_advisor(
@@ -83,7 +87,26 @@ class Reviewer:
         user_message: str,
         assistant_response: str,
         conversation_history: Optional[Sequence[Dict[str, Any]]],
+        cwd: Optional[Path] = None,
     ) -> AdvisorOutcome:
+        if advisor.when:
+            working_dir = cwd or watchdog.cwd()
+            loaded_dirs = [Path(f).parent for f in roster.files]
+            matched, reason = match_advisor_when(
+                advisor.when,
+                cwd=working_dir,
+                last_user_message=user_message,
+                current_turn_text=f"{user_message}\n{assistant_response}",
+                loaded_watchdog_dirs=loaded_dirs,
+            )
+            if not matched:
+                return AdvisorOutcome(
+                    advisor=advisor.name,
+                    state="skipped",
+                    reason=reason,
+                    model=advisor.model,
+                )
+
         provider, model = split_model_selector(advisor.model)
         missing_capabilities = []
         if model and not self._model_granted:

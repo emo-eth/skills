@@ -312,3 +312,54 @@ test("tools lists are parsed and retained verbatim", async () => {
     },
   );
 });
+
+test("when conditions are parsed onto AdvisorConfig", async () => {
+  await withTree(
+    {
+      ".git": "",
+      "WATCHDOG.yml": [
+        "advisors:",
+        "  - name: vibe",
+        "    when:",
+        "      files: [vibe.md, docs/vibe.md]",
+        "      paths: ['src/**/*.ts']",
+        "      message_matches: '^repro'",
+      ].join("\n"),
+    },
+    async (root) => {
+      const discovered = await discoverAdvisorConfigs(root);
+      assert.equal(discovered.advisors.length, 1);
+      assert.deepEqual(discovered.advisors[0].when, {
+        files: ["vibe.md", "docs/vibe.md"],
+        paths: ["src/**/*.ts"],
+        message_matches: "^repro",
+      });
+    },
+  );
+});
+
+test("unparseable when fails closed by skipping that advisor and warning", async () => {
+  const warnings: string[] = [];
+  await withTree(
+    {
+      ".git": "",
+      "WATCHDOG.yml": [
+        "advisors:",
+        "  - name: broken-when",
+        "    when: 'not a map'",
+        "  - name: valid-advisor",
+        "    enabled: true",
+      ].join("\n"),
+    },
+    async (root) => {
+      const discovered = await discoverAdvisorConfigs(root, undefined, {
+        onWarning: (msg) => warnings.push(msg),
+      });
+      assert.deepEqual(
+        discovered.advisors.map((adv) => adv.name),
+        ["valid-advisor"],
+      );
+      assert.ok(warnings.some((w) => w.includes("broken-when") && w.includes("invalid 'when'")));
+    },
+  );
+});

@@ -379,6 +379,26 @@ class AdvisorProfilesPluginTests(unittest.TestCase):
         self.assertIn("s1", raw["sessions"])
         self.assertEqual(raw["sessions"]["s1"]["selection"], ["vibe"])
 
+    def test_status_and_list_show_skip_reason_and_when_condition(self):
+        (self.project / "WATCHDOG.yml").write_text(
+            "advisors:\n  - name: vibe\n    when:\n      files: [vibe.md]\n    instructions: vibe\n",
+            encoding="utf-8",
+        )
+        plugin, ctx = self._plugin()
+        plugin._on_session_start(session_id="s1")
 
+        # List should show configured when
+        listing = plugin._handle_command("list")
+        self.assertIn("when [files: vibe.md]", listing)
+
+        # Turn: vibe.md does not exist -> skipped
+        plugin._on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+        )
+        status = plugin._handle_command("status")
+        self.assertIn("vibe: skipped (when.files: none of [vibe.md] exist)", status)
+        self.assertIn("Advisor conditions: vibe [files: vibe.md]", status)
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,9 @@
+advisors:
+  - name: default
+  - name: vibe-police
+    model: kimi-code/k3-256k:max
+    when:
+      files:
+        - vibe.md
+        - docs/vibe.md
+    instructions: "If there is a vibe.md, make sure the model is acting in accordance with it."

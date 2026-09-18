@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, List
 
 from .session import SessionData
 from .watchdog import Roster
-
+from .when import format_when
 USAGE = (
     "Usage: /advisor-profile <command>\n"
     "  status            per-advisor review state and recent notes\n"
@@ -46,6 +46,9 @@ def render_status(
     tooled = [advisor.name for advisor in roster.advisors.values() if advisor.tools]
     if tooled:
         lines.append(f"Advisor tools ({', '.join(tooled)}): OMP-only, no tool loop on Hermes — unsupported")
+    when_advisors = [f"{adv.name} [{format_when(adv.when)}]" for adv in roster.advisors.values() if adv.when]
+    if when_advisors:
+        lines.append(f"Advisor conditions: {', '.join(when_advisors)}")
     if not roster.advisors:
         lines.append("No advisors configured: add an 'advisors' list to WATCHDOG.yml (see /advisor-profile list).")
     for warning in roster.warnings:
@@ -64,6 +67,9 @@ def _status_line(roster: Roster, entry: Dict[str, Any]) -> str:
     state = entry.get("state") or "?"
     if state == "pass":
         return f"  {advisor}: pass"
+    if state == "skipped":
+        reason = entry.get("reason") or entry.get("error") or "condition not met"
+        return f"  {advisor}: skipped ({reason})"
     if state == "note":
         return f"  {advisor}: {entry.get('severity') or 'nit'} — {entry.get('note') or ''}"
     if state == "duplicate":
@@ -94,6 +100,8 @@ def render_list(roster: Roster) -> str:
     for advisor in sorted(roster.advisors.values(), key=lambda advisor: advisor.name):
         flags: List[str] = []
         flags.append("enabled" if advisor.enabled else "disabled")
+        if advisor.when:
+            flags.append(f"when [{format_when(advisor.when)}]")
         if advisor.model:
             flags.append(f"model {advisor.model}")
         if advisor.tools:

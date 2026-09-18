@@ -25,7 +25,12 @@ advisors:
       Watch for regressions and broken invariants.
 ```
 
-Each advisor supports `name`, optional `model` (OMP advisor model selector; Pi/Hermes host-owned review route), optional `tools`, optional `instructions`, and optional `enabled` (default true — new sessions activate every advisor whose `enabled` is not false).
+Each advisor supports `name`, optional `model` (OMP advisor model selector; Pi/Hermes host-owned review route), optional `tools`, optional `instructions`, optional `enabled` (default true — new sessions activate every advisor whose `enabled` is not false), and optional `when` triggers:
+
+- `when.files`: list of file paths (OR); matches if any file exists relative to cwd, ancestors up to git root or home, or loaded WATCHDOG directories.
+- `when.paths`: list of glob patterns (`*`, `**`) (OR); matched against posix-normalized path-like tokens extracted from the current turn only.
+- `when.message_matches`: regular expression matched against the latest user message; invalid regex records a skip reason rather than throwing.
+- Present keys are combined with AND. An empty or omitted `when` always runs.
 
 ## 2. Operate on OMP (native)
 
@@ -48,10 +53,10 @@ OMP advisors are full agent runtimes with their own tool session: default grant 
 - `/advisor-profile use <name>` — select one advisor; `/advisor-profile all` — every enabled advisor; `/advisor-profile off` — none. `use all` and `use off` are accepted aliases. All selections are session-scoped: a new session defaults to every advisor whose `enabled` is not false, not to your last selection.
 - `/advisor-profile reload` — re-read `WATCHDOG.yml` and refresh the active roster.
 
-Pi/Hermes run one host-owned secondary-model pass per selected advisor after a completed main-agent turn: pass, or one note at severity nit/concern/blocker. Concern/blocker notes become one marked user follow-up the main agent must address; generated correction turns are not re-reviewed; exact duplicate notes are suppressed per session; an advisor failure never fails the main turn and is visible in status.
+Pi/Hermes run one host-owned secondary-model pass per selected advisor after a completed main-agent turn: pass, or one note at severity nit/concern/blocker. Before calling the review model, Pi and Hermes evaluate `when`: if conditions fail, the advisor records a `skipped` outcome with reason and makes no model call. Concern/blocker notes become one marked user follow-up the main agent must address; generated correction turns are not re-reviewed; exact duplicate notes are suppressed per session; an advisor failure never fails the main turn and is visible in status.
 
 ## 4. Host limits, stated plainly
 
-- OMP: native multi-advisor runtimes, live whole-subsystem toggle, TUI-gated roster reload, advisor tool grants, per-advisor paused states.
-- Pi/Hermes: one post-turn review per selected advisor, session-scoped selection, reload command, no tool loop. `tools` is OMP-only; do not present it as supported on Pi/Hermes — say the host cannot, and route tool-granted advisor needs to OMP.
+- OMP: native multi-advisor runtimes, live whole-subsystem toggle, TUI-gated roster reload, advisor tool grants, per-advisor paused states. OMP ignores `when` triggers and still runs/spends enabled advisors on every turn.
+- Pi/Hermes: one post-turn review per selected advisor, session-scoped selection, reload command, no tool loop. `tools` is OMP-only; do not present it as supported on Pi/Hermes — say the host cannot, and route tool-granted advisor needs to OMP. Pi and Hermes enforce `when` trigger conditions to skip model calls and spend when conditions do not match.
 - Hermes `provider/model` selectors require both `llm.provider_override` and `llm.model_override`; a missing grant records `no_model` instead of silently changing routes. Pi likewise reports unavailable or unauthorized selectors instead of falling back.

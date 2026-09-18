@@ -302,3 +302,45 @@ test("buildFollowUpMessage is marked, names the advisor, and demands action", ()
   assert.ok(message.includes("Fix the leak."));
   assert.ok(message.toLowerCase().includes("before continuing"));
 });
+
+test("when condition mismatch skips advisor without calling resolveModel or complete", async () => {
+  let resolveCalled = false;
+  const { input, completeCalls, recorded, sends } = recordingInput({
+    advisors: [
+      advisor("vibe", {
+        when: { files: ["nonexistent-vibe.md"] },
+      }),
+    ],
+    resolveModel: () => {
+      resolveCalled = true;
+      return { kind: "ok", model: OK_MODEL };
+    },
+  });
+
+  const result = await runAdvisorReviews(input);
+  assert.equal(resolveCalled, false, "resolveModel must not be called on skipped advisor");
+  assert.equal(completeCalls.length, 0, "complete must not be called on skipped advisor");
+  assert.equal(result.followUp, undefined);
+  assert.equal(sends.length, 0);
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].outcome.kind, "skipped");
+  if (recorded[0].outcome.kind === "skipped") {
+    assert.ok(recorded[0].outcome.reason.includes("nonexistent-vibe.md"));
+  }
+});
+
+test("when condition match calls complete normally", async () => {
+  const { input, completeCalls, recorded } = recordingInput({
+    advisors: [
+      advisor("coder", {
+        when: { paths: ["src/**/*.ts"] },
+      }),
+    ],
+    currentTurnPaths: ["src/when.ts"],
+  });
+
+  const result = await runAdvisorReviews(input);
+  assert.equal(completeCalls.length, 1);
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].outcome.kind, "pass");
+});

@@ -90,6 +90,7 @@ Three harness-surface feel contracts are approved: `docs/prds/2026-09-02-local-m
 
 The native command `/tenet` (`plugins/tenet/`) is a Yearn-shaped capture for standing setup invariants [D43]. It appends `tenet.v1` records to `~/.tenet/tenets.ndjson`. Recording does not verify or repair the invariant. Live OMP and Pi loads need a full process restart after plugin install.
 
+The cross-runtime advisor profiles package (`plugins/advisor-profiles/`) provides post-turn reviews across OMP, Pi, and Hermes from shared `WATCHDOG.yml` rosters (`skills/advisor-profiles/SKILL.md`). Advisors support optional `when` trigger conditions (`files`, `paths`, and `message_matches`). Pi and Hermes evaluate `when` before invoking the secondary model, yielding a `skipped` outcome with reason and skipping follow-up when conditions do not match. OMP's native advisor subsystem ignores `when` and still spends on all enabled advisors on every turn.
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 ## Standing constraints
@@ -135,6 +136,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Agent memory | `docs/prds/2026-09-02-agent-memory/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 38 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, symlink/custom-build update protection, restart-only mode, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |
 | Standing invariants (tenet) | `docs/DECISIONS.md` D43, `docs/log/2026-09-17-tenet-command.md` | `plugins/tenet/` | `docs/log/2026-09-17-tenet-command.md`, package `npm run check`, `npm test` | source-verified |
+| Advisor profiles | `skills/advisor-profiles/SKILL.md`, `docs/log/2026-08-29-advisor-profiles.md`, `docs/log/2026-09-17-advisor-when.md` | `plugins/advisor-profiles/`, `WATCHDOG.yml` | package npm run check, npm test, python unittests; Pi and Hermes evaluate when and skip model spend, OMP ignores when and still spends | source-verified |
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md`, `docs/review/2026-09-11-vibe-surgical-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md`, `.context/review/2026-09-11-vibe-surgical-round-1.md` | raw snapshots and answers docs | verified-live |

@@ -32,7 +32,7 @@ followup_text = _PKG.review.followup_text
 normalize_note = _PKG.review.normalize_note
 Advisor = _PKG.watchdog.Advisor
 Roster = _PKG.watchdog.Roster
-
+AdvisorWhen = _PKG.when.AdvisorWhen
 
 def roster_with(*advisors: Advisor, shared: str = "") -> Roster:
     return Roster(advisors={advisor.slug: advisor for advisor in advisors}, instructions=shared)
@@ -171,6 +171,77 @@ class ReviewerTests(unittest.TestCase):
         self.assertIn("vibe", message)
         self.assertIn("Fix the vibe break.", message)
 
+    def test_when_files_condition_skips_model_until_file_exists(self):
+        import tempfile
+        import shutil
+        tmp_dir = Path(tempfile.mkdtemp())
+        try:
+            vibe_advisor = Advisor(
+                name="vibe",
+                when=AdvisorWhen(files=("vibe.md",)),
+                instructions="Hold vibe.",
+            )
+            roster = roster_with(vibe_advisor)
+            llm = FakeLlm(results=[pass_result()])
+            reviewer = Reviewer(llm)
+
+            # Turn 1: vibe.md does not exist -> skipped without calling LLM
+            outcomes1 = reviewer.review_turn(roster, ["vibe"], "u", "a", cwd=tmp_dir)
+            self.assertEqual(len(outcomes1), 1)
+            self.assertEqual(outcomes1[0].state, "skipped")
+            self.assertIn("none of [vibe.md] exist", outcomes1[0].reason or "")
+            self.assertEqual(len(llm.calls), 0, "LLM must not be called when files do not match")
+
+            # Create vibe.md
+            (tmp_dir / "vibe.md").write_text("vibe", encoding="utf-8")
+
+            # Turn 2: vibe.md exists -> calls model
+            outcomes2 = reviewer.review_turn(roster, ["vibe"], "u", "a", cwd=tmp_dir)
+            self.assertEqual(len(outcomes2), 1)
+            self.assertEqual(outcomes2[0].state, "pass")
+            self.assertEqual(len(llm.calls), 1, "LLM must be called after creating vibe.md")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_when_paths_condition_only_sees_current_turn(self):
+        coder = Advisor(
+            name="coder",
+            when=AdvisorWhen(paths=("src/**/*.ts",)),
+            instructions="Code quality.",
+        )
+        roster = roster_with(coder)
+        llm = FakeLlm(results=[pass_result()])
+        reviewer = Reviewer(llm)
+
+        # Prior history mentioned src/app.ts, but current turn touches only readme.md
+        history = [{"role": "user", "content": "edited src/app.ts in prior turn"}]
+        outcomes = reviewer.review_turn(
+            roster,
+            ["coder"],
+            user_message="Updated docs/readme.md",
+            assistant_response="Done updating readme.md",
+            conversation_history=history,
+            cwd=Path("/tmp"),
+        )
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].state, "skipped")
+        self.assertIn("no paths matched", outcomes[0].reason or "")
+        self.assertEqual(len(llm.calls), 0, "paths must only see current turn, not prior history")
+
+    def test_when_invalid_regex_records_skip_without_throwing(self):
+        bad_regex = Advisor(
+            name="regex-checker",
+            when=AdvisorWhen(message_matches="[unclosed"),
+            instructions="Check message.",
+        )
+        roster = roster_with(bad_regex)
+        llm = FakeLlm(results=[pass_result()])
+        reviewer = Reviewer(llm)
+        outcomes = reviewer.review_turn(roster, ["regex-checker"], "hello", "hi", cwd=Path("/tmp"))
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0].state, "skipped")
+        self.assertIn("invalid regex", outcomes[0].reason or "")
+        self.assertEqual(len(llm.calls), 0)
 
 class TranscriptTests(unittest.TestCase):
     def test_transcript_includes_turn_and_bounded_history(self):
