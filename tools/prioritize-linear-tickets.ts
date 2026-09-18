@@ -40,6 +40,7 @@ type Arguments = {
   output: string | undefined;
   priorityTarget: number;
   team: string | undefined;
+  project: string | undefined;
   bin: boolean;
   dryRun: boolean;
   reset: boolean;
@@ -70,6 +71,7 @@ type InputTicket = {
 type ApplyingCheckpoint = {
   source: "linear";
   team: string | undefined;
+  project?: string | undefined;
   updates: Record<string, number>;
 };
 
@@ -98,6 +100,7 @@ function parseArguments(args: string[]): Arguments {
     output: undefined,
     priorityTarget: 2,
     team: undefined,
+    project: undefined,
     bin: false,
     dryRun: false,
     reset: false,
@@ -152,6 +155,11 @@ function parseArguments(args: string[]): Arguments {
       if (!options.team) throw new Error("--team needs a team key");
       continue;
     }
+    if (arg === "--project") {
+      options.project = args[++index];
+      if (!options.project) throw new Error("--project needs a project name, UUID, or slug");
+      continue;
+    }
     if (arg === "--bin") {
       options.bin = true;
       continue;
@@ -184,6 +192,7 @@ Options:
       --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
                            star-linear-tickets.ts for Urgent)
       --team <key>          only rank issues in this team (e.g. NAT); default all
+      --project <target>    only rank issues in this project (name, UUID, or slug)
       --bin                 triage your no-priority tickets into Urgent/High/
                             Medium/Low by binary-searching the tiers
                             (~2 comparisons each); moves them out of no-priority
@@ -464,12 +473,16 @@ function applyingSourceMismatch(
   applying: ApplyingCheckpoint,
   usingLinear: boolean,
   team: string | undefined,
+  project: string | undefined,
 ): string | undefined {
   if (!usingLinear || applying.source !== "linear") {
     return "the saved application checkpoint was created from Linear; rerun against Linear or use --reset";
   }
   if ((applying.team ?? undefined) !== (team ?? undefined)) {
     return `the saved application checkpoint used team ${applying.team ?? "all teams"} but this run uses ${team ?? "all teams"}; rerun with the same team or use --reset`;
+  }
+  if ((applying.project ?? undefined) !== (project ?? undefined)) {
+    return `the saved application checkpoint used project ${applying.project ?? "all projects"} but this run uses ${project ?? "all projects"}; rerun with the same project or use --reset`;
   }
   return undefined;
 }
@@ -587,7 +600,7 @@ async function runBin(args: Arguments): Promise<void> {
   const stateFile = args.state;
   const usingLinear = args.input === undefined;
   const assigned = usingLinear
-    ? await fetchAssignedNotCompleted({ team: args.team })
+    ? await fetchAssignedNotCompleted({ team: args.team, project: args.project })
     : await loadTickets(args.input);
   // Triage target: tickets that have no priority yet. The point is to pull
   // them out of the no-priority pool into one of the 4 meaningful tiers.
@@ -599,7 +612,7 @@ async function runBin(args: Arguments): Promise<void> {
   const snapshot = snapshotFor(tickets, args.top);
   const saved = await readsBinState(stateFile);
   if (saved?.applying) {
-    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team);
+    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.project);
     if (mismatch) throw new Error(mismatch);
     const missing = checkpointIdsMissing(saved.applying, assigned);
     if (missing.length > 0) {
@@ -620,7 +633,12 @@ async function runBin(args: Arguments): Promise<void> {
   }
 
   const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
-  const sourceLabel = usingLinear ? `Linear (${args.team ?? "all teams"})` : `file ${args.input}`;
+  const filterParts: string[] = [];
+  if (args.team) filterParts.push(args.project ? `team ${args.team}` : args.team);
+  if (args.project) filterParts.push(`project ${args.project}`);
+  const sourceLabel = usingLinear
+    ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`
+    : `file ${args.input}`;
   console.log(`Binning ${tickets.length} ticket(s). Source: ${sourceLabel}.`);
   if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
   await writeBinState(stateFile, snapshot, tiers);
@@ -704,6 +722,7 @@ async function runBin(args: Arguments): Promise<void> {
   const applying: ApplyingCheckpoint = {
     source: "linear",
     team: args.team,
+    project: args.project,
     updates,
   };
   await writeBinState(stateFile, snapshot, tiers, applying);
@@ -727,7 +746,7 @@ async function main(): Promise<void> {
   const usingLinear = args.input === undefined;
 
   let tickets = usingLinear
-    ? await fetchAssignedNotCompleted({ team: args.team })
+    ? await fetchAssignedNotCompleted({ team: args.team, project: args.project })
     : await loadTickets(args.input);
   if (usingLinear) {
     // Existing Urgent tickets already occupy "do now"; keep them out of the
@@ -746,7 +765,7 @@ async function main(): Promise<void> {
   const snapshot = snapshotFor(tickets, args.top);
   const saved = await readState(stateFile);
   if (saved?.applying) {
-    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team);
+    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.project);
     if (mismatch) throw new Error(mismatch);
     const missing = checkpointIdsMissing(saved.applying, tickets);
     if (missing.length > 0) {
@@ -772,7 +791,12 @@ async function main(): Promise<void> {
   }
 
   let comparisons: ComparisonCache = saved?.comparisons ?? {};
-  const sourceLabel = usingLinear ? `Linear (${args.team ?? "all teams"})` : `file ${args.input}`;
+  const filterParts: string[] = [];
+  if (args.team) filterParts.push(args.project ? `team ${args.project}` : args.team);
+  if (args.project) filterParts.push(`project ${args.project}`);
+  const sourceLabel = usingLinear
+    ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`
+    : `file ${args.input}`;
   console.log(`Prioritizing ${tickets.length} tickets, top ${args.top}. Source: ${sourceLabel}.`);
   if (saved) console.log(`Resuming from ${stateFile} (${Object.keys(comparisons).length} comparisons saved).`);
 
@@ -887,6 +911,7 @@ async function main(): Promise<void> {
   const applying: ApplyingCheckpoint = {
     source: "linear",
     team: args.team,
+    project: args.project,
     updates,
   };
   await writeState(stateFile, snapshot, args.top, comparisons, applying);

@@ -9,6 +9,12 @@ import type { Ticket } from "./prioritize-core.ts";
 
 const ACTIVE_STATE_TYPES = new Set(["triage", "backlog", "unstarted", "started"]);
 
+export type LinearProject = {
+  id?: string;
+  name?: string;
+  slugId?: string;
+};
+
 type LinearNode = {
   id: string;
   identifier?: string;
@@ -19,7 +25,41 @@ type LinearNode = {
   state?: { name?: string; type?: string } | null;
   parent?: { id?: string; identifier?: string } | null;
   team?: { key?: string } | null;
+  project?: LinearProject | null;
 };
+
+export function matchesProject(
+  project: LinearProject | string | null | undefined,
+  target: string,
+): boolean {
+  if (!project) return false;
+  const normalizedTarget = target.trim().toLowerCase();
+  if (!normalizedTarget) return false;
+
+  if (typeof project === "string") {
+    return project.trim().toLowerCase() === normalizedTarget;
+  }
+  if (project.name && project.name.trim().toLowerCase() === normalizedTarget) {
+    return true;
+  }
+  if (project.id && project.id.trim().toLowerCase() === normalizedTarget) {
+    return true;
+  }
+  if (project.slugId && project.slugId.trim().toLowerCase() === normalizedTarget) {
+    return true;
+  }
+  if (project.name) {
+    const slugified = project.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (slugified === normalizedTarget) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function runLinear(args: string[], input?: string): string {
   const result = spawnSync("linear", args, {
@@ -111,6 +151,7 @@ function toTicket(node: LinearNode): Ticket {
       ? { priority: node.priority }
       : {}),
     ...(node.url ? { url: node.url } : {}),
+    ...(node.project ? { project: node.project } : {}),
   };
 }
 
@@ -119,7 +160,7 @@ function toTicket(node: LinearNode): Ticket {
  * canceled. Uses `linear api --paginate` so all pages are returned.
  */
 export async function fetchAssignedNotCompleted(
-  options: { team?: string } = {},
+  options: { team?: string; project?: string } = {},
 ): Promise<Ticket[]> {
   const query = [
     "query {",
@@ -135,6 +176,7 @@ export async function fetchAssignedNotCompleted(
     "        state { name type }",
     "        parent { id identifier }",
     "        team { key }",
+    "        project { id name slugId }",
     "      }",
     "    }",
     "  }",
@@ -155,9 +197,11 @@ export async function fetchAssignedNotCompleted(
   const nodes = getAssignedNodes(data);
 
   const filterTeam = options.team;
+  const filterProject = options.project;
   return nodes
     .filter((node) => isActionable(node))
     .filter((node) => !filterTeam || node.team?.key === filterTeam)
+    .filter((node) => !filterProject || matchesProject(node.project, filterProject))
     .map(toTicket);
 }
 
