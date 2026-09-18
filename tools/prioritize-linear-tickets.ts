@@ -18,7 +18,11 @@ import {
   type ComparisonResult,
   type Ticket,
 } from "./prioritize-core.ts";
-import { fetchAssignedNotCompleted, setPriority } from "./linear-client.ts";
+import {
+  fetchAssignedNotCompleted,
+  fetchProjectIssues,
+  setPriority,
+} from "./linear-client.ts";
 import { clearScreen, confirmExact, paint, rawChoice } from "./prompt.ts";
 
 const STATE_VERSION = 2;
@@ -177,10 +181,10 @@ function printHelp(): void {
   console.log(`Usage: tools/prioritize-linear-tickets.ts -k <k> [options]
   (or: node --experimental-strip-types tools/prioritize-linear-tickets.ts ...)
 
-Find the top k most important tickets assigned to you in Linear using human
-pairwise comparisons, without ranking everything. Uses the installed \`linear\`
-CLI for auth. Pass -i to rank a local JSON export instead.
-
+Find the top k most important tickets assigned to you in Linear (or all open
+project issues across all assignees when --project is given) using human pairwise
+comparisons, without ranking everything. Uses the installed \`linear\` CLI for auth.
+Pass -i to rank a local JSON export instead.
 Controls in a terminal:
   L or Left   the LEFT ticket is more important
   R or Right  the RIGHT ticket is more important
@@ -192,7 +196,8 @@ Options:
       --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
                            star-linear-tickets.ts for Urgent)
       --team <key>          only rank issues in this team (e.g. NAT); default all
-      --project <target>    only rank issues in this project (name, UUID, or slug)
+      --project <target>    rank all open issues in this project across all
+                            assignees (name, UUID, or slug; not assigned-to-me)
       --bin                 triage your no-priority tickets into Urgent/High/
                             Medium/Low by binary-searching the tiers
                             (~2 comparisons each); moves them out of no-priority
@@ -599,12 +604,14 @@ async function binForTicket(
 async function runBin(args: Arguments): Promise<void> {
   const stateFile = args.state;
   const usingLinear = args.input === undefined;
-  const assigned = usingLinear
-    ? await fetchAssignedNotCompleted({ team: args.team, project: args.project })
+  const rawTickets = usingLinear
+    ? (args.project
+        ? await fetchProjectIssues({ project: args.project, team: args.team })
+        : await fetchAssignedNotCompleted({ team: args.team }))
     : await loadTickets(args.input);
   // Triage target: tickets that have no priority yet. The point is to pull
   // them out of the no-priority pool into one of the 4 meaningful tiers.
-  const tickets = assigned.filter(
+  const tickets = rawTickets.filter(
     (t) => t.priority === undefined || t.priority === null || Number(t.priority) === 0,
   );
   if (args.reset) await removeState(stateFile);
@@ -614,14 +621,14 @@ async function runBin(args: Arguments): Promise<void> {
   if (saved?.applying) {
     const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.project);
     if (mismatch) throw new Error(mismatch);
-    const missing = checkpointIdsMissing(saved.applying, assigned);
+    const missing = checkpointIdsMissing(saved.applying, rawTickets);
     if (missing.length > 0) {
       throw new Error(
-        `the saved application checkpoint references tickets no longer assigned: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
+        `the saved application checkpoint references tickets no longer present: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
       );
     }
     console.log("Resuming an interrupted priority application.");
-    await applyCheckpoint(stateFile, saved.applying, assigned, (applying) =>
+    await applyCheckpoint(stateFile, saved.applying, rawTickets, (applying) =>
       writeBinState(stateFile, snapshot, saved.tiers, applying),
     );
     return;
@@ -634,7 +641,7 @@ async function runBin(args: Arguments): Promise<void> {
 
   const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
   const filterParts: string[] = [];
-  if (args.team) filterParts.push(args.project ? `team ${args.team}` : args.team);
+  if (args.team) filterParts.push(`team ${args.team}`);
   if (args.project) filterParts.push(`project ${args.project}`);
   const sourceLabel = usingLinear
     ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`
@@ -726,7 +733,7 @@ async function runBin(args: Arguments): Promise<void> {
     updates,
   };
   await writeBinState(stateFile, snapshot, tiers, applying);
-  await applyCheckpoint(stateFile, applying, assigned, (applying) =>
+  await applyCheckpoint(stateFile, applying, rawTickets, (applying) =>
     writeBinState(stateFile, snapshot, tiers, applying),
   );
 }
@@ -746,7 +753,9 @@ async function main(): Promise<void> {
   const usingLinear = args.input === undefined;
 
   let tickets = usingLinear
-    ? await fetchAssignedNotCompleted({ team: args.team, project: args.project })
+    ? (args.project
+        ? await fetchProjectIssues({ project: args.project, team: args.team })
+        : await fetchAssignedNotCompleted({ team: args.team }))
     : await loadTickets(args.input);
   if (usingLinear) {
     // Existing Urgent tickets already occupy "do now"; keep them out of the
@@ -770,7 +779,7 @@ async function main(): Promise<void> {
     const missing = checkpointIdsMissing(saved.applying, tickets);
     if (missing.length > 0) {
       throw new Error(
-        `the saved application checkpoint references tickets no longer assigned: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
+        `the saved application checkpoint references tickets no longer present: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
       );
     }
     console.log("Resuming an interrupted priority application.");
@@ -792,7 +801,7 @@ async function main(): Promise<void> {
 
   let comparisons: ComparisonCache = saved?.comparisons ?? {};
   const filterParts: string[] = [];
-  if (args.team) filterParts.push(args.project ? `team ${args.project}` : args.team);
+  if (args.team) filterParts.push(`team ${args.team}`);
   if (args.project) filterParts.push(`project ${args.project}`);
   const sourceLabel = usingLinear
     ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`

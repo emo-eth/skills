@@ -2,7 +2,7 @@
 //
 // Authentication is handled by the `linear` CLI's existing api-key auth, so
 // this module never reads credentials or talks to the API directly — it shells
-// out to `linear api` (read) and `linear issue update` (write).
+// out to `linear api` / `linear issue query` (read) and `linear issue update` (write).
 
 import { spawnSync } from "node:child_process";
 import type { Ticket } from "./prioritize-core.ts";
@@ -60,6 +60,118 @@ export function matchesProject(
   }
   return false;
 }
+export function listProjects(): LinearProject[] {
+  try {
+    const raw = runLinear(["project", "list", "--all-teams", "--json"]);
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed !== null && typeof parsed === "object" && "nodes" in parsed) {
+      const nodes = parsed.nodes;
+      if (Array.isArray(nodes)) {
+        return nodes as LinearProject[];
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export function resolveProjectTarget(target: string): string {
+  const projects = listProjects();
+  const found = projects.find((p) => matchesProject(p, target));
+  if (found?.id) {
+    return found.id;
+  }
+  return target;
+}
+
+function getIssueNodes(payload: unknown): LinearNode[] {
+  if (payload === null || typeof payload !== "object") {
+    return [];
+  }
+  if ("nodes" in payload) {
+    const nodes = payload.nodes;
+    if (Array.isArray(nodes)) {
+      return nodes as LinearNode[];
+    }
+  }
+  if ("data" in payload) {
+    const data = payload.data;
+    if (data !== null && typeof data === "object") {
+      if ("project" in data) {
+        const project = data.project;
+        if (project !== null && typeof project === "object" && "issues" in project) {
+          const issues = project.issues;
+          if (issues !== null && typeof issues === "object" && "nodes" in issues) {
+            const nodes = issues.nodes;
+            if (Array.isArray(nodes)) {
+              return nodes as LinearNode[];
+            }
+          }
+        }
+      }
+      if ("issues" in data) {
+        const issues = data.issues;
+        if (issues !== null && typeof issues === "object" && "nodes" in issues) {
+          const nodes = issues.nodes;
+          if (Array.isArray(nodes)) {
+            return nodes as LinearNode[];
+          }
+        }
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Fetch all open issues in a project across all assignees.
+ * Uses `linear issue query` with active state filters.
+ */
+export async function fetchProjectIssues(options: {
+  project: string;
+  team?: string;
+}): Promise<Ticket[]> {
+  const resolvedTarget = resolveProjectTarget(options.project);
+  const args = ["issue", "query"];
+  if (options.team) {
+    args.push("--team", options.team);
+  } else {
+    args.push("--all-teams");
+  }
+  args.push(
+    "--project",
+    resolvedTarget,
+    "-s",
+    "triage",
+    "-s",
+    "backlog",
+    "-s",
+    "unstarted",
+    "-s",
+    "started",
+    "--limit",
+    "0",
+    "--json",
+  );
+
+  const raw = runLinear(args);
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not parse linear issue query output: ${message}`);
+  }
+
+  const nodes = getIssueNodes(data);
+  const filterTeam = options.team;
+  return nodes
+    .filter((node) => isActionable(node))
+    .filter((node) => !filterTeam || node.team?.key === filterTeam)
+    .map(toTicket);
+}
+
 
 function runLinear(args: string[], input?: string): string {
   const result = spawnSync("linear", args, {
