@@ -2,6 +2,7 @@
 name: decision-wizard
 description: Create a custom executable TypeScript CLI that presents a list one item at a time for binary decisions, saves progress, and applies a confirmed task-specific action. Use for Tinder-style keep/remove, approve/reject, or yes/no review flows over many items.
 argument-hint: "[list to review] [positive and negative decisions]"
+disable-model-invocation: true
 ---
 
 # Decision wizard

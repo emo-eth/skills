@@ -1,6 +1,7 @@
 ---
 name: wizard
 description: Create an executable TypeScript CLI that guides a human through a manual setup, migration, or other one-off procedure, opening URLs, collecting values, writing environment variables, and optionally setting GitHub Actions secrets or variables.
+disable-model-invocation: true
 ---
 
 # Wizard

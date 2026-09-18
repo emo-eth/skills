@@ -1,6 +1,7 @@
 ---
 name: lc-review-capture
 description: Persist what a human review round decided, so the round never has to happen twice. Use immediately after annotations or feedback come back from ANY human review round (Plannotator or otherwise), while applying them, and after applying them — snapshot the raw feedback, produce the numbered answers doc, record decisions to docs/DECISIONS.md, update docs/taste.md, route deferred work, and close with one summary. Triggers on "the annotations came back", retrieved Plannotator output, applying review feedback, or a review round ending — including approval rounds. Never human-invoked; runs every round.
+disable-model-invocation: true
 ---
 
 # Review Capture

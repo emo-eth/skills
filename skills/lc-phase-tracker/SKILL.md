@@ -1,6 +1,7 @@
 ---
 name: lc-phase-tracker
 description: Track progress through multi-step tasks by maintaining a .context/progress.md checklist. Read it before each action, confirm context, and update after completing each phase. Use when a task has 3+ sequential phases, involves multiple accounts/environments, or spans enough work that context could drift.
+disable-model-invocation: true
 ---
 
 # Phase Tracker

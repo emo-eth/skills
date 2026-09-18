@@ -2,6 +2,7 @@
 name: lc-project-state
 description: "Bootstrap and maintain a project's living record so a fresh clean-context agent (Claude, Codex, Cursor — any tool) orients from the repo alone, and read that record back on demand. Owns docs/STATE.md (the map) and docs/readiness.md (how far along each behavior is and how well it's verified — one ladder from deferred through live). Use when context keeps dying across sessions or compactions; when someone asks 'what's current here?', 'what did we just ship', 'what's left for v0', 'what's blocked on me', 'what should I review', 'how far along is X', 'which features actually work', 'where are the gaps', or 'what do we need to deploy so I can test it'; when setting up docs/STATE.md; or for an end-of-session doc sync. Four modes: bootstrap (first run in a repo), sync (cheap end-of-session upkeep), status (read-only briefing, writes nothing), audit (full verification of the readiness record). Invoked bare, it infers the mode."
 argument-hint: "[bootstrap | sync | status | audit] (defaults: bootstrap if no docs/STATE.md, else sync) — answers 'how far along is X', 'which features actually work', 'where are the gaps', 'what do we need to deploy so I can test it'"
+disable-model-invocation: true
 ---
 
 # Project State

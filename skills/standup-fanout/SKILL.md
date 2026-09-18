@@ -2,6 +2,7 @@
 name: standup-fanout
 description: "Fork the daily standup's Today work into isolated Herdr worktrees, assign each worktree specific tickets it aims to close, run one or more coding agents per tree under Herdr orchestration, and integrate only verified results back into the standup and the source of truth. Use when the standup lists three or more tickets that can be worked independently, and the owner wants them done in parallel instead of one after another. Runs after a standup exists."
 argument-hint: "[standup date or file]"
+disable-model-invocation: true
 ---
 
 # Standup Fanout

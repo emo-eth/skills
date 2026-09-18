@@ -2,6 +2,7 @@
 name: wonder
 description: Run a Wondering-style interactive study session — bite-size quiz-embedded tutoring with spaced review, accuracy tracking, and streaks — over a teach workspace or any topic. Use when the user asks to be quizzed, drilled, or tutored, wants a study session or review, or says "wonder about X" / "teach me X interactively".
 argument-hint: "[topic, lesson number, or 'review']"
+disable-model-invocation: true
 ---
 
 Run an interactive study session in chat. This skill is the **session runner**, not the lesson author. It operates over a **teach workspace** — any directory with `MISSION.md` and `lessons/`, optionally `learning-records/`, `GLOSSARY.md`, `reference/`, and `RESOURCES.md` (the layout produced by the `teach` skill, if installed). Wonder reads those artifacts and writes only the review ledger, reference cards, and evidence-grade learning records. It never authors long-form lessons. It also works with no workspace at all — see cold start below.

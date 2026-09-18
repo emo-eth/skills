@@ -108,15 +108,29 @@ Consolidation changes where the existing shared library lives, not which
 skills are installed. Do not import host-specific, bundled, or plugin skill
 libraries into it unless the user explicitly selects those skills.
 
+The shared library is a curated subset, not the whole repo. Current keep-set:
+`herdr`, `lc-north-star`, `lc-project-state`, `lc-review-capture`,
+`lc-ticketize`, `lc-phase-tracker`, `branch-closure`, `standup`,
+`standup-fanout`, `wizard`, `decision-wizard`, `synthesize`, `wonder`,
+`skill-iteration`, `understand`, `do-it-now`, `wrap-it-up`,
+`tell-me-what-to-do`, `papercut`, `system-vibe`, plus Matt Pocock's `teach`.
+Do not install the rest of this repo, Matt's catalog, or host libraries
+unless the user names those skills.
+
 Installed skills are explicit-invocation-only except `herdr`: use
 `disable-model-invocation: true` in `SKILL.md` and
 `policy.allow_implicit_invocation: false` in `agents/openai.yaml`.
 Preserve this policy after updates; third-party updates can restore upstream
 metadata. Keep uninstalled skills out of the active installer lock so updates
-do not resurrect them.
+do not resurrect them. Keep `lastSelectedAgents` set to `["universal"]`.
 
 ```sh
-npx skills add emo-eth/skills --full-depth -g --agent universal
+npx skills add emo-eth/skills --full-depth -g -y --agent universal --skill \
+  herdr lc-north-star lc-project-state lc-review-capture lc-ticketize \
+  lc-phase-tracker branch-closure standup standup-fanout wizard \
+  decision-wizard synthesize wonder skill-iteration understand \
+  do-it-now wrap-it-up tell-me-what-to-do papercut system-vibe
+npx skills add mattpocock/skills -g -y --agent universal --skill teach
 ```
 
 Later, to sync the latest:
@@ -125,13 +139,7 @@ Later, to sync the latest:
 npx skills update
 ```
 
-Note: `update` only refreshes skills already installed on that machine. Skills **newly added** to this repo are not pulled by `update` — install them explicitly (or re-run `add` interactively and pick them):
-
-```sh
-npx skills add emo-eth/skills --full-depth --skill <name> [<name>...] -g -y \
-  --agent universal
-```
-
-Keep `lastSelectedAgents` in `~/.agents/.skill-lock.json` set to `["universal"]`.
-
-To install **every** skill in the repo, use `--full-depth` plus the undocumented wildcard — quoted, so zsh doesn't glob it: `--skill '*'`. (The interactive picker has no select-all; that's an upstream gap, [vercel-labs/skills#439](https://github.com/vercel-labs/skills/issues/439).)
+`update` only refreshes skills already in the lock. Skills newly added to this
+repo are not pulled by `update` — install them with `--skill <name>` as above.
+Do not run `npx skills add emo-eth/skills --full-depth` without `--skill`,
+and do not use `--skill '*'` unless the user explicitly wants the whole catalog.
