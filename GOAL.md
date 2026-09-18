@@ -12,7 +12,7 @@ Allow operator and automation to rank Linear tickets scoped to a specific projec
 
 ## Vibe
 
-Naming a project should feel like looking at that project's work, not at your assigned pile. Every open ticket in the project is present: unassigned, already Urgent, someone else's, yours. Missing any of those is a failure. Ranking is still your comparisons. Writing Linear is still a deliberate apply, never a surprise.
+Naming a project should feel like looking at that project's work, not at your assigned pile. Missing tickets because they were unassigned or already Urgent is a failure. Ranking is still your comparisons. Writing Linear is still a deliberate apply, never a surprise.
 
 ## Done-when
 
