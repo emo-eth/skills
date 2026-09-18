@@ -46,6 +46,7 @@ type Arguments = {
   team: string | undefined;
   project: string | undefined;
   bin: boolean;
+  rebin: boolean;
   dryRun: boolean;
   reset: boolean;
   help: boolean;
@@ -106,6 +107,7 @@ function parseArguments(args: string[]): Arguments {
     team: undefined,
     project: undefined,
     bin: false,
+    rebin: false,
     dryRun: false,
     reset: false,
     help: false,
@@ -168,6 +170,11 @@ function parseArguments(args: string[]): Arguments {
       options.bin = true;
       continue;
     }
+    if (arg === "--rebin") {
+      options.bin = true;
+      options.rebin = true;
+      continue;
+    }
     if (arg === "--dry-run") {
       options.dryRun = true;
       continue;
@@ -201,6 +208,8 @@ Options:
       --bin                 triage your no-priority tickets into Urgent/High/
                             Medium/Low by binary-searching the tiers
                             (~2 comparisons each); moves them out of no-priority
+      --rebin               like --bin, but include tickets that already have a
+                            priority so you can bucket the whole set again
       --dry-run             rank and show the plan but do NOT write to Linear
   -i, --input <path|->      instead of Linear, rank a local JSON file ('-' = stdin)
   -o, --output <path>       also write the resulting top-k JSON here
@@ -609,11 +618,13 @@ async function runBin(args: Arguments): Promise<void> {
         ? await fetchProjectIssues({ project: args.project, team: args.team })
         : await fetchAssignedNotCompleted({ team: args.team }))
     : await loadTickets(args.input);
-  // Triage target: tickets that have no priority yet. The point is to pull
-  // them out of the no-priority pool into one of the 4 meaningful tiers.
-  const tickets = rawTickets.filter(
-    (t) => t.priority === undefined || t.priority === null || Number(t.priority) === 0,
-  );
+  // --bin: only tickets with no priority. --rebin: every fetched ticket,
+  // including ones already in Urgent/High/Medium/Low.
+  const tickets = args.rebin
+    ? rawTickets
+    : rawTickets.filter(
+        (t) => t.priority === undefined || t.priority === null || Number(t.priority) === 0,
+      );
   if (args.reset) await removeState(stateFile);
 
   const snapshot = snapshotFor(tickets, args.top);
@@ -646,7 +657,9 @@ async function runBin(args: Arguments): Promise<void> {
   const sourceLabel = usingLinear
     ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`
     : `file ${args.input}`;
-  console.log(`Binning ${tickets.length} ticket(s). Source: ${sourceLabel}.`);
+  console.log(
+    `${args.rebin ? "Re-binning" : "Binning"} ${tickets.length} ticket(s). Source: ${sourceLabel}.`,
+  );
   if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
   await writeBinState(stateFile, snapshot, tiers);
 
