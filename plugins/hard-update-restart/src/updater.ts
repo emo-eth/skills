@@ -63,14 +63,17 @@ async function main(): Promise<void> {
       console.log("");
     }
     console.log("1. Drain and capture recoverable agent sessions.");
-    console.log("2. Restart Herdr server(s) without updating runtimes, extensions, or plugins.");
-    console.log("3. Reconnect agent sessions into fresh processes with current configs reloaded.");
+    console.log("2. Stop the Herdr server (every pane dies; the TUI client exits with it).");
+    console.log("3. Start a replacement Herdr server with current configs loaded.");
+    console.log("4. Open a new terminal window attached as the Herdr client.");
+    console.log("5. Reconnect agent sessions into fresh processes.");
     console.log("");
     console.log("This stops EVERY pane process in selected session(s), including shells and dev servers.");
     console.log("Non-agent processes return as fresh shells, not running commands.");
     console.log("Working, blocked, and unknown agents must settle first.");
     console.log("An agent without a recoverable native session prevents shutdown.");
-    console.log(`If the client does not reconnect automatically, run: ${reattach}`);
+    console.log(`Custom herdr binaries are left untouched (no herdr update in this mode).`);
+    console.log(`If a new client window does not open, run: ${reattach}`);
     console.log("");
   } else {
     console.log("Update everything and hard-restart");
@@ -86,9 +89,11 @@ async function main(): Promise<void> {
       }
       console.log("");
     }
-    console.log("1. Update Herdr, OMP, and Pi runtimes.");
-    console.log("2. Update OMP plugins, Pi extensions, and tracked GitHub Herdr plugins.");
-    console.log("3. Restart Herdr session(s) and verify saved conversations return.");
+    console.log("1. Update OMP, Pi, and tracked plugins. Skip herdr update for custom builds.");
+    console.log("2. Drain agents, stop the Herdr server (TUI client exits with it), start a replacement.");
+    console.log("3. Open a new terminal window attached as the Herdr client.");
+    console.log("4. Reconnect agent sessions into fresh processes.");
+    console.log("Custom herdr binaries (unofficial version, cargo target, symlink, or .herdr-skip-update) are never overwritten.");
     console.log("Pinned and locally linked Herdr plugins stay untouched.");
     console.log("Configs already on disk are loaded by the new processes; configs are not replaced.");
     console.log("");
@@ -96,7 +101,7 @@ async function main(): Promise<void> {
     console.log("Non-agent processes return as fresh shells, not running commands.");
     console.log("Working, blocked, and unknown agents must settle first.");
     console.log("An agent without a recoverable native session prevents shutdown.");
-    console.log(`If the client does not reconnect automatically, run: ${reattach}`);
+    console.log(`If a new client window does not open, run: ${reattach}`);
     console.log("");
   }
 

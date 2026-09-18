@@ -10,6 +10,7 @@ import {
   runFleetRestartPipeline,
   runHardRestartPipeline,
   saveAgentsSnapshot,
+  spawnDetachedClient,
   spawnDetachedServer,
   writeStatusAtomic,
   type CommandRunner,
@@ -103,6 +104,21 @@ try {
       run: runCommand as CommandRunner,
       delay,
       updatePlugins,
+      startClient: async (target) => {
+        if (target.kind === "remote") {
+          return;
+        }
+        await spawnDetachedClient(
+          herdrBinary,
+          {
+            session: target.session,
+            socket: target.socket ?? "",
+            kind: "local",
+            label: target.label,
+          },
+          process.env,
+        );
+      },
       now: () => Date.now(),
     });
   } else {
@@ -118,6 +134,9 @@ try {
       delay,
       startServer: async () => {
         await spawnDetachedServer(herdrBinary, request!.target, process.env);
+      },
+      startClient: async () => {
+        await spawnDetachedClient(herdrBinary, request!.target, process.env);
       },
       updatePlugins,
       now: () => Date.now(),

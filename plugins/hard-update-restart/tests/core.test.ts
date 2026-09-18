@@ -14,6 +14,10 @@ import {
   runHardRestartPipeline,
   shellEscape,
   shouldSkipHerdrUpdate,
+  isOfficialHerdrReleaseVersion,
+  parseHerdrVersionOutput,
+  isCargoTargetHerdrPath,
+  planClientLaunch,
   type CommandRunner,
   type FleetTarget,
   type HardRestartDependencies,
@@ -30,6 +34,7 @@ const root = process.env.RESTART_TEST_ROOT;
 const path = root + '/server.json';
 const state = JSON.parse(readFileSync(path, 'utf8'));
 const args = process.argv.slice(2);
+if (args[0] === '--version') { console.log('herdr 0.9.0'); process.exit(0); }
 if (args.shift() !== '--session' || args.shift() !== 'proof' || process.env.HERDR_SOCKET_PATH !== root + '/proof.sock') process.exit(93);
 const command = args.join(' ');
 const save = () => writeFileSync(path, JSON.stringify(state));
@@ -94,7 +99,7 @@ async function runWorker(scenario: string) {
       herdrBinary: join(root, "herdr"), cwd: root, activeLockPath,
     }));
     const child = spawn(process.execPath, ["--experimental-strip-types", helper, jobDir], {
-      env: { ...process.env, PATH: `${root}${process.platform === "win32" ? ";" : ":"}${process.env.PATH}`, HERDR_ENV: "1", HERDR_SOCKET_PATH: "/wrong.sock", HERDR_SESSION: "wrong", RESTART_TEST_ROOT: root, RESTART_TEST_SCENARIO: scenario },
+      env: { ...process.env, PATH: `${root}${process.platform === "win32" ? ";" : ":"}${process.env.PATH}`, HERDR_ENV: "1", HERDR_SOCKET_PATH: "/wrong.sock", HERDR_SESSION: "wrong", HERDR_SKIP_CLIENT_LAUNCH: "1", RESTART_TEST_ROOT: root, RESTART_TEST_SCENARIO: scenario },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";
@@ -303,13 +308,40 @@ test("runFleetRestartPipeline coordinates multiple targets and aggregates comple
   assert.equal(statuses.some((s) => s.message.includes("[spark0]")), true);
 });
 
+test("official herdr versions are stable or preview; custom suffixes are not", () => {
+  assert.equal(isOfficialHerdrReleaseVersion("0.9.0"), true);
+  assert.equal(isOfficialHerdrReleaseVersion("0.9.0-preview"), true);
+  assert.equal(isOfficialHerdrReleaseVersion("0.9.0-preview.abc123"), true);
+  assert.equal(isOfficialHerdrReleaseVersion("0.9.0-bandwidth-fix"), false);
+  assert.equal(parseHerdrVersionOutput("herdr 0.9.0-bandwidth-fix\n"), "0.9.0-bandwidth-fix");
+  assert.equal(isCargoTargetHerdrPath("/Users/emo/dev/herdr/target/release/herdr"), true);
+  assert.equal(isCargoTargetHerdrPath("/Users/emo/.local/bin/herdr"), false);
+});
+
+test("planClientLaunch prefers Ghostty on macOS", () => {
+  const plan = planClientLaunch({
+    platform: "darwin",
+    herdrBinary: "/Users/emo/.local/bin/herdr",
+    attachArgs: ["--session", "proof"],
+    appExists: (path) => path === "/Applications/Ghostty.app",
+  });
+  assert.ok(plan);
+  assert.equal(plan.command, "open");
+  assert.deepEqual(plan.args.slice(0, 5), ["-na", "Ghostty.app", "--args", "-e", "/bin/zsh"]);
+  assert.match(plan.args.at(-1)!, /exec \/Users\/emo\/.local\/bin\/herdr --session proof/);
+});
+
 test("shouldSkipHerdrUpdate honors env var and remote symlink check", async () => {
   const baseRequest = {
     target: { session: "default", socket: "/tmp/sock" },
     herdrBinary: "herdr",
     cwd: "/tmp",
   };
-  const dummyDeps = (isRemote: boolean, isSymlink: boolean): HardRestartDependencies => ({
+  const dummyDeps = (
+    isRemote: boolean,
+    isSymlink: boolean,
+    version = "herdr 0.9.0\n",
+  ): HardRestartDependencies => ({
     request: {
       ...baseRequest,
       target: { ...baseRequest.target, kind: isRemote ? "remote" : "local" },
@@ -322,6 +354,9 @@ test("shouldSkipHerdrUpdate honors env var and remote symlink check", async () =
       if (args.join(" ").includes("test -L")) {
         return { status: isSymlink ? 0 : 1, stdout: "", stderr: "" };
       }
+      if (args.includes("--version")) {
+        return { status: 0, stdout: version, stderr: "" };
+      }
       return { status: 0, stdout: "", stderr: "" };
     },
     delay: async () => {},
@@ -330,25 +365,43 @@ test("shouldSkipHerdrUpdate honors env var and remote symlink check", async () =
     now: () => 1000,
   });
 
-  // Env var override
   const envCheck = await shouldSkipHerdrUpdate(dummyDeps(false, false), {
     HERDR_SKIP_SELF_UPDATE: "1",
   });
   assert.equal(envCheck.skip, true);
 
-  // Remote symlink detected
   const remoteSymlinkCheck = await shouldSkipHerdrUpdate(dummyDeps(true, true), {});
   assert.equal(remoteSymlinkCheck.skip, true);
   assert.match(remoteSymlinkCheck.reason!, /symlink/);
 
-  // Remote regular binary not skipped
   const remoteRegularCheck = await shouldSkipHerdrUpdate(dummyDeps(true, false), {});
   assert.equal(remoteRegularCheck.skip, false);
+
+  const customVersion = await shouldSkipHerdrUpdate(
+    dummyDeps(false, false, "herdr 0.9.0-bandwidth-fix\n"),
+    {},
+  );
+  assert.equal(customVersion.skip, true);
+  assert.match(customVersion.reason!, /0\.9\.0-bandwidth-fix/);
+
+  const cargoBuild = await shouldSkipHerdrUpdate(
+    {
+      ...dummyDeps(false, false),
+      request: {
+        ...baseRequest,
+        herdrBinary: "/tmp/herdr/target/release/herdr",
+      },
+    },
+    {},
+  );
+  assert.equal(cargoBuild.skip, true);
+  assert.match(cargoBuild.reason!, /cargo target/);
 });
 
 test("runHardRestartPipeline with skipUpdates: true restarts server and restores agents without running updates", async () => {
   const commandsRun: string[] = [];
   let pluginsUpdated = false;
+  let clientStarted = false;
   let isServerRunning = true;
 
   const mockRunner: CommandRunner = async (cmd, args) => {
@@ -394,6 +447,9 @@ test("runHardRestartPipeline with skipUpdates: true restarts server and restores
     startServer: async () => {
       isServerRunning = true;
     },
+    startClient: async () => {
+      clientStarted = true;
+    },
     updatePlugins: async () => {
       pluginsUpdated = true;
     },
@@ -406,6 +462,77 @@ test("runHardRestartPipeline with skipUpdates: true restarts server and restores
   assert.equal(status.phase, "complete");
   assert.match(status.message, /updates skipped/);
   assert.equal(pluginsUpdated, false);
+  assert.equal(clientStarted, true);
   assert.equal(commandsRun.some((c) => c.includes("update")), false);
   assert.equal(commandsRun.some((c) => c.includes("server stop")), true);
+});
+
+test("custom herdr version skips herdr update but still restarts server and client", async () => {
+  const commandsRun: string[] = [];
+  let clientStarted = false;
+  let isServerRunning = true;
+
+  const mockRunner: CommandRunner = async (cmd, args) => {
+    const full = `${cmd} ${args.join(" ")}`;
+    commandsRun.push(full);
+    if (args.includes("--version")) {
+      return { status: 0, stdout: "herdr 0.9.0-bandwidth-fix\n", stderr: "" };
+    }
+    if (full.includes("server stop")) {
+      isServerRunning = false;
+      return { status: 0, stdout: "ok\n", stderr: "" };
+    }
+    if (full.includes("status server --json")) {
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          status: isServerRunning ? "running" : "not_running",
+          running: isServerRunning,
+          session: "default",
+          socket: "/tmp/sock",
+          capabilities: { detached_server_daemon: true, endpoint_protocol_generation: 1 },
+        }),
+        stderr: "",
+      };
+    }
+    if (full.includes("agent list")) {
+      return { status: 0, stdout: list([agent]), stderr: "" };
+    }
+    return { status: 0, stdout: "ok\n", stderr: "" };
+  };
+
+  let time = 1000;
+  const status = await runHardRestartPipeline({
+    request: {
+      target: { session: "default", socket: "/tmp/sock" },
+      herdrBinary: "herdr",
+      cwd: "/tmp",
+    },
+    jobDir: "/tmp",
+    publishStatus: () => {},
+    log: () => {},
+    saveAgents: () => {},
+    run: mockRunner,
+    delay: async () => {},
+    startServer: async () => {
+      isServerRunning = true;
+    },
+    startClient: async () => {
+      clientStarted = true;
+    },
+    updatePlugins: async () => {},
+    now: () => {
+      time += 10;
+      return time;
+    },
+  });
+
+  assert.equal(status.phase, "complete");
+  assert.equal(clientStarted, true);
+  assert.equal(commandsRun.some((c) => c.includes("server stop")), true);
+  assert.equal(commandsRun.some((c) => c.includes("--version")), true);
+  assert.equal(
+    commandsRun.some((c) => c.includes("update") && !c.includes("omp") && !c.includes("pi")),
+    false,
+  );
 });

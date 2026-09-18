@@ -98,6 +98,7 @@ export type HardRestartDependencies = {
   run: CommandRunner;
   delay: (milliseconds: number) => Promise<void>;
   startServer: () => Promise<void>;
+  startClient?: () => Promise<void>;
   updatePlugins: (
     run: (
       executable: string,
@@ -119,6 +120,7 @@ export type FleetRestartDependencies = {
   run: CommandRunner;
   delay: (milliseconds: number) => Promise<void>;
   startServer?: (target: FleetTarget) => Promise<void>;
+  startClient?: (target: FleetTarget) => Promise<void>;
   updatePlugins: HardRestartDependencies["updatePlugins"];
   now: () => number;
 };
@@ -924,6 +926,46 @@ export function releaseActiveLock(request: WorkerRequest, jobDir: string): void 
   rmSync(activeLockPath, { recursive: true, force: true });
 }
 
+const OFFICIAL_HERDR_VERSION =
+  /^(?:v)?\d+\.\d+\.\d+(?:-preview(?:\.[A-Za-z0-9._-]+)?)?$/i;
+
+export function parseHerdrVersionOutput(raw: string): string | undefined {
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const match = trimmed.match(/(?:^herdr\s+)?(v?\d+\.\d+\.\d+\S*)/i);
+    if (match?.[1]) {
+      return match[1].replace(/^v/i, "");
+    }
+  }
+  return undefined;
+}
+
+export function isOfficialHerdrReleaseVersion(version: string): boolean {
+  return OFFICIAL_HERDR_VERSION.test(version.replace(/^v/i, ""));
+}
+
+export function isCargoTargetHerdrPath(path: string): boolean {
+  return /(?:^|\/)target\/(?:release|debug)\/herdr(?:\.exe)?$/i.test(path.replaceAll("\\", "/"));
+}
+
+function skipUpdateMarkerBeside(herdrBinary: string): boolean {
+  const candidate =
+    herdrBinary.includes("/") || herdrBinary.includes("\\")
+      ? herdrBinary
+      : resolveHerdrBinary(herdrBinary);
+  if (candidate === "herdr") {
+    return false;
+  }
+  try {
+    return existsSync(join(dirname(candidate), ".herdr-skip-update"));
+  } catch {
+    return false;
+  }
+}
+
 export function isHerdrBinarySymlink(herdrBinary: string): boolean {
   try {
     const resolved = resolveHerdrBinary(herdrBinary);
@@ -931,6 +973,29 @@ export function isHerdrBinarySymlink(herdrBinary: string): boolean {
   } catch {
     return false;
   }
+}
+
+async function herdrVersionSkipReason(
+  deps: HardRestartDependencies,
+  updateEnv: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  try {
+    const result = await deps.run(deps.request.herdrBinary, ["--version"], {
+      env: updateEnv,
+      cwd: deps.request.cwd,
+      timeoutMs: 10_000,
+    });
+    if (result.status !== 0) {
+      return undefined;
+    }
+    const version = parseHerdrVersionOutput(result.stdout);
+    if (version && !isOfficialHerdrReleaseVersion(version)) {
+      return `herdr version is custom (${version})`;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
 }
 
 export async function shouldSkipHerdrUpdate(
@@ -944,23 +1009,36 @@ export async function shouldSkipHerdrUpdate(
   ) {
     return { skip: true, reason: "HERDR_SKIP_SELF_UPDATE or skipHerdrUpdate requested" };
   }
+  if (isCargoTargetHerdrPath(deps.request.herdrBinary)) {
+    return { skip: true, reason: "herdr binary is a cargo target build" };
+  }
+  if (skipUpdateMarkerBeside(deps.request.herdrBinary)) {
+    return { skip: true, reason: "found .herdr-skip-update marker beside herdr binary" };
+  }
   if (deps.request.target.kind === "remote") {
     try {
-      const res = await deps.run("sh", ["-c", 'test -L "$(which herdr 2>/dev/null || echo /dev/null)"'], {
-        env: updateEnv,
-        cwd: deps.request.cwd,
-        timeoutMs: 10_000,
-      });
+      const res = await deps.run(
+        "sh",
+        ["-c", 'test -L "$(command -v herdr 2>/dev/null || echo /dev/null)"'],
+        {
+          env: updateEnv,
+          cwd: deps.request.cwd,
+          timeoutMs: 10_000,
+        },
+      );
       if (res.status === 0) {
         return { skip: true, reason: "remote herdr binary is a symlink/custom build" };
       }
     } catch {
       // ignore
     }
-  } else {
-    if (isHerdrBinarySymlink(deps.request.herdrBinary)) {
-      return { skip: true, reason: "local herdr binary is a symlink/custom build" };
-    }
+  } else if (isHerdrBinarySymlink(deps.request.herdrBinary)) {
+    return { skip: true, reason: "local herdr binary is a symlink/custom build" };
+  }
+  const versionReason = await herdrVersionSkipReason(deps, updateEnv);
+  if (versionReason) {
+    const scope = deps.request.target.kind === "remote" ? "remote" : "local";
+    return { skip: true, reason: `${scope} ${versionReason}` };
   }
   return { skip: false };
 }
@@ -1069,6 +1147,23 @@ export async function runHardRestartPipeline(
       };
       deps.publishStatus(status);
       return status;
+    }
+  }
+
+  if (deps.startClient && deps.request.target.kind !== "remote") {
+    deps.publishStatus({
+      phase: "starting-client",
+      message: "Opening a replacement Herdr client",
+    });
+    try {
+      await deps.startClient();
+      deps.log("Replacement Herdr client launched");
+    } catch (error: unknown) {
+      const reattach = deps.request.target.session
+        ? `herdr --session ${deps.request.target.session}`
+        : "herdr";
+      const message = error instanceof Error ? error.message : String(error);
+      deps.log(`Client relaunch failed: ${message}. Reattach with: ${reattach}`);
     }
   }
 
@@ -1215,6 +1310,10 @@ export async function runFleetRestartPipeline(
       run: runner,
       delay: deps.delay,
       startServer,
+      startClient:
+        target.kind !== "remote" && deps.startClient
+          ? () => deps.startClient!(target)
+          : undefined,
       updatePlugins: deps.updatePlugins,
       now: deps.now,
     };
@@ -1278,4 +1377,71 @@ export function spawnDetachedServer(
   return promise.then(() => {
     server.unref();
   });
+}
+
+export type ClientLaunchPlan = {
+  command: string;
+  args: string[];
+};
+
+export function planClientLaunch(input: {
+  platform: NodeJS.Platform;
+  herdrBinary: string;
+  attachArgs: string[];
+  appExists?: (appPath: string) => boolean;
+}): ClientLaunchPlan | undefined {
+  const exists = input.appExists ?? ((path: string) => existsSync(path));
+  const commandLine = [input.herdrBinary, ...input.attachArgs];
+  const script = `exec ${commandLine.map(shellEscape).join(" ")}`;
+  if (input.platform === "darwin") {
+    if (exists("/Applications/Ghostty.app")) {
+      return {
+        command: "open",
+        args: ["-na", "Ghostty.app", "--args", "-e", "/bin/zsh", "-lc", script],
+      };
+    }
+    if (exists("/Applications/WezTerm.app")) {
+      return {
+        command: "/Applications/WezTerm.app/Contents/MacOS/wezterm",
+        args: ["start", "--", ...commandLine],
+      };
+    }
+    if (exists("/Applications/Alacritty.app")) {
+      return {
+        command: "open",
+        args: ["-na", "Alacritty.app", "--args", "-e", "/bin/zsh", "-lc", script],
+      };
+    }
+  }
+  return undefined;
+}
+
+export async function spawnDetachedClient(
+  herdrBinary: string,
+  target: RestartTarget,
+  baseEnv: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (baseEnv.HERDR_SKIP_CLIENT_LAUNCH === "1" || process.env.HERDR_SKIP_CLIENT_LAUNCH === "1") {
+    return;
+  }
+  const attachArgs = target.session ? ["--session", target.session] : [];
+  const plan = planClientLaunch({
+    platform: process.platform,
+    herdrBinary,
+    attachArgs,
+  });
+  if (!plan) {
+    const reattach = target.session ? `herdr --session ${target.session}` : "herdr";
+    throw new Error(`No GUI terminal available to relaunch the Herdr client. Run: ${reattach}`);
+  }
+  const client = spawn(plan.command, plan.args, {
+    detached: true,
+    env: targetEnvironment(baseEnv, target),
+    stdio: "ignore",
+  });
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
+  client.once("error", reject);
+  client.once("spawn", resolve);
+  await promise;
+  client.unref();
 }
