@@ -16,9 +16,9 @@ Targeted attention over whole-backlog noise. Filter before ranking, preserve app
 
 ## Done-when
 
-1. `tools/linear-client.ts` GraphQL fetches project { id name } and allows filtering by project name, UUID, or slug ID.
-2. `tools/prioritize-linear-tickets.ts` supports `--project <name|uuid|slug>`, combinable with `--team`.
-3. CLI `--help` includes `--project` usage.
+1. `tools/linear-client.ts` fetches all open project issues across all assignees when `--project` is specified via `fetchProjectIssues`, supporting project name, UUID, or slug ID.
+2. `tools/prioritize-linear-tickets.ts` supports `--project <name|uuid|slug>` (all assignees, not assigned-to-me), combinable with `--team`.
+3. CLI `--help` includes updated `--project` usage specifying all assignees, not assigned-to-me.
 4. APPLY mode writes back updated priorities/ranks correctly to Linear.
 5. Unit tests for linear-client and prioritize-linear-tickets project filtering pass.
 6. Ready PR created and shipped/merged to origin/main.

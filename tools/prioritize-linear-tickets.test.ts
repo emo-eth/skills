@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { fetchAssignedNotCompleted, matchesProject } from "./linear-client.ts";
+import {
+  fetchAssignedNotCompleted,
+  fetchProjectIssues,
+  matchesProject,
+} from "./linear-client.ts";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
 const cli = join(toolsDir, "prioritize-linear-tickets.ts");
@@ -85,7 +89,7 @@ if [ "$1" = "api" ]; then
       data: {
         viewer: {
           assignedIssues: {
-            nodes: db.tickets.map((t) => ({
+            nodes: db.tickets.filter((t) => t.assignedToMe !== false).map((t) => ({
               id: t.id,
               identifier: t.id,
               title: t.title,
@@ -101,7 +105,62 @@ if [ "$1" = "api" ]; then
     process.stdout.write(JSON.stringify(payload));
   '
 fi
-if [ "$1" = "issue" ]; then
+if [ "$1" = "project" ] && [ "$2" = "list" ]; then
+  exec node -e '
+    const fs = require("fs");
+    const db = JSON.parse(fs.readFileSync(process.env.LINEAR_FAKE_STATE, "utf8"));
+    const projects = [];
+    const seen = new Set();
+    for (const t of db.tickets) {
+      if (t.project && t.project.id && !seen.has(t.project.id)) {
+        seen.add(t.project.id);
+        projects.push(t.project);
+      }
+    }
+    process.stdout.write(JSON.stringify({ nodes: projects }));
+  '
+fi
+if [ "$1" = "issue" ] && [ "$2" = "query" ]; then
+  exec node -e '
+    const fs = require("fs");
+    const db = JSON.parse(fs.readFileSync(process.env.LINEAR_FAKE_STATE, "utf8"));
+    const args = process.argv.slice(1);
+    let projectTarget;
+    let teamTarget;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === "--project") projectTarget = args[++i];
+      if (args[i] === "--team") teamTarget = args[++i];
+    }
+    function matches(p, target) {
+      if (!p || !target) return false;
+      const norm = target.trim().toLowerCase();
+      if (typeof p === "string") return p.trim().toLowerCase() === norm;
+      if (p.name && p.name.trim().toLowerCase() === norm) return true;
+      if (p.id && p.id.trim().toLowerCase() === norm) return true;
+      if (p.slugId && p.slugId.trim().toLowerCase() === norm) return true;
+      if (p.name) {
+        const slug = p.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (slug === norm) return true;
+      }
+      return false;
+    }
+    const nodes = db.tickets.filter((t) => {
+      if (projectTarget && !matches(t.project, projectTarget)) return false;
+      if (teamTarget && (t.teamKey ?? "NAT") !== teamTarget) return false;
+      return true;
+    }).map((t) => ({
+      id: t.id,
+      identifier: t.id,
+      title: t.title,
+      priority: t.priority,
+      state: { name: "Todo", type: "triage" },
+      team: { key: t.teamKey ?? "NAT" },
+      project: t.project ?? null,
+    }));
+    process.stdout.write(JSON.stringify({ nodes }));
+  ' "$@"
+fi
+if [ "$1" = "issue" ] && [ "$2" = "update" ]; then
   id="$3"
   priority="$5"
   echo "update $id priority $priority" >> "$LOG"
@@ -118,7 +177,6 @@ if [ "$1" = "issue" ]; then
   ' "$id" "$priority"
   exit 0
 fi
-exit 1
 `,
     { mode: 0o755 },
   );
@@ -131,6 +189,7 @@ type FakeDb = {
     priority?: number;
     teamKey?: string;
     project?: { id?: string; name?: string; slugId?: string } | null;
+    assignedToMe?: boolean;
   }>;
 };
 
@@ -372,7 +431,9 @@ test("prioritize-linear-tickets CLI displays --project in help", async () => {
       timeoutMs: 15000,
     });
     assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
-    assert.match(result.stdout, /--project\s+<target>\s+only rank issues in this project/);
+    assert.match(result.stdout, /--project\s+<target>\s+rank all open issues in this project/);
+    assert.match(result.stdout, /all assignees/);
+    assert.match(result.stdout, /not assigned-to-me/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -480,6 +541,166 @@ test("prioritize-linear-tickets CLI detects project mismatch on checkpoint resum
       result.stderr,
       /saved application checkpoint used project Alpha but this run uses Beta/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("fetchProjectIssues fetches all open issues in a project across all assignees", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "Assigned to viewer in Creatordex",
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+        assignedToMe: true,
+      },
+      {
+        id: "EMO-2",
+        title: "Assigned to someone else in Creatordex",
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+        assignedToMe: false,
+      },
+      {
+        id: "EMO-3",
+        title: "Unassigned in Creatordex",
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+        assignedToMe: false,
+      },
+      {
+        id: "EMO-4",
+        title: "Ticket in different project",
+        teamKey: "EMO",
+        project: { id: "uuid-2", name: "Japan Trip 2026", slugId: "slug-2" },
+        assignedToMe: true,
+      },
+    ],
+  });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${join(root, "bin")}:${previousPath ?? ""}`;
+  process.env.LINEAR_FAKE_STATE = join(root, "db.json");
+  try {
+    const assignedOnly = await fetchAssignedNotCompleted({ project: "Creatordex" });
+    assert.deepEqual(assignedOnly.map((t) => t.id), ["EMO-1"]);
+
+    const allProjectIssues = await fetchProjectIssues({ project: "Creatordex" });
+    assert.deepEqual(allProjectIssues.map((t) => t.id), ["EMO-1", "EMO-2", "EMO-3"]);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    delete process.env.LINEAR_FAKE_STATE;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("fetchProjectIssues resolves project by name, UUID, slugId, and slugified name and combines with team", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "EMO Creatordex ticket",
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+      {
+        id: "NAT-1",
+        title: "NAT Creatordex ticket",
+        teamKey: "NAT",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+      {
+        id: "EMO-2",
+        title: "EMO Japan Trip ticket",
+        teamKey: "EMO",
+        project: { id: "uuid-2", name: "Japan Trip 2026", slugId: "slug-2" },
+      },
+    ],
+  });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${join(root, "bin")}:${previousPath ?? ""}`;
+  process.env.LINEAR_FAKE_STATE = join(root, "db.json");
+  try {
+    const byName = await fetchProjectIssues({ project: "Creatordex" });
+    assert.deepEqual(byName.map((t) => t.id), ["EMO-1", "NAT-1"]);
+
+    const byCaseInsensitive = await fetchProjectIssues({ project: "creatordex" });
+    assert.deepEqual(byCaseInsensitive.map((t) => t.id), ["EMO-1", "NAT-1"]);
+
+    const byUuid = await fetchProjectIssues({ project: "uuid-2" });
+    assert.deepEqual(byUuid.map((t) => t.id), ["EMO-2"]);
+
+    const bySlug = await fetchProjectIssues({ project: "slug-1" });
+    assert.deepEqual(bySlug.map((t) => t.id), ["EMO-1", "NAT-1"]);
+
+    const bySlugified = await fetchProjectIssues({ project: "japan-trip-2026" });
+    assert.deepEqual(bySlugified.map((t) => t.id), ["EMO-2"]);
+
+    const combined = await fetchProjectIssues({ team: "EMO", project: "Creatordex" });
+    assert.deepEqual(combined.map((t) => t.id), ["EMO-1"]);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    delete process.env.LINEAR_FAKE_STATE;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI --project ranks all open project issues across all assignees", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-10",
+        title: "Assigned ticket in Alpha",
+        priority: 0,
+        teamKey: "EMO",
+        project: { id: "alpha-uuid", name: "Alpha", slugId: "alpha-slug" },
+        assignedToMe: true,
+      },
+      {
+        id: "EMO-20",
+        title: "Unassigned ticket in Alpha",
+        priority: 0,
+        teamKey: "EMO",
+        project: { id: "alpha-uuid", name: "Alpha", slugId: "alpha-slug" },
+        assignedToMe: false,
+      },
+      {
+        id: "EMO-30",
+        title: "Ticket in Beta",
+        priority: 0,
+        teamKey: "EMO",
+        project: { id: "beta-uuid", name: "Beta", slugId: "beta-slug" },
+        assignedToMe: true,
+      },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const result = await runCli(
+      ["--bin", "--team", "EMO", "--project", "Alpha", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "y\ny\ny\ny\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.signal, null, `killed: ${result.stderr}`);
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    const calls = await readLog(root);
+    assert.deepEqual(calls, ["update EMO-10 priority 1", "update EMO-20 priority 1"]);
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as {
+      tickets: Array<{ id: string; priority: number }>;
+    };
+    const alpha1 = db.tickets.find((t) => t.id === "EMO-10");
+    const alpha2 = db.tickets.find((t) => t.id === "EMO-20");
+    const beta = db.tickets.find((t) => t.id === "EMO-30");
+    assert.equal(alpha1?.priority, 1);
+    assert.equal(alpha2?.priority, 1);
+    assert.equal(beta?.priority, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
