@@ -756,3 +756,86 @@ test("prioritize-linear-tickets CLI --project includes already-Urgent tickets", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("prioritize-linear-tickets CLI --bin skips already-prioritized tickets", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "Already Urgent",
+        priority: 1,
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+      {
+        id: "EMO-2",
+        title: "Already High",
+        priority: 2,
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["--bin", "--project", "Creatordex", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.signal, null, `killed: ${result.stderr}`);
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /Binning 0 ticket\(s\)/);
+    assert.deepEqual(await readLog(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI --rebin includes already-prioritized tickets", async () => {
+  const root = await createRoot({
+    tickets: [
+      {
+        id: "EMO-1",
+        title: "Already Urgent",
+        priority: 1,
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+      {
+        id: "EMO-2",
+        title: "Already High",
+        priority: 2,
+        teamKey: "EMO",
+        project: { id: "uuid-1", name: "Creatordex", slugId: "slug-1" },
+      },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const result = await runCli(
+      ["--rebin", "--project", "Creatordex", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "y\nn\ny\nn\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.signal, null, `killed: ${result.stderr}`);
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /Re-binning 2 ticket\(s\)/);
+    const calls = await readLog(root);
+    assert.deepEqual(calls, ["update EMO-1 priority 2"]);
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as {
+      tickets: Array<{ id: string; priority: number }>;
+    };
+    assert.equal(db.tickets.find((t) => t.id === "EMO-1")?.priority, 2);
+    assert.equal(db.tickets.find((t) => t.id === "EMO-2")?.priority, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
