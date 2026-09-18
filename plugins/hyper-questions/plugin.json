@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hyper-questions",
+  "version": "0.1.0",
+  "description": "Interactive question runner for Pi and OMP with incremental state saving, pause/resume, and backtracking.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": [
+    "pi-package",
+    "omp-package",
+    "questions",
+    "interview",
+    "wizard",
+    "tui",
+    "state"
+  ]
+}
