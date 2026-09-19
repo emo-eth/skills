@@ -1,82 +1,89 @@
 ---
 name: lc-north-star
 disable-model-invocation: true
-description: "Vibe-first north-star clarification. Use when the user wants to word-dump an ideal reality, suss out vibes, name a north star, explore product taste, write a vibe.md, or translate a settled vibe into a PRD; also use when product feel, failure modes, users, success criteria, or scope boundaries are vague. Does not require a PRD unless the user asks for one or downstream execution needs one. Do not override an explicit downstream skill invocation such as plan; mention vibe/PRD risk only if material."
+description: "VRD-first north-star loop. Use when the user wants to word-dump an ideal reality, capture a VRD, name a north star, or turn a settled VRD into a PRD and spec. Loop: VRD -> PRD -> Spec, with plan optional. Later stages only if asked or execution needs them. Do not override an explicit downstream skill such as plan."
 ---
 
 # North Star
 
-Lead with ideal reality before requirements.
-
-A north star starts as a word dump about the user's ideal reality: what should exist, how it must feel, what must never happen, and what would count as success. Let that be messy at first. Help the user get the vibe out of their head before turning it into requirements.
-
-Use the formal artifact chain only when the user is moving toward specs, plans, implementation, or another artifact that needs a stable contract:
+Lead with the VRD: the what and why of the vibe, before requirements or implementation.
 
 ```text
-Ideal-reality dump -> vibe.md -> PRD -> Spec -> Plan -> Implementation
+VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md)]
 ```
 
-Treat this chain as one current shape, not a fixed system. When the project keeps a repo-level philosophy vibe (convention: `docs/vibe.md`), that vibe is the source of truth and this chain is a downstream facet of it, updated as the vibe iterates. Keep stages few: three is ideal, four or five in practice, and the whole pipeline should be as painless and fast as possible while still productive. Do not add stages, and do not treat the chain's form as settled.
+- **VRD** (Vibe Requirements Document): single source of truth for problem-as-felt, what is desired, why-as-stakes, feel clauses, and anti-vibes. Void of implementation.
+- **PRD**: copies VRD stakes (no second original why); translates what is desired into observable product behavior and acceptance criteria; references feel clauses, does not absorb them.
+- **Spec**: technical how — architecture, interfaces, state, verification — to satisfy the PRD while preserving the VRD.
+- **Plan**: optional sequencing when execution complexity needs it. Never ritual.
 
-The ideal-reality dump is the raw material. `vibe.md` is the single source of truth for problem-as-felt, why-as-stakes, feel clauses, and anti-vibes; it remains void of implementation details. The PRD is downstream of the vibe: it copies stakes from the vibe rather than authoring a second why, preserves feel clauses in the vibe via traceability, and translates the settled ideal into observable product behavior, scope, requirements, and acceptance criteria. The spec defines **how the product will satisfy the PRD and preserve the vibe**. The plan defines **how the agent will execute the spec**.
+A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices at the current stage. Do not re-interview approved upstream what/why.
+
+When a repo already has a philosophy VRD or legacy `vibe.md`, that document remains source of truth; this loop is a downstream facet of it. Legacy `vibe.md` files are VRDs under the old name — read them, do not rename unless the user asks. New files are `vrd.md`.
 
 ## Artifact Rules
 
-- Do not require a PRD, create files, or force a product/feature pipeline for exploratory north-star or vibe work.
-- Capture or approve the vibe before drafting a PRD. Stakes originate on the vibe and the PRD copies them; do not author an independent second why in the PRD. Feel clauses remain in the vibe.
-- Treat `vibe.md` as the upstream product-feel and stakes source when it exists. A target that technically satisfies the PRD but violates `vibe.md` is still wrong.
-- Treat the PRD and `vibe.md` as immutable after approval. Change either only when the user explicitly asks to amend it or edits it directly.
-- Treat the spec as living when it exists. Update it when implementation research, design changes, or refactors change the technical approach.
-- Treat the plan as disposable execution choreography when it exists. Rewrite it when the spec changes materially.
-- Bound the fix rounds. A contract document gets at most two review-and-fix rounds, and the goal is one. There is no third round: a draft that fails twice gets rewritten, not re-reviewed.
-- Do not hide product work in "phase 2". If a behavior matters to the golden ideal, either include it now or record an explicit scope boundary with the acceptable current behavior.
-- Do not let implementation details leak into north-star or PRD work unless they are product constraints the user would recognize, such as "must work on mobile web" or "must not require an installed app".
+- Do not force files or later stages for exploratory VRD work.
+- Approve the VRD before drafting a PRD. Stakes originate on the VRD; the PRD copies them. Feel clauses stay on the VRD.
+- A target that satisfies the PRD but violates the VRD is still wrong.
+- VRD and PRD are immutable after approval except by explicit user request or direct user edit.
+- Spec is living. Plan, when it exists, is disposable choreography.
+- At most two review-and-fix rounds per contract document; the goal is one. After two failures, rewrite.
+- If a behavior matters to the desired world, include it now or record an explicit scope boundary.
+- Implementation belongs in spec, not VRD or PRD, unless it is a user-recognizable product constraint ("must work on mobile web").
+
+## Tight Questions
+
+Read local context first. Ask one compact batch of currently blocking questions for *this* stage, then wait. Prefer concrete choices.
+
+| Stage | Ask about | Leave alone |
+| --- | --- | --- |
+| VRD | What hurts, what is desired, why it matters, how it must feel, what must never happen | Architecture, APIs, tasks, acceptance wording |
+| PRD | Unresolved observable behaviors, scope, success signals, acceptance | Why it matters, feel restated as a new why, implementation |
+| Spec | Unresolved technical how that still satisfies PRD+VRD | Product what/why already in the VRD/PRD |
+| Plan | Sequencing only, and only if a plan is warranted | Product or design questions |
+
+If missing upstream would change this stage, capture that upstream minimum first. If it is approved, treat it as given.
 
 ## Workflow
 
 ### 1. Classify The Starting Point
 
-Identify what kind of clarity the user is asking for and what artifacts, if any, already exist.
+Identify the stage the user is on and which artifacts already exist.
 
-- If the user explicitly invoked a downstream skill such as `plan`, do not force this workflow. Mention serious vibe or PRD ambiguity as a planning risk only if it materially affects the requested work.
-- If the user wants to suss out a vibe, north star, product taste, positioning, desired feel, ideal reality, or early direction, run a lightweight interview and finish with a crisp summary instead of requiring a PRD.
-- If the user asks for `vibe.md`, create or finish the vibe artifact from the user's ideal-reality dump.
-- If the user asks for a PRD, requirements, acceptance criteria, or durable contract, first identify the source vibe. If the vibe is missing or unstable, capture the minimum viable vibe before drafting the PRD.
-- If the user asks for a spec without an approved PRD, stop and ask whether to create the minimum necessary vibe and PRD first or proceed with explicit product-risk assumptions.
-- If the user asks for a plan without an approved spec, stop and ask whether to create the spec first or proceed with explicit product-risk assumptions.
-- If the request is a bounded bug fix, test plan, refactor, dependency update, or other work where intended behavior is already known, state that a full PRD is unnecessary and capture only behavior-affecting assumptions.
+- If the user explicitly invoked a downstream skill such as `plan`, do not force this loop. Mention VRD or PRD risk only if it materially affects the requested work.
+- If the user wants to suss out a north star, product taste, desired feel, or ideal reality, run a VRD interview and finish with a crisp summary. Do not require a PRD.
+- If the user asks for a VRD or `vrd.md`, write that artifact from the dump.
+- If the user asks for a PRD, first identify the source VRD. If it is missing or unstable, capture the minimum viable VRD first.
+- If the user asks for a spec without an approved PRD, stop and ask whether to create the minimum VRD and PRD first or proceed with explicit product-risk assumptions.
+- If the user asks for a plan, first ask whether a spec exists and whether sequencing is actually needed. A straightforward spec can go to implementation without a plan.
+- If intended behavior is already known (bounded bug fix, refactor, dependency update), say a full loop is unnecessary and capture only behavior-affecting assumptions.
 
-Completion criterion: choose the lightest mode that will answer the user. Block downstream artifacts only when the missing upstream clarity would materially change user-visible behavior, or when the user has asked for the stricter artifact chain.
+Completion criterion: choose the lightest mode that will answer the user. Block a downstream artifact only when missing upstream clarity would change user-visible behavior, or when the user asked for the stricter chain.
 
-### 2. Run The North-Star Interview
+### 2. Write The VRD
 
-Read enough local context to avoid asking questions the repo already answers, but keep the interview at product level. Ask all currently known blocking questions in one compact batch, then wait for the answers before asking another batch. Do not serialize independent questions one per turn. Prefer concrete choices when possible. Probe understanding, not just requirements: a successful interview leaves the user able to explain the product back, not merely a document that captures it.
+Use the VRD reference: [references/vrd.md](references/vrd.md).
 
-Probe positive ownership and verification loops alongside negative probes:
+The word dump is raw material. The VRD is the contract. Keep vivid user language where it carries taste.
 
-- "Who owns making this happen, and who acts on it?"
-- "Who verifies the outcome before operator escalation?"
-- "Would it be acceptable if..."
-- "What should happen when..."
-- "Who must be unable to..."
-- "What would make this feel broken even if the happy path works?"
+Placement:
 
-Use the vibe reference when turning ideal reality into `vibe.md`: [references/vibe.md](references/vibe.md).
-Use the PRD reference only when translating a settled vibe into requirements: [references/prd.md](references/prd.md).
+- Root system or operating cockpit: `./vrd.md`. If `./vibe.md` already exists there, use it as the live VRD.
+- Feature or topic: `docs/prds/YYYY-MM-DD-<topic>/vrd.md` beside `prd.md`.
+- If the repo already uses a flat PRD path, keep that path and place `vrd.md` beside it when possible.
 
-Completion criterion for exploration: the user has a usable ideal-reality or north-star summary, concrete vibe rails, unacceptable outcomes, success signals, and the most important open questions. Completion criterion for contract work: the vibe is stable enough to derive requirements, every major behavior has a positive requirement, at least one unacceptable outcome or counterexample, a success signal, and no unresolved product question that would change scope or user-visible behavior.
+Use stable feel IDs (`V1`, `V2`, ...). Keep the VRD product-facing and free of implementation.
 
-### 3. Write And Approve The Contract
+Completion criterion for exploration: a usable north-star summary naming the problem, the desired world, the stakes, the feel, and the anti-vibes. Completion criterion for contract work: those same sections are written, implementation-free, and stable enough to derive a PRD without inventing intent.
 
-Only write contract files when the user asks for a durable artifact, approves escalation from exploration, or needs a contract before spec/plan/implementation.
+### 3. Translate To PRD
 
-For formal contract work, prefer vibe first, then PRD:
+Only write a PRD when the user asks for one or downstream work needs a durable product contract. Use the PRD reference: [references/prd.md](references/prd.md).
 
-- For root system or operating cockpit contracts governing a whole workspace fleet or repository, place the canonical contract at root `./vibe.md`.
-- For feature or topic contracts, place under `docs/prds/YYYY-MM-DD-<topic>/vibe.md` beside `prd.md`.
-If the repo already uses a flat PRD convention, keep the PRD path and place the source `vibe.md` beside it when possible. Use stable vibe IDs (`V1`, `V2`, ...) and PRD requirement IDs (`R1`, `R2`, ...). Keep both product-facing and free of implementation choreography.
+Copy Problem As Felt and Why As Stakes from the VRD. Translate What Is Desired into observable requirements and acceptance criteria. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements.
 
-Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes enough that approval needs pressure-testing. Then ask the user to approve the `vibe.md` and PRD, or request amendments. Do not infer approval from silence.
+Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes. Then ask the user to approve the VRD and PRD, or request amendments. Do not infer approval from silence.
 
 Once the user has approved the contract and explicitly chosen low-touch
 execution, hand downstream interpretation decisions to
@@ -84,27 +91,29 @@ execution, hand downstream interpretation decisions to
 irreversible actions, or a new category of decision; those still go to the
 user. A PRD alone is not consent to skip review.
 
-Completion criterion for formal contract work: requested contract files exist, have no placeholders, have no "Resolve Before Spec" questions, and are explicitly approved by the user.
+Completion criterion: requested PRD exists, has no placeholders, has no "Resolve Before Spec" questions, and is explicitly approved.
 
-### 4. Create The Spec From The Contract
+### 4. Write The Spec
 
-Only create a spec when the user asks for one or the next execution step requires one. After `vibe.md` and PRD approval, create or update the spec from the contract. Read the codebase deeply enough to choose architecture, interfaces, data flow, and tests. If technical discovery reveals a product or vibe decision the contract did not make, stop and ask for an amendment instead of silently changing product behavior.
+Only create a spec when the user asks for one or the next execution step needs a technical how. Prefer `docs/prds/YYYY-MM-DD-<topic>/spec.md` beside the VRD and PRD unless repo convention already uses another spec path.
 
-Use the spec and plan reference for the downstream contract: [references/spec-plan.md](references/spec-plan.md).
+Read the codebase deeply enough to choose architecture, interfaces, state, and verification. If technical discovery reveals a product or feel decision the contract did not make, stop and ask for a VRD/PRD amendment instead of silently changing behavior.
 
-Completion criterion: every vibe ID and PRD requirement ID maps to spec sections and proposed verification, and every technical decision exists to satisfy a contract item or explicit non-functional constraint.
+Use the spec and plan reference: [references/spec-plan.md](references/spec-plan.md).
 
-### 5. Create The Plan From The Spec
+Completion criterion: every feel ID and PRD requirement ID maps to spec sections and proposed verification, and every technical decision exists to satisfy a contract item or explicit non-functional constraint.
 
-Only create a plan when the user asks for one or is ready to execute. After the spec is ready, create an implementation plan from the spec. In this repo, prefer `plan` when available. The plan must trace to the spec rather than re-litigating product behavior or vibe.
+### 5. Plan Only If Execution Needs It
 
-Completion criterion: every spec requirement has an implementation task or a deliberate non-code verification step, and no task implements behavior outside the PRD/vibe/spec without calling it out as a proposed amendment.
+Skip this stage when the spec is executable as-is. Write `plan.md` only when ordering, checkpoints, or parallel workstreams actually matter, or when the user asks for a plan. Prefer `plan` when that skill exists *and* a plan is warranted. The plan traces to the spec; it does not re-litigate product behavior or feel.
+
+Completion criterion when a plan is written: every spec implementation need has a task or a deliberate non-code check, and no task implements behavior outside the VRD/PRD/spec without calling it out as a proposed amendment.
 
 ### 6. Grill Downstream Artifacts
 
-After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` to audit it against PRD and `vibe.md` intent before calling it complete. Use `prd-grill` only when grilling the human on whether the PRD and `vibe.md` themselves match expectations.
+After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` against the PRD and VRD before calling it complete. Use `prd-grill` only when grilling the human on whether the VRD and PRD themselves match expectations.
 
-Completion criterion: no open P0/P1/P2 PRD/vibe contract violations remain, or the user has explicitly accepted the residual risk.
+Completion criterion: no open P0/P1/P2 VRD/PRD contract violations remain, or the user has explicitly accepted the residual risk.
 
 ## Quality Gates
 
@@ -113,16 +122,18 @@ Before finalizing any artifact, check:
 - **No ghost requirements:** nothing important is implied only by examples or raw chat context.
 - **No fake completion:** no `TBD`, "etc.", "nice to have", "future phase", or "handle edge cases" without a concrete behavior.
 - **No collapsed layers:** PRD does not contain execution tasks; spec does not contain work sequencing; plan does not invent product behavior.
-- **No soft vibe:** `vibe.md` does not contain vague praise words without concrete feel checks, and vibe violations are not downgraded to polish.
-- **No prescriptive vibe:** clauses and definitions describe goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods.
+- **No soft feel:** the VRD does not contain vague praise words without concrete feel checks, and feel violations are not downgraded to polish.
+- **No prescriptive VRD:** clauses and definitions describe goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods.
 - **No silent narrowing:** platform, mobile, auth, permissions, empty states, errors, persistence, performance, and data visibility are either specified, explicitly irrelevant, or marked as blocking questions.
-- **No unowned amendments:** any desired PRD or vibe change discovered during spec or implementation is surfaced as an amendment request before downstream docs proceed.
-- **No second why:** PRD copies problem and stakes from the upstream vibe rather than authoring an independent why.
-- **No implementation in vibe:** `vibe.md` describes qualitative goals, feel, and stakes; mechanisms appear only as labeled examples if at all.
-- **No review ledger in contract:** `vibe.md` and PRD remain clean normative law; review round mappings, tallies, and debate logs live in git PRs or review artifacts, not in the contract itself.
+- **No unowned amendments:** any desired VRD or PRD change discovered during spec or implementation is surfaced as an amendment request before downstream docs proceed.
+- **No second why:** PRD copies problem and stakes from the VRD rather than authoring an independent why.
+- **No implementation in VRD:** `vrd.md` describes qualitative goals, feel, and stakes; mechanisms appear only as labeled examples if at all.
+- **No review ledger in contract:** VRD and PRD remain clean normative law; review round mappings, tallies, and debate logs live in git PRs or review artifacts, not in the contract itself.
+- **No re-interview:** approved VRD what/why is not asked again at PRD, spec, or plan.
+- **No ritual plan:** a plan exists only because sequencing is needed or the user asked.
 
-Before finalizing an exploratory north-star or vibe pass, check:
+Before finalizing an exploratory north-star or VRD pass, check:
 
-- **No forced artifact:** a PRD, `vibe.md`, spec, or plan is created only because the user asked for it or because downstream execution truly needs it.
+- **No forced artifact:** a PRD, VRD, spec, or plan is created only because the user asked for it or because downstream execution truly needs it.
 - **No mushy north star:** the summary names the desired experience, the user or audience, success signals, and what would feel wrong.
-- **No premature pipeline:** the conversation can stop at clarity without pretending the user has committed to a whole product or feature flow.
+- **No premature pipeline:** the conversation can stop at VRD clarity without pretending the user has committed to PRD, spec, or plan.

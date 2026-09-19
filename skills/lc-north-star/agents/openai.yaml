@@ -1,6 +1,6 @@
 interface:
   display_name: "North Star"
-  short_description: "Shape ideal-reality vibes into PRDs"
-  default_prompt: "Use $lc-north-star to suss out my ideal-reality vibe first, then turn it into a PRD only if needed."
+  short_description: "Shape VRD (what/why/feel) into PRD and spec"
+  default_prompt: "Use $lc-north-star to capture the VRD (what is desired and why) first, then PRD and spec only as needed. Plan is optional."
 policy:
   allow_implicit_invocation: false

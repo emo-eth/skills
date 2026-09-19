@@ -1,8 +1,10 @@
 # PRD Reference
 
-The PRD is downstream of the vibe. It translates the settled vibe into observable product behavior, scope, requirements, and acceptance criteria.
+The PRD is downstream of the VRD. It translates what is desired into observable product behavior, scope, requirements, and acceptance criteria.
 
-The PRD copies stakes from the vibe; it does not author a second original why. Feel clauses remain in the vibe and are preserved through traceability, not rewritten into PRD functional requirements. Downstream specs and plans must satisfy the PRD while preserving the source vibe.
+The PRD copies stakes from the VRD; it does not author a second original why. Feel clauses remain in the VRD and are preserved through traceability, not rewritten into PRD functional requirements. Downstream specs and plans must satisfy the PRD while preserving the source VRD.
+
+Ask only unresolved product-behavior questions. Do not re-ask approved VRD what/why.
 
 ## PRD Template
 
@@ -11,19 +13,23 @@ The PRD copies stakes from the vibe; it does not author a second original why. F
 date: YYYY-MM-DD
 topic: <kebab-case-topic>
 status: draft
-source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
+source_vrd: docs/prds/YYYY-MM-DD-<topic>/vrd.md
 ---
 
 # <Product Or Feature> PRD
 
 ## North Star & Stakes
 
-[Copied directly from the source vibe's Problem As Felt and Why As Stakes: who this is for, the core stakes, and what ideal reality exists when the work is done. Do not reauthor an independent problem or why.]
-## Source Vibe Summary
+[Copied directly from the source VRD's Problem As Felt and Why As Stakes: who this is for, the core stakes, and what is at risk. Do not reauthor an independent problem or why.]
 
-- Ideal reality: [What the user wants to be true.]
-- Feel promises: [Vibe IDs referenced for traceability. Feel clauses stay in vibe.md.]
-- Anti-vibes: [What must not happen or how it must not feel.]
+## Desired Outcomes
+
+[Translation of the VRD's What Is Desired into product-facing outcomes. Observable goals, not a new why, and not implementation.]
+
+## Source VRD Summary
+
+- Feel promises: [VRD feel IDs referenced for traceability. Feel clauses stay in vrd.md.]
+- Anti-vibes: [What must not happen or how it must not feel, traced to V-ids.]
 
 ## Users And Jobs
 
@@ -43,7 +49,7 @@ source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
 ### R1. <Requirement Title>
 
 - Requirement: [Observable product behavior.]
-- Rationale: [Why this matters to the user or business.]
+- Rationale: [Which VRD stakes, desired outcome, or feel ID this serves. Do not author a new why.]
 - Acceptance: [How someone can tell this requirement is satisfied.]
 - Not acceptable: [A concrete bad behavior this requirement forbids.]
 
@@ -104,13 +110,16 @@ Each requirement must be:
 - Strong enough to rule out at least one bad implementation.
 - Free of implementation tasks, file paths, libraries, database schemas, and sequencing.
 - Stable enough that it should not change during normal implementation.
+- Traced to the VRD rather than inventing independent motivation.
 
 Prefer "The user can..." or "The system must..." over vague goals like "make it easy".
 
 ## Pressure-Test Prompts
 
-Use these to uncover hidden requirements. Ask only the prompts that match the product.
+Use these to uncover hidden requirements. Ask only prompts that match unresolved PRD-stage choices. Do not re-ask VRD what/why.
 
+- Who owns making this happen, and who acts on it?
+- Who verifies the outcome before operator escalation?
 - Would it be acceptable if this only worked on desktop?
 - Would it be acceptable if this only worked as an installed app or PWA?
 - Would it be acceptable if mobile users could view but not complete the flow?
@@ -128,12 +137,13 @@ Use these to uncover hidden requirements. Ask only the prompts that match the pr
 
 Before approval, verify:
 
+- North Star & Stakes are copied faithfully from the source VRD without originating a second why.
+- Desired Outcomes translate What Is Desired without becoming a new problem statement or a spec.
 - Every major user/job has at least one requirement.
 - Every required surface has behavior for empty, loading, error, and permission states, or a clear reason those states do not apply.
 - Every undesirable outcome is either forbidden by a requirement or intentionally allowed by a scope boundary.
-- Any qualitative promise that is contractual but not an observable product requirement is captured in `vibe.md`.
-- Every requirement is traceable to the source vibe, an explicit user correction, or a stated product constraint.
+- Any qualitative promise that is contractual but not an observable product requirement remains in the VRD.
+- Every requirement is traceable to the source VRD, an explicit user correction, or a stated product constraint.
 - Every "Resolve Before Spec" question is answered.
 - There are no phases masquerading as scope.
-- North Star & Stakes are copied faithfully from the source vibe without originating a second why.
-- Feel clauses remain in the vibe and are referenced for traceability, not rewritten or replaced by PRD requirements.
+- Feel clauses remain in the VRD and are referenced for traceability, not rewritten or replaced by PRD requirements.
