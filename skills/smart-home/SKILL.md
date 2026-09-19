@@ -62,12 +62,16 @@ bash "$smart_home_skill_script" setup --username 'you@example.com' --verify
 bash "$smart_home_skill_script" --json whoami
 bash "$smart_home_skill_script" --json devices
 bash "$smart_home_skill_script" --json energy spark0
+bash "$smart_home_skill_script" --json energy emo-win
+bash "$smart_home_skill_script" --json energy emo-4090
 bash "$smart_home_skill_script" --json status
 bash "$smart_home_skill_script" off spark0 --confirm cycle
 bash "$smart_home_skill_script" cycle spark0 --confirm cycle --off-seconds 8
 ```
 
 `energy` returns live `watts`, `volts`, `amps`, `kwh`, and `on`. `cycle` is off → wait → on. If the wait is interrupted, cycle turns the outlet back on before exiting. `off` and `cycle` refuse unless `--confirm cycle` is passed. Mapped aliases also need `allow_cycle = true` (or `--allow-unmapped` for `cycle`). The outlet must currently be on for `cycle` (or `--even-if-off`). `on` is unguarded so a stuck host can be recovered.
+
+Host map: `spark0` and `spark1` are the same Kasa plug `Sparks` (cycling either reboots both DGX Sparks). `emo-win` is `PC`. `emo-4090` is `4090`. `mac-studio` is this machine (`allow_cycle = false`).
 
 ## Rules
 

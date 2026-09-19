@@ -674,6 +674,15 @@ class TestSetup(unittest.TestCase):
             self.assertEqual(code, 0)
             cfg = sh.load_config(path, environ={})
             self.assertEqual(cfg.kasa_password, "secret-from-stdin")
+            self.assertEqual(
+                [a.name for a in cfg.aliases.values()],
+                ["spark0", "spark1", "emo-win", "emo-4090", "mac-studio"],
+            )
+            self.assertEqual(cfg.aliases["spark0"].match, "Sparks")
+            self.assertEqual(cfg.aliases["spark1"].match, "Sparks")
+            self.assertEqual(cfg.aliases["emo-win"].match, "PC")
+            self.assertEqual(cfg.aliases["emo-4090"].match, "4090")
+            self.assertFalse(cfg.aliases["mac-studio"].allow_cycle)
 
     def test_setup_password_stdin_reads_one_line(self):
         with tempfile.TemporaryDirectory() as tmp:

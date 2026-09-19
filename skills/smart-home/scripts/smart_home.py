@@ -103,6 +103,16 @@ class Alias:
     energy_entity: str | None = None
 
 
+# Human host names -> Kasa app aliases. spark0 and spark1 share plug "Sparks".
+DEFAULT_ALIASES = (
+    Alias("spark0", "kasa", "Sparks", allow_cycle=True),
+    Alias("spark1", "kasa", "Sparks", allow_cycle=True),
+    Alias("emo-win", "kasa", "PC", allow_cycle=True),
+    Alias("emo-4090", "kasa", "4090", allow_cycle=True),
+    Alias("mac-studio", "kasa", "Mac Studio", allow_cycle=False),
+)
+
+
 @dataclass
 class AppConfig:
     path: Path
@@ -271,10 +281,7 @@ def write_local_config(
         except (SmartHomeError, OSError, tomllib.TOMLDecodeError):
             existing_devices = []
     if not existing_devices:
-        existing_devices = [
-            Alias("spark0", "kasa", "spark0", allow_cycle=True),
-            Alias("emo-win", "kasa", "emo-win", allow_cycle=True),
-        ]
+        existing_devices = list(DEFAULT_ALIASES)
     default_connector = existing.get("default_connector") or "kasa"
     if not isinstance(default_connector, str) or not default_connector.strip():
         default_connector = "kasa"

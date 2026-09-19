@@ -147,7 +147,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md`, `docs/review/2026-09-11-vibe-surgical-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md`, `.context/review/2026-09-11-vibe-surgical-round-1.md` | raw snapshots and answers docs | verified-live |
-| Smart home connectors | Isolated-SSID Kasa/HA via authenticated API, never LAN broadcast; EMO-474. Live Kasa Cloud whoami + EP25 wattage on studio. Cycle restores on interrupt; setup opens mode 600; status/whoami isolate connector errors. | `skills/smart-home/` | `skills/smart-home/tests/test_smart_home.py`; live proof in `docs/log/2026-09-18-smart-home-connectors.md` | verified-live for whoami and EP25 energy; KP125M plugs were offline |
+| Smart home connectors | Isolated-SSID Kasa/HA via authenticated API. Fleet map: spark0/spark1→Sparks, emo-win→PC, emo-4090→4090. Live EP25 wattage; KP125M SMART plugs still `-20571` on cloud passthrough. | `skills/smart-home/` | `skills/smart-home/tests/test_smart_home.py`; live proof in `docs/log/2026-09-18-smart-home-connectors.md` | verified-live for whoami and EP25 energy; KP125M cloud passthrough still DeviceOffline |
 
 ## Maintenance rule
 

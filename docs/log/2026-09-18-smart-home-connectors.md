@@ -74,3 +74,16 @@ Offline KP125M (`Sparks`/`spark0`, `PC`/`emo-win`, `4090`, `Media Rack`, `SSDs`)
 - `op` / `security` subprocesses time out after 10s.
 - Invalid TOML raises `ConfigError` instead of a traceback.
 
+## Fleet aliases (2026-09-19)
+
+Operator map:
+
+| host | Kasa alias | model | notes |
+| --- | --- | --- | --- |
+| spark0, spark1 | Sparks | KP125M | one plug feeds both DGX Sparks; cycle either reboots both |
+| emo-win | PC | KP125M | |
+| emo-4090 | 4090 | KP125M | |
+| studio | Mac Studio | EP25 | `allow_cycle = false` |
+
+Kasa Cloud still reports Sparks/PC/4090 as `status: 0` and passthrough `-20571` (IOT and SMART payloads). They are `SMART.KASAPLUG` Matter plugs. EP25 IOT plugs (Entertainment, Studio Desk, Mac Studio) return live watts.
+

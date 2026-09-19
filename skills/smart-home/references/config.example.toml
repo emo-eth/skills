@@ -19,16 +19,31 @@ password_env = "SMART_HOME_KASA_PASSWORD"
 # token_env = "SMART_HOME_HA_TOKEN"
 # token_op = "op://Personal/Home Assistant/token"
 
+# Kasa app names: Sparks, PC, 4090, Mac Studio.
+# spark0 and spark1 share one KP125M ("Sparks"); cycling it reboots both.
+
 [[device]]
 alias = "spark0"
 connector = "kasa"
-match = "Sparks"          # Kasa app alias or deviceId
+match = "Sparks"
+allow_cycle = true
+
+[[device]]
+alias = "spark1"
+connector = "kasa"
+match = "Sparks"
 allow_cycle = true
 
 [[device]]
 alias = "emo-win"
 connector = "kasa"
 match = "PC"
+allow_cycle = true
+
+[[device]]
+alias = "emo-4090"
+connector = "kasa"
+match = "4090"
 allow_cycle = true
 
 [[device]]
