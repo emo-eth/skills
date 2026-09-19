@@ -6,6 +6,12 @@ The PRD copies stakes from the VRD; it does not author a second original why. Fe
 
 Ask only unresolved product-behavior questions. Do not re-ask approved VRD what/why.
 
+## PRD Placement
+
+- **Whole-Project / Root PRD:** For repo-level or whole-project contracts, the primary PRD belongs at the project root alongside the root vibe/VRD: `./prd.md` (beside `./vibe.md` or `./vrd.md`). The project PRD must be immediately visible and discoverable at the top level, never buried inside nested dated directories.
+- **Sub-Feature / Scoped PRDs:** Sub-feature, sub-topic, or subordinate PRDs may live in scoped locations (e.g. `docs/prds/YYYY-MM-DD-<topic>/prd.md` beside their scoped `vrd.md`), but the overarching project PRD remains at the project root.
+- If the repository already keeps an established flat PRD convention at root, maintain it.
+
 ## PRD Template
 
 ```markdown
@@ -13,7 +19,7 @@ Ask only unresolved product-behavior questions. Do not re-ask approved VRD what/
 date: YYYY-MM-DD
 topic: <kebab-case-topic>
 status: draft
-source_vrd: docs/prds/YYYY-MM-DD-<topic>/vrd.md
+source_vrd: ./vrd.md (or docs/prds/YYYY-MM-DD-<topic>/vrd.md for scoped feature PRD)
 ---
 
 # <Product Or Feature> PRD
@@ -147,3 +153,4 @@ Before approval, verify:
 - Every "Resolve Before Spec" question is answered.
 - There are no phases masquerading as scope.
 - Feel clauses remain in the VRD and are referenced for traceability, not rewritten or replaced by PRD requirements.
+- The primary or whole-project PRD lives at the project root (`./prd.md`) alongside the root vibe/VRD, not buried in nested dated directories.

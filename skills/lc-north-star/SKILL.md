@@ -80,9 +80,13 @@ Completion criterion for exploration: a usable north-star summary naming the pro
 ### 3. Translate To PRD
 
 Only write a PRD when the user asks for one or downstream work needs a durable product contract. Use the PRD reference: [references/prd.md](references/prd.md).
+Placement:
+
+- **Whole-project / repo-level PRD:** Lives at the project root alongside the root vibe/VRD: `./prd.md` (beside `./vibe.md` or `./vrd.md`). The primary contract for the whole project must be visible, prominent, and discoverable, never buried inside nested dated directories.
+- **Sub-feature / scoped PRDs:** Subordinate or sub-feature PRDs can live in scoped locations (e.g. `docs/prds/YYYY-MM-DD-<topic>/prd.md` beside a scoped `vrd.md`), but the overarching project PRD belongs at the project root.
+- If the repository already keeps an established flat PRD convention at root, keep that path.
 
 Copy Problem As Felt and Why As Stakes from the VRD. Translate What Is Desired into observable requirements and acceptance criteria. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements.
-
 Before moving on, use `prd-grill` when that skill is available and the user wants a Socratic expectation check or the contract is high-stakes; otherwise grill inline against the VRD and PRD quality gates. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly. Then ask the user to approve the VRD and PRD, or request amendments. Do not infer approval from silence.
 
 Once the user has approved the contract and explicitly chosen low-touch
@@ -131,6 +135,7 @@ Before finalizing any artifact, check:
 - **No review ledger in contract:** VRD and PRD remain clean normative law; review round mappings, tallies, and debate logs live in git PRs or review artifacts, not in the contract itself.
 - **No re-interview:** approved VRD what/why is not asked again at PRD, spec, or plan.
 - **No ritual plan:** a plan exists only because sequencing is needed or the user asked.
+- **Root PRD visibility:** the primary or whole-project PRD lives at the project root (`./prd.md`) alongside the root vibe/VRD, not buried in nested dated directories.
 
 Before finalizing an exploratory north-star or VRD pass, check:
 
