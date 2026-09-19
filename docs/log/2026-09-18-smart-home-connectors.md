@@ -64,3 +64,13 @@ Live wattage (EP25, isolated-SSID via cloud, no LAN broadcast):
 HS103/HS105 (`Mix Cubes`, `Monitors`, `Bed Cooler`) return `emeter error -1` (no energy chip). `Mac Studio` is this host — do not cycle it.
 
 Offline KP125M (`Sparks`/`spark0`, `PC`/`emo-win`, `4090`, `Media Rack`, `SSDs`) now resolve by decoded name and return `DeviceOffline` (`error_code -20571`), not an auth failure. Local aliases: spark0→Sparks, emo-win→PC, 4090, mac-studio (`allow_cycle = false`).
+
+## Astra review fixes (2026-09-19)
+
+- `cycle` restores power if the off-window is interrupted (`BaseException`).
+- `setup` creates `config.toml` with `os.open(..., 0o600)` so the secret is never world-readable.
+- `status` isolates per-alias failures so one offline plug does not abort the fleet.
+- `whoami` skips any `SmartHomeError`, not only `AuthError`.
+- `op` / `security` subprocesses time out after 10s.
+- Invalid TOML raises `ConfigError` instead of a traceback.
+

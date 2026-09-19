@@ -29,6 +29,7 @@ CONFIRM_CYCLE = "cycle"
 DEFAULT_OFF_SECONDS = 8.0
 KASA_DEVICE_OFFLINE_CODE = -20571
 KASA_AUTH_ERROR_CODES = {-20651, -20600, -20004}
+SECRET_SUBPROCESS_TIMEOUT = 10.0
 _B64_ALIAS = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 
 
@@ -148,8 +149,15 @@ class UrlLibTransport:
             raise SmartHomeError(f"HTTP request failed: {exc.reason}") from exc
 
 
-def _run_capture(argv: list[str]) -> str:
-    result = subprocess.run(argv, check=False, capture_output=True, text=True)
+def _run_capture(
+    argv: list[str], timeout: float = SECRET_SUBPROCESS_TIMEOUT
+) -> str:
+    try:
+        result = subprocess.run(
+            argv, check=False, capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AuthError(f"{argv[0]} timed out after {timeout}s") from exc
     if result.returncode != 0:
         err = (result.stderr or result.stdout or "").strip()
         raise AuthError(f"{argv[0]} failed: {err or result.returncode}")
@@ -235,6 +243,17 @@ def _toml_table_lines(name: str, mapping: dict[str, Any]) -> list[str]:
     lines.append("")
     return lines
 
+
+def _write_private_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, text.encode("utf-8"))
+    finally:
+        os.close(fd)
+    os.chmod(path, 0o600)
+
+
 def write_local_config(
     path: Path,
     *,
@@ -293,9 +312,7 @@ def write_local_config(
         if alias.energy_entity:
             lines.append(f"energy_entity = {_toml_string(alias.energy_entity)}")
         lines.append("")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-    path.chmod(0o600)
+    _write_private_text(path, "\n".join(lines).rstrip() + "\n")
 
 
 def read_setup_password(*, password: str | None, password_stdin: bool) -> str:
@@ -373,7 +390,10 @@ def load_config(
         )
         return cfg
 
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path} is not valid TOML") from exc
     cfg.default_connector = str(data.get("default_connector") or "kasa")
     kasa = data.get("kasa") or {}
     ha = data.get("homeassistant") or {}
@@ -933,8 +953,15 @@ def cycle_device(
             f"{device.alias!r} is already off; pass --even-if-off to power it on after"
         )
     connector.set_power(device, False)
-    sleep(off_seconds)
-    connector.set_power(device, True)
+    try:
+        sleep(off_seconds)
+        connector.set_power(device, True)
+    except BaseException:
+        try:
+            connector.set_power(device, True)
+        except Exception:
+            pass
+        raise
     now_on = connector.get_power(device)
     if not now_on:
         raise SmartHomeError(f"{device.alias!r} did not come back on after cycle")
@@ -977,6 +1004,54 @@ def _device_row(device: Device) -> dict[str, Any]:
         "online": device.online,
         "parent_id": device.parent_id,
     }
+
+
+def collect_whoami(
+    config: AppConfig, transport: HttpTransport | None = None
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    reports: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for name in ("kasa", "homeassistant"):
+        try:
+            reports.append(build_connector(name, config, transport=transport).whoami())
+        except SmartHomeError as exc:
+            errors.append({"connector": name, "error": str(exc)})
+    return reports, errors
+
+
+def energy_row(
+    connector: KasaCloudConnector | HomeAssistantConnector,
+    device: Device,
+    alias: Alias | None = None,
+) -> dict[str, Any]:
+    row = _device_row(device)
+    try:
+        if isinstance(connector, HomeAssistantConnector):
+            reading = connector.energy(device, alias=alias)
+        else:
+            reading = connector.energy(device)
+        row.update(reading.as_dict())
+    except SmartHomeError as exc:
+        row["energy_error"] = str(exc)
+    return row
+
+
+def status_rows_for_targets(
+    config: AppConfig,
+    targets: list[str],
+    transport: HttpTransport | None = None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for target in targets:
+        try:
+            connector, device, alias = resolve_target(
+                config, target, transport=transport
+            )
+        except SmartHomeError as exc:
+            rows.append({"alias": target, "error": str(exc)})
+            continue
+        rows.append(energy_row(connector, device, alias))
+    return rows
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1038,13 +1113,7 @@ def main(argv: list[str] | None = None) -> int:
             return run_setup(args)
         config = load_config(args.config)
         if args.command == "whoami":
-            reports = []
-            errors = []
-            for name in ("kasa", "homeassistant"):
-                try:
-                    reports.append(build_connector(name, config).whoami())
-                except AuthError as exc:
-                    errors.append({"connector": name, "error": str(exc)})
+            reports, errors = collect_whoami(config)
             if not reports:
                 raise AuthError(
                     "; ".join(item["error"] for item in errors) or "no connectors configured"
@@ -1112,33 +1181,10 @@ def main(argv: list[str] | None = None) -> int:
                 targets = [alias.name for alias in config.aliases.values()]
             else:
                 connector = build_connector(config.default_connector, config)
-                rows = []
-                for device in connector.list_devices():
-                    row = _device_row(device)
-                    try:
-                        if isinstance(connector, HomeAssistantConnector):
-                            reading = connector.energy(device)
-                        else:
-                            reading = connector.energy(device)
-                        row.update(reading.as_dict())
-                    except SmartHomeError as exc:
-                        row["energy_error"] = str(exc)
-                    rows.append(row)
+                rows = [energy_row(connector, device) for device in connector.list_devices()]
                 _print(rows, args.json)
                 return 0
-            rows = []
-            for target in targets:
-                connector, device, alias = resolve_target(config, target)
-                row = _device_row(device)
-                try:
-                    if isinstance(connector, HomeAssistantConnector):
-                        reading = connector.energy(device, alias=alias)
-                    else:
-                        reading = connector.energy(device)
-                    row.update(reading.as_dict())
-                except SmartHomeError as exc:
-                    row["energy_error"] = str(exc)
-                rows.append(row)
+            rows = status_rows_for_targets(config, targets)
             _print(rows, args.json)
             return 0
 

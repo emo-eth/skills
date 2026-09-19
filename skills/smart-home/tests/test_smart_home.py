@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -165,6 +167,27 @@ class TestSecretsAndConfig(unittest.TestCase):
             )
             self.assertEqual(cfg.aliases["spark0"].match, "spark0-psu")
             self.assertTrue(cfg.aliases["spark0"].allow_cycle)
+
+    def test_invalid_toml_is_config_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text("this is = not [ toml\n", encoding="utf-8")
+            with self.assertRaises(sh.ConfigError) as ctx:
+                sh.load_config(path, environ={})
+            self.assertIn("TOML", str(ctx.exception))
+
+    def test_run_capture_timeout_is_auth_error(self):
+        def boom(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=["op", "read"], timeout=10)
+
+        original = sh.subprocess.run
+        sh.subprocess.run = boom
+        try:
+            with self.assertRaises(sh.AuthError) as ctx:
+                sh._run_capture(["op", "read", "op://x"])
+        finally:
+            sh.subprocess.run = original
+        self.assertIn("timed out", str(ctx.exception))
 
 
 class TestKasaCloud(unittest.TestCase):
@@ -441,6 +464,38 @@ class TestCycleSafety(unittest.TestCase):
             )
         self.assertIn("already off", str(ctx.exception))
 
+    def test_interrupt_during_off_window_restores_power(self):
+        class Rec:
+            def __init__(self):
+                self.events = []
+                self.power = True
+
+            def get_power(self, device):
+                return self.power
+
+            def set_power(self, device, on):
+                self.events.append(on)
+                self.power = on
+
+        def boom(_seconds):
+            raise KeyboardInterrupt()
+
+        device = sh.Device("kasa", "id", "spark0")
+        rec = Rec()
+        with self.assertRaises(KeyboardInterrupt):
+            sh.cycle_device(
+                connector=rec,  # type: ignore[arg-type]
+                device=device,
+                alias=sh.Alias("spark0", "kasa", "spark0", allow_cycle=True),
+                confirm="cycle",
+                off_seconds=8,
+                allow_unmapped=False,
+                even_if_off=False,
+                sleep=boom,
+            )
+        self.assertEqual(rec.events, [False, True])
+        self.assertTrue(rec.power)
+
 
 class TestHomeAssistant(unittest.TestCase):
     def test_energy_and_toggle(self):
@@ -535,6 +590,30 @@ class TestSetup(unittest.TestCase):
             self.assertEqual(cfg.aliases["spark0"].match, "spark0-psu")
             self.assertTrue(cfg.aliases["spark0"].allow_cycle)
             self.assertNotIn("password_env", path.read_text(encoding="utf-8"))
+
+    def test_creates_fd_with_mode_600(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "nested" / "config.toml"
+            recorded = []
+            real_open = sh.os.open
+
+            def wrapped(name, flags, mode=0o777, *args, **kwargs):
+                recorded.append((Path(name), flags, mode))
+                return real_open(name, flags, mode, *args, **kwargs)
+
+            sh.os.open = wrapped
+            try:
+                sh.write_local_config(path, username="a@b.c", password="secret")
+            finally:
+                sh.os.open = real_open
+            match = [item for item in recorded if item[0] == path]
+            self.assertEqual(len(match), 1)
+            _name, flags, mode = match[0]
+            self.assertTrue(flags & os.O_WRONLY)
+            self.assertTrue(flags & os.O_CREAT)
+            self.assertTrue(flags & os.O_TRUNC)
+            self.assertEqual(mode, 0o600)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_preserves_homeassistant_section(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -684,6 +763,68 @@ class TestCliSafety(unittest.TestCase):
                 ["--config", str(cfg), "off", "spark0", "--confirm", "cycle"]
             )
             self.assertEqual(code, 2)
+
+
+class TestWhoamiAggregation(unittest.TestCase):
+    def test_skips_non_auth_connector_errors(self):
+        cfg = sh.AppConfig(path=Path("/tmp/unused.toml"))
+        original = sh.build_connector
+
+        def fake(name, config, transport=None):
+            class Conn:
+                def whoami(self):
+                    if name == "kasa":
+                        return {"connector": "kasa", "account": "a@b.c"}
+                    raise sh.SmartHomeError("HTTP request failed: timed out")
+
+            return Conn()
+
+        sh.build_connector = fake
+        try:
+            reports, errors = sh.collect_whoami(cfg)
+        finally:
+            sh.build_connector = original
+        self.assertEqual(reports, [{"connector": "kasa", "account": "a@b.c"}])
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]["connector"], "homeassistant")
+        self.assertIn("timed out", errors[0]["error"])
+
+
+class TestStatusIsolation(unittest.TestCase):
+    def test_offline_alias_does_not_abort_fleet(self):
+        cfg = sh.AppConfig(path=Path("/tmp/unused.toml"))
+        cfg.aliases = {
+            "dead": sh.Alias("dead", "kasa", "dead", allow_cycle=True),
+            "live": sh.Alias("live", "kasa", "live", allow_cycle=True),
+        }
+        original = sh.resolve_target
+
+        def fake(config, needle, transport=None):
+            if needle == "dead":
+                raise sh.DeviceOffline("Kasa device offline (error_code -20571)")
+            device = sh.Device("kasa", "live1", "live", online=True)
+
+            class Conn:
+                def energy(self, device, alias=None):
+                    return sh.Energy(
+                        watts=10.0, volts=120.0, amps=0.08, kwh=0.001, on=True
+                    )
+
+            return Conn(), device, config.aliases.get(needle.lower())
+
+        sh.resolve_target = fake
+        try:
+            rows = sh.status_rows_for_targets(cfg, ["dead", "live"])
+        finally:
+            sh.resolve_target = original
+        self.assertEqual(rows[0]["alias"], "dead")
+        self.assertIn("error", rows[0])
+        self.assertIn("offline", rows[0]["error"].lower())
+        self.assertEqual(rows[1]["alias"], "live")
+        self.assertNotIn("error", rows[1])
+        self.assertAlmostEqual(rows[1]["watts"], 10.0)
+        self.assertTrue(rows[1]["on"])
+
 
 
 if __name__ == "__main__":
