@@ -1,12 +1,16 @@
-# Vibe Reference
+# VRD Reference
 
-`vibe.md` is the upstream north-star document. It distills the user's word dump about their ideal reality into qualitative promises, anti-vibes, use circumstances, and success signals.
+A **VRD** (Vibe Requirements Document) is the upstream north-star contract, written to `vrd.md`. It is the single source of truth for the problem-as-felt, what is desired, why-as-stakes, qualitative feel promises, and anti-vibes.
 
-Vibe is not advisory. The PRD is downstream of the vibe and should translate it into observable product requirements. If the finished product violates `vibe.md`, it violates the contract even when the PRD's functional requirements technically pass.
+Stakes live on the VRD. The PRD copies stakes from the VRD rather than originating a second why. The VRD is void of implementations: definitions and clauses describe goals, tension, and feel; mechanisms appear only as labeled examples if at all. A VRD that reads as an implementation or procedure is a spec in the wrong document.
 
-Describe, never prescribe. Definitions and clauses state goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods. A vibe that reads as a procedure is a spec in the wrong document.
+VRD is not advisory. The PRD translates what is desired into observable product requirements, while feel clauses remain in the VRD. If the finished product violates the VRD, it violates the contract even when the PRD's functional requirements technically pass.
 
-## Vibe Template
+Feel promises are immutable. Operational procedures named as examples are replaceable and are not the contract.
+
+Legacy `vibe.md` files are VRDs under the old name. Read them as the VRD. Write new contracts as `vrd.md`. Do not rename an existing `vibe.md` unless the user asks.
+
+## VRD Template
 
 ```markdown
 ---
@@ -16,22 +20,21 @@ status: draft
 source_material: user ideal-reality dump, conversation, notes, or linked artifact
 ---
 
-# <Product Or Feature> Vibe
+# <Product Or Feature> VRD
 
-## Vibe Promise
+## Problem As Felt
 
-[One paragraph describing how the product must feel in use, in the circumstances where it matters most.]
+[What hurts, who feels the friction, and what is broken in the current world. Expressed in user and product terms, void of implementation mechanisms.]
 
-## Ideal Reality Dump
+## What Is Desired
 
-- [Raw or lightly edited fragments from the user about the world they want to exist.]
-- [Keep vivid user language when it carries taste, intent, or rejection energy.]
+[The world that should exist when this is done: who it is for, what becomes true, and the circumstances where it must hold. Keep vivid user language. Not a solution design.]
 
-## Use Circumstances
+## Why As Stakes
 
-- [Context where this must work well: rushed, distracted, mobile, high-stakes, repeated daily, first-time use, operator under pressure, etc.]
+[The single source of truth for why this work matters: what happens if nothing changes, what success unlocks, and what is at risk. The PRD copies these stakes rather than authoring a second why.]
 
-## Vibe Clauses
+## Feel Clauses
 
 ### V1. <Clause Title>
 
@@ -59,12 +62,13 @@ source_material: user ideal-reality dump, conversation, notes, or linked artifac
 
 - Approved by:
 - Approved on:
-- Amendment rule: This vibe changes only by explicit user request or direct user edit.
+- Amendment rule: This VRD changes only by explicit user request or direct user edit.
+(Note: Keep the VRD as pure normative law. Do not append review round ledgers, tallies, or audit logs here; review histories belong in git PRs and review artifacts.)
 ```
 
-## Vibe Quality Bar
+## VRD Quality Bar
 
-Each vibe clause must be:
+Each feel clause must be:
 
 - Qualitative but assessable.
 - Non-prescriptive: it describes the goal and the feel; any mechanism is a labeled example.
@@ -73,13 +77,13 @@ Each vibe clause must be:
 - Written without implementation details, libraries, file paths, or UI prescriptions unless the feel contract truly depends on them.
 - Stable enough that it should not drift during normal implementation.
 
-Good vibe clauses say:
+Good feel clauses say:
 
 - "It should just work: users should not need to understand the underlying provider, chain, job, or state machine."
 - "It should feel forgiving: refresh, retry, or back navigation should not make users wonder whether they broke something."
 - "It should feel calm under pressure: the primary next action and current status should be obvious even when the user is distracted."
 
-Bad vibe clauses say:
+Bad feel clauses say:
 
 - "Make it delightful."
 - "Use a clean UI."
@@ -87,10 +91,13 @@ Bad vibe clauses say:
 
 Those can become good clauses only after naming what would prove or violate them.
 
-## Vibe Pressure-Test Prompts
+## VRD Pressure-Test Prompts
 
-Use these when drafting `vibe.md`:
+Use these when drafting the VRD. They are VRD-stage questions only.
 
+- What hurts right now, and who feels it?
+- What should be true in the world this product creates?
+- What happens if nothing changes? What does success unlock?
 - What should this feel like when everything is working?
 - What should this feel like when something is slow, empty, partial, or failing?
 - What should the user not have to understand?
@@ -100,13 +107,17 @@ Use these when drafting `vibe.md`:
 - What circumstances matter most: mobile, rushed, distracted, repeated daily, high-value, first-time, operator incident, executive review?
 - What anti-vibe would make you reject the implementation even if all acceptance criteria passed?
 
+Do not use this pass to choose architecture, APIs, file layout, or task order.
+
 ## Completeness Check
 
 Before approval, verify:
 
+- Problem-as-felt, what is desired, and why-as-stakes are articulated clearly without mentioning implementation mechanisms.
 - Every major feel promise has a violation example.
-- Every use circumstance is covered by at least one vibe clause or explicitly rejected as not important.
+- Circumstances that matter are covered by at least one feel clause or explicitly rejected as not important.
 - Every clause has a check that can be applied to a finished product, demo, screenshot, or code path.
 - No clause is merely a synonym for a PRD requirement.
 - No clause is secretly an implementation instruction.
 - The document is rich enough for a PRD to be derived from it without inventing product intent.
+- The document is clean normative law and contains no review audit ledgers or changelogs.
