@@ -41,3 +41,26 @@ That writes `~/.config/smart-home/config.toml` mode 600.
 - `off` requires `--confirm cycle` and refuses `allow_cycle = false`.
 - Offline parents skip child `get_sysinfo` passthrough.
 - `write_local_config` keeps an existing `[homeassistant]` table.
+
+## Live proof (2026-09-19)
+
+`~/.config/smart-home/config.toml` mode 600, Kasa Cloud login succeeded.
+
+```
+$ ./skills/smart-home/scripts/smart-home --json whoami
+{"ok":[{"account":"wenzel.james.r@gmail.com","connector":"kasa","device_count":16}],"skipped":[{"connector":"homeassistant","error":"..."}]}
+```
+
+16 plugs. KP125M aliases arrive as base64 (`U3Bhcmtz` → Sparks, `UEM=` → PC, `NDA5MA==` → 4090) and are decoded. Placeholder aliases `spark0` / `emo-win` are not Kasa names.
+
+Live wattage (EP25, isolated-SSID via cloud, no LAN broadcast):
+
+| alias | model | on | watts | volts | amps | kWh |
+| --- | --- | --- | --- | --- | --- | --- |
+| Entertainment | EP25(US) | true | 174.358 | 121.88 | 1.605 | 120.377 |
+| Studio Desk | EP25(US) | true | 206.531 | 121.734 | 1.993 | 29.081 |
+| Mac Studio | EP25(US) | true | 34.375 | 122.635 | 0.281 | 16.266 |
+
+HS103/HS105 (`Mix Cubes`, `Monitors`, `Bed Cooler`) return `emeter error -1` (no energy chip). `Mac Studio` is this host — do not cycle it.
+
+Offline KP125M (`Sparks`/`spark0`, `PC`/`emo-win`, `4090`, `Media Rack`, `SSDs`) now resolve by decoded name and return `DeviceOffline` (`error_code -20571`), not an auth failure. Local aliases: spark0→Sparks, emo-win→PC, 4090, mac-studio (`allow_cycle = false`).

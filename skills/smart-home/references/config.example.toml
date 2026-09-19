@@ -22,11 +22,17 @@ password_env = "SMART_HOME_KASA_PASSWORD"
 [[device]]
 alias = "spark0"
 connector = "kasa"
-match = "spark0"          # Kasa app alias or deviceId
+match = "Sparks"          # Kasa app alias or deviceId
 allow_cycle = true
 
 [[device]]
 alias = "emo-win"
 connector = "kasa"
-match = "emo-win"
+match = "PC"
 allow_cycle = true
+
+[[device]]
+alias = "mac-studio"
+connector = "kasa"
+match = "Mac Studio"
+allow_cycle = false       # this machine's own plug

@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import getpass
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -27,6 +29,7 @@ CONFIRM_CYCLE = "cycle"
 DEFAULT_OFF_SECONDS = 8.0
 KASA_DEVICE_OFFLINE_CODE = -20571
 KASA_AUTH_ERROR_CODES = {-20651, -20600, -20004}
+_B64_ALIAS = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 
 
 class SmartHomeError(Exception):
@@ -453,6 +456,26 @@ def decode_passthrough(result: dict[str, Any]) -> dict[str, Any]:
     raise SmartHomeError("passthrough response was not JSON")
 
 
+def decode_kasa_alias(raw: str) -> str:
+    """KP125M / Matter plugs return base64 aliases from Kasa Cloud."""
+    text = (raw or "").strip()
+    if not text or not _B64_ALIAS.fullmatch(text):
+        return text
+    if "=" not in text and (len(text) % 4 or len(text) < 8):
+        return text
+    try:
+        decoded = base64.b64decode(text, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return text
+    if not decoded or decoded == text:
+        return text
+    if not decoded.isprintable() or "\x00" in decoded:
+        return text
+    if not any(ch.isalnum() for ch in decoded):
+        return text
+    return decoded
+
+
 def _hash_password(password: str, encoding: str) -> str:
     if encoding == "plain":
         return password
@@ -569,7 +592,9 @@ class KasaCloudConnector:
             parent = Device(
                 connector=self.name,
                 device_id=str(item.get("deviceId") or ""),
-                alias=str(item.get("alias") or item.get("deviceName") or ""),
+                alias=decode_kasa_alias(
+                    str(item.get("alias") or item.get("deviceName") or "")
+                ),
                 model=str(item.get("deviceModel") or ""),
                 online=item.get("status") == 1,
                 extras={
@@ -613,7 +638,7 @@ class KasaCloudConnector:
                 Device(
                     connector=self.name,
                     device_id=full_id,
-                    alias=str(child.get("alias") or full_id),
+                    alias=decode_kasa_alias(str(child.get("alias") or full_id)),
                     model=parent.model + "-outlet",
                     online=parent.online,
                     parent_id=parent.device_id,

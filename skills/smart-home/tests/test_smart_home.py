@@ -50,6 +50,21 @@ def passthrough(payload: dict):
     return kasa_ok({"responseData": json.dumps(payload)})
 
 
+class TestDecodeKasaAlias(unittest.TestCase):
+    def test_decodes_matter_base64_aliases(self):
+        self.assertEqual(sh.decode_kasa_alias("U3Bhcmtz"), "Sparks")
+        self.assertEqual(sh.decode_kasa_alias("UEM="), "PC")
+        self.assertEqual(sh.decode_kasa_alias("NDA5MA=="), "4090")
+        self.assertEqual(sh.decode_kasa_alias("TWVkaWEgUmFjaw=="), "Media Rack")
+        self.assertEqual(sh.decode_kasa_alias("U1NEcw=="), "SSDs")
+
+    def test_leaves_plain_aliases_alone(self):
+        self.assertEqual(sh.decode_kasa_alias("Entertainment"), "Entertainment")
+        self.assertEqual(sh.decode_kasa_alias("Mac Studio"), "Mac Studio")
+        self.assertEqual(sh.decode_kasa_alias("PC"), "PC")
+        self.assertEqual(sh.decode_kasa_alias("4090"), "4090")
+
+
 class TestNormalizeEmeter(unittest.TestCase):
     def test_milliwatt_fields(self):
         energy = sh.normalize_emeter(
@@ -280,6 +295,30 @@ class TestKasaCloud(unittest.TestCase):
                 if call["body"] and call["body"].get("method") == "passthrough"
             ]
             self.assertEqual(passthrough_ids, ["live"])
+
+    def test_list_devices_decodes_base64_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok"}),
+                    kasa_ok(
+                        {
+                            "deviceList": [
+                                {
+                                    "deviceId": "kp1",
+                                    "alias": "U3Bhcmtz",
+                                    "deviceModel": "KP125M(US)",
+                                    "status": 0,
+                                }
+                            ]
+                        }
+                    ),
+                ]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            devices = connector.list_devices()
+            self.assertEqual(devices[0].alias, "Sparks")
+            self.assertEqual(connector.resolve("Sparks").device_id, "kp1")
 
     def test_strip_child_cycle(self):
         with tempfile.TemporaryDirectory() as tmp:
