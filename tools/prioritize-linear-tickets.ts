@@ -20,9 +20,21 @@ import {
 } from "./prioritize-core.ts";
 import {
   fetchAssignedNotCompleted,
-  fetchProjectIssues,
+  fetchProjectsIssues,
+  resolveRankStorage,
   setPriority,
+  writeRelativeRank,
 } from "./linear-client.ts";
+import {
+  assignRankWeights,
+  comparisonsFromRanks,
+  mergeComparisonCaches,
+  overlappingComparisons,
+  projectSetLabel,
+  sameProjectSet,
+  stripRankComment,
+  ticketRank,
+} from "./linear-ranks.ts";
 import { clearScreen, confirmExact, paint, rawChoice } from "./prompt.ts";
 
 const STATE_VERSION = 2;
@@ -43,8 +55,9 @@ type Arguments = {
   state: string;
   output: string | undefined;
   priorityTarget: number;
+  priorityExplicit: boolean;
   team: string | undefined;
-  project: string | undefined;
+  projects: string[];
   bin: boolean;
   rebin: boolean;
   dryRun: boolean;
@@ -77,7 +90,12 @@ type ApplyingCheckpoint = {
   source: "linear";
   team: string | undefined;
   project?: string | undefined;
-  updates: Record<string, number>;
+  projects?: string[];
+  updates?: Record<string, number>;
+  ranks?: Record<string, number>;
+  rankSlot?: "field" | "comment";
+  rankFieldId?: string;
+  rankFieldName?: string;
 };
 
 type ReviewState = {
@@ -104,8 +122,9 @@ function parseArguments(args: string[]): Arguments {
     state: DEFAULT_STATE_FILE,
     output: undefined,
     priorityTarget: 2,
+    priorityExplicit: false,
     team: undefined,
-    project: undefined,
+    projects: [],
     bin: false,
     rebin: false,
     dryRun: false,
@@ -154,6 +173,7 @@ function parseArguments(args: string[]): Arguments {
         throw new Error("--priority needs an integer 1..4 (1=Urgent, 4=Low)");
       }
       options.priorityTarget = parsed;
+      options.priorityExplicit = true;
       continue;
     }
     if (arg === "--team") {
@@ -162,8 +182,9 @@ function parseArguments(args: string[]): Arguments {
       continue;
     }
     if (arg === "--project") {
-      options.project = args[++index];
-      if (!options.project) throw new Error("--project needs a project name, UUID, or slug");
+      const value = args[++index];
+      if (!value) throw new Error("--project needs a project name, UUID, or slug");
+      options.projects.push(value);
       continue;
     }
     if (arg === "--bin") {
@@ -190,7 +211,8 @@ function printHelp(): void {
 
 Find the top k most important tickets assigned to you in Linear (or all open
 project issues across all assignees when --project is given) using human pairwise
-comparisons, without ranking everything. Uses the installed \`linear\` CLI for auth.
+comparisons, without ranking everything. Repeat --project to rank more than one
+project as one pile. Uses the installed \`linear\` CLI for auth.
 Pass -i to rank a local JSON export instead.
 Controls in a terminal:
   L or Left   the LEFT ticket is more important
@@ -199,12 +221,14 @@ Controls in a terminal:
   Q or Ctrl-C pause and save progress
 
 Options:
-  -k, --top <k>             top tickets to select; written to Linear at the end
-      --priority <1-4>      Linear priority to set on the top-k (default 2=High; use
-                           star-linear-tickets.ts for Urgent)
+  -k, --top <k>             top tickets to select; relative rank is written on APPLY
+      --priority <1-4>      also write this Linear priority bucket on APPLY
+                            (1=Urgent, 4=Low). Omitted: APPLY writes relative
+                            ranks only, not Urgent/High/Medium/Low
       --team <key>          only rank issues in this team (e.g. NAT); default all
       --project <target>    rank all open issues in this project (any assignee,
-                            any priority; name, UUID, or slug)
+                            any priority; name, UUID, or slug). Repeat to rank
+                            several projects together
       --bin                 triage your no-priority tickets into Urgent/High/
                             Medium/Low by binary-searching the tiers
                             (~2 comparisons each); moves them out of no-priority
@@ -348,13 +372,13 @@ function renderPair(
   console.log(`${paint("LEFT (L) - candidate", BOLD)}`);
   console.log(`${paint("TITLE", BOLD)}: ${left.title}`);
   console.log(`${paint("ID", BOLD)}: ${left.id}`);
-  const leftDescription = compact(ticketField(left, "description"));
+  const leftDescription = compact(stripRankComment(ticketField(left, "description")));
   if (leftDescription) console.log(`${paint("DESCRIPTION", BOLD)}: ${leftDescription}`);
   console.log(line);
   console.log(`${paint("RIGHT (R) - in top list", BOLD)}`);
   console.log(`${paint("TITLE", BOLD)}: ${right.title}`);
   console.log(`${paint("ID", BOLD)}: ${right.id}`);
-  const rightDescription = compact(ticketField(right, "description"));
+  const rightDescription = compact(stripRankComment(ticketField(right, "description")));
   if (rightDescription) console.log(`${paint("DESCRIPTION", BOLD)}: ${rightDescription}`);
   console.log(line);
   console.log("L / Left = LEFT more important    R / Right = RIGHT more important    T = tie    Q = pause");
@@ -417,10 +441,12 @@ async function loadTickets(inputPath: string): Promise<Ticket[]> {
     const rawTitle = source.title ?? source.name ?? "Untitled ticket";
     const title = typeof rawTitle === "string" ? rawTitle : String(rawTitle);
     const description = typeof source.description === "string" ? source.description : "";
+    const relativeRank = ticketRank({ id, title, description, ...source });
     tickets.push({
       id,
       title,
       description,
+      ...(relativeRank !== undefined ? { relativeRank } : {}),
       ...(source.state !== undefined ? { state: source.state } : {}),
       ...(source.priority !== undefined ? { priority: source.priority } : {}),
       ...(source.url ? { url: String(source.url) } : {}),
@@ -483,11 +509,17 @@ async function writeBinState(
   await rename(temporaryFile, stateFile);
 }
 
+function checkpointProjects(applying: ApplyingCheckpoint): string[] {
+  if (applying.projects && applying.projects.length > 0) return applying.projects;
+  if (applying.project) return [applying.project];
+  return [];
+}
+
 function applyingSourceMismatch(
   applying: ApplyingCheckpoint,
   usingLinear: boolean,
   team: string | undefined,
-  project: string | undefined,
+  projects: string[],
 ): string | undefined {
   if (!usingLinear || applying.source !== "linear") {
     return "the saved application checkpoint was created from Linear; rerun against Linear or use --reset";
@@ -495,8 +527,9 @@ function applyingSourceMismatch(
   if ((applying.team ?? undefined) !== (team ?? undefined)) {
     return `the saved application checkpoint used team ${applying.team ?? "all teams"} but this run uses ${team ?? "all teams"}; rerun with the same team or use --reset`;
   }
-  if ((applying.project ?? undefined) !== (project ?? undefined)) {
-    return `the saved application checkpoint used project ${applying.project ?? "all projects"} but this run uses ${project ?? "all projects"}; rerun with the same project or use --reset`;
+  const savedProjects = checkpointProjects(applying);
+  if (!sameProjectSet(savedProjects, projects)) {
+    return `the saved application checkpoint used project ${projectSetLabel(savedProjects)} but this run uses ${projectSetLabel(projects)}; rerun with the same project or use --reset`;
   }
   return undefined;
 }
@@ -506,7 +539,10 @@ function checkpointIdsMissing(
   tickets: Ticket[],
 ): string[] {
   const known = new Set(tickets.map((ticket) => ticket.id));
-  return Object.keys(applying.updates).filter((id) => !known.has(id));
+  return [
+    ...Object.keys(applying.updates ?? {}),
+    ...Object.keys(applying.ranks ?? {}),
+  ].filter((id, index, all) => all.indexOf(id) === index && !known.has(id));
 }
 
 function currentPriorityMap(tickets: Ticket[]): Map<string, number | undefined> {
@@ -520,34 +556,80 @@ function currentPriorityMap(tickets: Ticket[]): Map<string, number | undefined> 
   );
 }
 
+function rankStorageFromCheckpoint(applying: ApplyingCheckpoint) {
+  if (applying.rankSlot === "field" && applying.rankFieldId) {
+    return {
+      kind: "field" as const,
+      field: { id: applying.rankFieldId, name: applying.rankFieldName ?? "Relative Rank" },
+    };
+  }
+  return { kind: "comment" as const };
+}
+
 async function applyCheckpoint(
   stateFile: string,
   applying: ApplyingCheckpoint,
   tickets: Ticket[],
   persist: (applying: ApplyingCheckpoint) => Promise<void>,
 ): Promise<void> {
-  const planned = Object.keys(applying.updates).length;
-  const remaining: Record<string, number> = { ...applying.updates };
+  const remainingRanks: Record<string, number> = { ...(applying.ranks ?? {}) };
+  const remainingUpdates: Record<string, number> = { ...(applying.updates ?? {}) };
+  const byId = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+  const storage = rankStorageFromCheckpoint(applying);
+
+  for (const [id, weight] of Object.entries(applying.ranks ?? {})) {
+    const ticket = byId.get(id);
+    if (ticket && ticketRank(ticket) === weight) {
+      delete remainingRanks[id];
+      await persist({ ...applying, ranks: remainingRanks, updates: remainingUpdates });
+      console.log(`${id} already has relative rank ${weight}; skipping.`);
+      continue;
+    }
+    try {
+      const written = await writeRelativeRank({
+        issueId: id,
+        weight,
+        storage,
+        currentDescription: typeof ticket?.description === "string" ? ticket.description : "",
+      });
+      if (ticket) {
+        ticket.description = written.description ?? ticket.description;
+        ticket.relativeRank = written.relativeRank;
+      }
+    } catch (error) {
+      await persist({ ...applying, ranks: remainingRanks, updates: remainingUpdates });
+      throw error;
+    }
+    delete remainingRanks[id];
+    await persist({ ...applying, ranks: remainingRanks, updates: remainingUpdates });
+    console.log(`Remembered ${id} relative rank ${weight}`);
+  }
+
   const currentPriorities = currentPriorityMap(tickets);
-  for (const [id, target] of Object.entries(applying.updates)) {
+  for (const [id, target] of Object.entries(applying.updates ?? {})) {
     if (currentPriorities.get(id) === target) {
-      delete remaining[id];
-      await persist({ ...applying, updates: remaining });
+      delete remainingUpdates[id];
+      await persist({ ...applying, ranks: remainingRanks, updates: remainingUpdates });
       console.log(`${id} is already at priority ${target}; skipping.`);
       continue;
     }
     try {
       await setPriority(id, target);
     } catch (error) {
-      await persist({ ...applying, updates: remaining });
+      await persist({ ...applying, ranks: remainingRanks, updates: remainingUpdates });
       throw error;
     }
-    delete remaining[id];
-    await persist({ ...applying, updates: remaining });
+    delete remainingUpdates[id];
+    await persist({ ...applying, ranks: remainingRanks, updates: remainingUpdates });
     console.log(`Updated ${id} -> ${PRIORITY_LABELS[target] ?? target}`);
   }
   await removeState(stateFile);
-  console.log(`Done. ${planned} ticket(s) set to their planned priority.`);
+  const rankCount = Object.keys(applying.ranks ?? {}).length;
+  const planned = Object.keys(applying.updates ?? {}).length;
+  const parts: string[] = [];
+  if (rankCount > 0) parts.push(`${rankCount} relative rank(s) saved`);
+  if (planned > 0) parts.push(`${planned} ticket(s) set to their planned priority`);
+  console.log(`Done. ${parts.join("; ") || "nothing to write"}.`);
 }
 
 function normalizeYesNo(value: string): "yes" | "no" | "pause" | undefined {
@@ -614,8 +696,8 @@ async function runBin(args: Arguments): Promise<void> {
   const stateFile = args.state;
   const usingLinear = args.input === undefined;
   const rawTickets = usingLinear
-    ? (args.project
-        ? await fetchProjectIssues({ project: args.project, team: args.team })
+    ? (args.projects.length > 0
+        ? await fetchProjectsIssues({ projects: args.projects, team: args.team })
         : await fetchAssignedNotCompleted({ team: args.team }))
     : await loadTickets(args.input);
   // --bin: only tickets with no priority. --rebin: every fetched ticket,
@@ -630,7 +712,7 @@ async function runBin(args: Arguments): Promise<void> {
   const snapshot = snapshotFor(tickets, args.top);
   const saved = await readsBinState(stateFile);
   if (saved?.applying) {
-    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.project);
+    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.projects);
     if (mismatch) throw new Error(mismatch);
     const missing = checkpointIdsMissing(saved.applying, rawTickets);
     if (missing.length > 0) {
@@ -638,7 +720,7 @@ async function runBin(args: Arguments): Promise<void> {
         `the saved application checkpoint references tickets no longer present: ${missing.join(", ")}. Inspect Linear, then run --reset.`,
       );
     }
-    console.log("Resuming an interrupted priority application.");
+    console.log("Resuming an interrupted Linear write.");
     await applyCheckpoint(stateFile, saved.applying, rawTickets, (applying) =>
       writeBinState(stateFile, snapshot, saved.tiers, applying),
     );
@@ -653,7 +735,7 @@ async function runBin(args: Arguments): Promise<void> {
   const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
   const filterParts: string[] = [];
   if (args.team) filterParts.push(`team ${args.team}`);
-  if (args.project) filterParts.push(`project ${args.project}`);
+  if (args.projects.length > 0) filterParts.push(`project ${projectSetLabel(args.projects)}`);
   const sourceLabel = usingLinear
     ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`
     : `file ${args.input}`;
@@ -742,7 +824,8 @@ async function runBin(args: Arguments): Promise<void> {
   const applying: ApplyingCheckpoint = {
     source: "linear",
     team: args.team,
-    project: args.project,
+    project: args.projects.length === 1 ? args.projects[0] : undefined,
+    projects: args.projects.length > 0 ? args.projects : undefined,
     updates,
   };
   await writeBinState(stateFile, snapshot, tiers, applying);
@@ -766,11 +849,11 @@ async function main(): Promise<void> {
   const usingLinear = args.input === undefined;
 
   let tickets = usingLinear
-    ? (args.project
-        ? await fetchProjectIssues({ project: args.project, team: args.team })
+    ? (args.projects.length > 0
+        ? await fetchProjectsIssues({ projects: args.projects, team: args.team })
         : await fetchAssignedNotCompleted({ team: args.team }))
     : await loadTickets(args.input);
-  if (usingLinear && !args.project) {
+  if (usingLinear && args.projects.length === 0) {
     // Assigned-to-me ranking only: existing Urgent tickets already occupy
     // "do now". --project ranking includes every open issue at any priority.
     const excludedUrgent = tickets.filter((t) => String(t.priority) === "1");
@@ -786,7 +869,7 @@ async function main(): Promise<void> {
   const snapshot = snapshotFor(tickets, args.top);
   const saved = await readState(stateFile);
   if (saved?.applying) {
-    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.project);
+    const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.projects);
     if (mismatch) throw new Error(mismatch);
     const missing = checkpointIdsMissing(saved.applying, tickets);
     if (missing.length > 0) {
@@ -801,25 +884,27 @@ async function main(): Promise<void> {
     return;
   }
   if (saved && saved.snapshot !== snapshot) {
-    throw new Error(
-      "The ticket list or --top changed since the saved session. Inspect it, then run --reset.",
-    );
-  }
-  if (saved && saved.top !== args.top) {
-    throw new Error(
-      `Saved session used --top ${saved.top}; current is ${args.top}. Run --reset to start again.`,
-    );
+    console.log("Ticket list changed since last time; overlapping comparisons are kept.");
   }
 
-  let comparisons: ComparisonCache = saved?.comparisons ?? {};
+  const localComparisons = overlappingComparisons(
+    saved?.comparisons ?? {},
+    tickets.map((ticket) => ticket.id),
+  );
+  const fromLinear = args.reset ? {} : comparisonsFromRanks(tickets);
+  let comparisons: ComparisonCache = mergeComparisonCaches(fromLinear, localComparisons);
   const filterParts: string[] = [];
   if (args.team) filterParts.push(`team ${args.team}`);
-  if (args.project) filterParts.push(`project ${args.project}`);
+  if (args.projects.length > 0) filterParts.push(`project ${projectSetLabel(args.projects)}`);
   const sourceLabel = usingLinear
     ? `Linear (${filterParts.length > 0 ? filterParts.join(", ") : "all teams"})`
     : `file ${args.input}`;
   console.log(`Prioritizing ${tickets.length} tickets, top ${args.top}. Source: ${sourceLabel}.`);
-  if (saved) console.log(`Resuming from ${stateFile} (${Object.keys(comparisons).length} comparisons saved).`);
+  if (saved || Object.keys(fromLinear).length > 0) {
+    console.log(
+      `Continuing (${Object.keys(localComparisons).length} saved comparison(s), ${Object.keys(fromLinear).length} from remembered ranks).`,
+    );
+  }
 
   // Prime the state file so a paused session is findable.
   await writeState(stateFile, snapshot, args.top, comparisons);
@@ -910,30 +995,68 @@ async function main(): Promise<void> {
     console.log(`\nWrote ${args.output}`);
   }
 
-  // Write-back: set the top-k to the target priority; leave non-selected alone.
-  const priorityLabel = PRIORITY_LABELS[args.priorityTarget] ?? String(args.priorityTarget);
-  console.log(
-    `\nPlan: set ${ranked.length} ticket(s) to priority ${priorityLabel} (${args.priorityTarget}) in Linear.`,
-  );
-  for (const ticket of ranked) console.log(`- ${ticket.id}  ${ticket.title}`);
+  const hasJudgment = decided > 0 || Object.keys(comparisons).length > 0;
+  const ranks = hasJudgment ? assignRankWeights(ranked, tickets) : {};
   if (args.dryRun) {
-    console.log("\nDry run only. No Linear issues were updated.");
+    if (hasJudgment) {
+      console.log(`\nDry run: would remember ${Object.keys(ranks).length} relative rank(s) on Linear.`);
+    }
+    if (args.priorityExplicit) {
+      const priorityLabel = PRIORITY_LABELS[args.priorityTarget] ?? String(args.priorityTarget);
+      console.log(
+        `Dry run: would also set ${ranked.length} ticket(s) to priority ${priorityLabel} (${args.priorityTarget}).`,
+      );
+    } else {
+      console.log("Dry run only. No Linear issues were updated.");
+    }
     return;
   }
 
-  if (!(await confirmExact("Type APPLY to update Linear: ", "APPLY"))) {
+  if (!hasJudgment && !args.priorityExplicit) {
+    console.log("\nNothing to write to Linear (no comparisons and no priority requested).");
+    return;
+  }
+
+  if (hasJudgment) {
+    console.log(`\nPlan: remember relative rank for ${Object.keys(ranks).length} ticket(s) on Linear.`);
+    for (const ticket of ranked) {
+      console.log(`- ${ticket.id}  ${ticket.title}  rank ${ranks[ticket.id]}`);
+    }
+  }
+  if (args.priorityExplicit) {
+    const priorityLabel = PRIORITY_LABELS[args.priorityTarget] ?? String(args.priorityTarget);
+    console.log(
+      `Also set ${ranked.length} ticket(s) to priority ${priorityLabel} (${args.priorityTarget}).`,
+    );
+  } else {
+    console.log("Relative rank stays separate from Urgent/High/Medium/Low.");
+  }
+
+  const confirm = args.priorityExplicit
+    ? "Type APPLY to write relative ranks and Linear priority: "
+    : "Type APPLY to write relative ranks to Linear: ";
+  if (!(await confirmExact(confirm, "APPLY"))) {
     console.log("Skipped. Saved state remains; rerun to resume from your comparisons.");
     return;
   }
+
+  const storage = await resolveRankStorage();
   const updates: Record<string, number> = {};
-  for (const ticket of ranked) {
-    updates[ticket.id] = args.priorityTarget;
+  if (args.priorityExplicit) {
+    for (const ticket of ranked) {
+      updates[ticket.id] = args.priorityTarget;
+    }
   }
   const applying: ApplyingCheckpoint = {
     source: "linear",
     team: args.team,
-    project: args.project,
-    updates,
+    project: args.projects.length === 1 ? args.projects[0] : undefined,
+    projects: args.projects.length > 0 ? args.projects : undefined,
+    ranks: hasJudgment ? ranks : undefined,
+    updates: args.priorityExplicit ? updates : undefined,
+    rankSlot: storage.kind,
+    rankFieldId: storage.kind === "field" ? storage.field.id : undefined,
+    rankFieldName: storage.kind === "field" ? storage.field.name : undefined,
   };
   await writeState(stateFile, snapshot, args.top, comparisons, applying);
   await applyCheckpoint(stateFile, applying, tickets, (applying) =>
