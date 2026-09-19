@@ -56,7 +56,7 @@ Identify the stage the user is on and which artifacts already exist.
 - If the user asks for a VRD or `vrd.md`, write that artifact from the dump.
 - If the user asks for a PRD, first identify the source VRD. If it is missing or unstable, capture the minimum viable VRD first.
 - If the user asks for a spec without an approved PRD, stop and ask whether to create the minimum VRD and PRD first or proceed with explicit product-risk assumptions.
-- If the user asks for a plan, first ask whether a spec exists and whether sequencing is actually needed. A straightforward spec can go to implementation without a plan.
+- If the user asks for a plan, inspect for an approved spec. If it is missing, ask whether to spec first or proceed with explicit risk. An explicit plan request is enough reason to write a plan; do not re-ask whether sequencing is needed. If nobody asked for a plan and the spec is executable as-is, skip the plan.
 - If intended behavior is already known (bounded bug fix, refactor, dependency update), say a full loop is unnecessary and capture only behavior-affecting assumptions.
 
 Completion criterion: choose the lightest mode that will answer the user. Block a downstream artifact only when missing upstream clarity would change user-visible behavior, or when the user asked for the stricter chain.
@@ -83,7 +83,7 @@ Only write a PRD when the user asks for one or downstream work needs a durable p
 
 Copy Problem As Felt and Why As Stakes from the VRD. Translate What Is Desired into observable requirements and acceptance criteria. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements.
 
-Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes. Then ask the user to approve the VRD and PRD, or request amendments. Do not infer approval from silence.
+Before moving on, use `prd-grill` when that skill is available and the user wants a Socratic expectation check or the contract is high-stakes; otherwise grill inline against the VRD and PRD quality gates. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly. Then ask the user to approve the VRD and PRD, or request amendments. Do not infer approval from silence.
 
 Once the user has approved the contract and explicitly chosen low-touch
 execution, hand downstream interpretation decisions to
@@ -111,7 +111,7 @@ Completion criterion when a plan is written: every spec implementation need has 
 
 ### 6. Grill Downstream Artifacts
 
-After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` against the PRD and VRD before calling it complete. Use `prd-grill` only when grilling the human on whether the VRD and PRD themselves match expectations.
+After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` when that skill is available; otherwise audit inline against the VRD and PRD. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly so discovery does not depend on a `vibe.md` filename. Use `prd-grill` only when grilling the human on whether the VRD and PRD themselves match expectations.
 
 Completion criterion: no open P0/P1/P2 VRD/PRD contract violations remain, or the user has explicitly accepted the residual risk.
 
