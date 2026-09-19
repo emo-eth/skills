@@ -12,16 +12,25 @@ Lead with the VRD: the what and why of the vibe, before requirements or implemen
 VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md, optional)] -> Ticket Spec
 ```
 
-- **VRD** (Vibe Requirements Document): single source of truth for problem-as-felt, what is desired, why-as-stakes, feel clauses, and anti-vibes. Void of implementation.
-- **PRD**: copies VRD stakes (no second original why); translates what is desired into observable product behavior and acceptance criteria; references feel clauses, does not absorb them.
-- **Spec**: technical how — architecture, interfaces, state, verification — to satisfy the PRD while preserving the VRD.
-- **Plan**: optional sequencing when execution complexity needs it. Never ritual.
-- **Ticket Spec**: concrete downstream artifact produced from the Spec/Plan before dispatch to workers. A structured object living directly on the issue/ticket: Intention, Vibe, Done-when, Map.
+- **VRD** (`vrd.md`): single source of truth for the **what** (desired reality) and the **why** (problem-as-felt, stakes), plus qualitative feel clauses and anti-vibes. Void of implementation.
+- **PRD** (`prd.md`): copies VRD stakes (no second original why); translates the VRD's what into observable product behavior and acceptance criteria; references feel clauses, does not absorb them.
+- **Spec** (`spec.md`): technical **how** — architecture, interfaces, state, verification — to satisfy the PRD while preserving the VRD.
+- **Plan** (`plan.md`): optional sequencing when execution complexity needs it. Never ritual.
+- **Ticket Spec**: concrete downstream artifact produced from the Spec/Plan before dispatch to workers. A structured object living directly on the issue/ticket (.herdr-ticket / TICKET.md): Intention, Vibe, Done-when, Map.
 
 A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices at the current stage. Do not re-interview approved upstream what/why.
 
-When a repo already has a philosophy VRD or legacy `vibe.md`, that document remains source of truth; this loop is a downstream facet of it. Legacy `vibe.md` files are VRDs under the old name — read them, do not rename unless the user asks. New files are `vrd.md`.
+`vrd.md` replaces legacy `vibe.md`. In existing repositories, read legacy `vibe.md` as the VRD, but create all new contracts as `vrd.md`. When explicitly asked, rename `vibe.md` to `vrd.md`.
 
+## Stage Cutover Sharpness
+
+| Artifact | Core Question | What Lives Here | What NEVER Belongs Here |
+|---|---|---|---|
+| **VRD** (`vrd.md`) | *What & Why?* | Problem-as-felt, desired reality, stakes, qualitative feel promises (`V1`...), anti-vibes. | Technical architecture, CLI flags, APIs, execution steps. |
+| **PRD** (`prd.md`) | *What does the product do?* | Observable functional requirements (`R1`...), acceptance criteria, surface expectations, copied stakes. | Technical design, internal schemas, a second original "why", feel restated as functional rules. |
+| **Spec** (`spec.md`) | *How is it built?* | Technical architecture, data models, state machines, API interfaces, failure modes, traceability matrix. | Product requirement debates, re-litigating what/why, choreographing execution steps. |
+| **Plan** (`plan.md`) *(Optional)* | *In what order?* | Task dependencies, checkpoints, branch/workspace choreography (only when complexity requires it). | Inventing features, product behavior, or technical redesigns. |
+| **Ticket Spec** | *What is this worker doing?* | Self-contained slice: Intention (What/Why), Vibe (Feel/Borders), Done-when (Acceptance), Map (Coordinates). | Vague one-liners, raw chat dumps, re-specifying whole features. |
 ## Artifact Rules
 
 - Do not force files or later stages for exploratory VRD work.
@@ -119,16 +128,15 @@ Completion criterion when a plan is written: every spec implementation need has 
 
 Before dispatching work to a worker or spawning an executing workspace, produce the concrete **Ticket Spec**. Use the Ticket Spec reference: [references/ticket-spec.md](references/ticket-spec.md).
 
-A Ticket Spec is a named, structured object with explicit requirements:
-- **Intention:** One crisp paragraph stating what problem is being solved and why now, traced to VRD/PRD.
-- **Vibe:** Qualitative feel promises, stakes, and boundaries (traced to VRD).
+- **Intention:** The concrete **what** and **why** for this slice. Must state what problem is being solved and why now, traced directly to the VRD's What and Why-as-Stakes and the PRD.
+- **Vibe:** Qualitative feel promises, stakes, and boundaries (traced to VRD feel IDs and anti-vibes). What must never happen during execution.
 - **Done-when:** Observable, verifiable criteria for product acceptance (traced to PRD/Spec).
 - **Map:** Explicit topology: workspace label, git worktree path, branch, and where related contracts live.
 
 Rules:
 - A ticket spec is not a title stub, not a session dump, and not a copy-pasted second PRD.
+- The ticket spec must inherit its what/why directly from the VRD. A ticket spec with missing or ungrounded what/why fails the quality gate.
 - Because it is a named concrete artifact, validate its structure and criteria before dispatch. Workers must never be prompted with vague one-liners or unbounded tasks.
-
 Completion criterion: every dispatched task has a valid Ticket Spec with all four sections verified.
 
 ### 7. Grill Downstream Artifacts
@@ -155,6 +163,7 @@ Before finalizing any artifact, check:
 - **No ritual plan:** a plan exists only because sequencing is needed or the user asked.
 - **Root PRD visibility:** the primary or whole-project PRD lives at the project root (`./prd.md`) alongside the root vibe/VRD, not buried in nested dated directories.
 - **Ticket Spec structure:** every dispatched ticket has a valid Ticket Spec with Intention, Vibe, Done-when, and Map before workers are prompted.
+- **Ticket Spec What/Why Anchor:** Intention and Vibe must inherit directly from the VRD's What and Why-as-Stakes; no unanchored or context-free dispatch.
 - **No unanchored dispatch:** workers are dispatched only with an approved Ticket Spec referencing verified worktree and contract paths.
 
 Before finalizing an exploratory north-star or VRD pass, check:

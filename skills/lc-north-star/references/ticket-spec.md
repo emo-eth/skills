@@ -48,15 +48,15 @@ A ticket spec is:
 ## Field Requirements
 
 ### 1. Intention
-- Must state the exact problem being addressed and the concrete deliverable.
-- Must trace directly to an approved Spec item or PRD requirement.
-- Must be understandable to an agent with a fresh context window.
+- Must state the exact **what** (concrete capability or fix) and **why** (problem-as-felt and stakes) for this slice.
+- Must trace directly to the upstream VRD's What Is Desired and Why As Stakes, as well as an approved Spec item or PRD requirement.
+- Must answer: *What is being changed?* and *Why does this matter now?*
+- Must be understandable to an agent with a fresh context window without reading prior chat turns.
 
 ### 2. Vibe
-- Carries the qualitative guardrails and feel expectations for the work slice.
+- Carries the qualitative guardrails, feel expectations, and operational boundaries for the work slice.
 - Must cite relevant VRD feel IDs (`V1`, `V2`, ...) and anti-vibes.
-- Must state what would make the delivery feel broken even if code compiles.
-
+- Must state what would make the delivery feel broken even if the happy-path code compiles and tests pass.
 ### 3. Done-when
 - Must consist of checkable, concrete conditions.
 - No vague placeholders ("handle edge cases", "improve performance", "TBD").
@@ -72,9 +72,10 @@ A ticket spec is:
 
 Before dispatching a worker with a Ticket Spec, verify:
 
-- [ ] The ticket has all four sections: Intention, Vibe, Done-when, and Map.
-- [ ] Intention explains the specific problem and deliverable without requiring conversational context.
-- [ ] Done-when criteria are observable and verifiable.
-- [ ] Map lists valid, existing workspace and worktree coordinates.
+- [ ] The ticket has all four canonical sections: Intention, Vibe, Done-when, and Map.
+- [ ] Intention explicitly answers both **what** is being delivered and **why** it matters now, grounded in the VRD/PRD.
+- [ ] Vibe references concrete VRD feel clauses and anti-vibes.
+- [ ] Done-when criteria are observable, specific, and verifiable (no placeholders).
+- [ ] Map lists valid, existing workspace label, worktree path, branch name, and contract paths.
 - [ ] The ticket does not contain raw conversation transcripts or unedited session dumps.
 - [ ] The ticket is not a bare title stub.
