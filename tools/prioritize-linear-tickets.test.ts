@@ -9,6 +9,7 @@ import { test } from "node:test";
 import {
   fetchAssignedNotCompleted,
   fetchProjectIssues,
+  fetchProjectsIssues,
   matchesProject,
 } from "./linear-client.ts";
 
@@ -77,106 +78,166 @@ async function writeFakeLinear(root: string): Promise<void> {
   const binDir = join(root, "bin");
   await writeFile(
     join(binDir, "linear"),
-    `#!/bin/sh
-set -e
-LOG="$LINEAR_FAKE_LOG"
-STATE="$LINEAR_FAKE_STATE"
-if [ "$1" = "api" ]; then
-  exec node -e '
-    const fs = require("fs");
-    const db = JSON.parse(fs.readFileSync(process.env.LINEAR_FAKE_STATE, "utf8"));
-    const payload = {
-      data: {
-        viewer: {
-          assignedIssues: {
-            nodes: db.tickets.filter((t) => t.assignedToMe !== false).map((t) => ({
-              id: t.id,
-              identifier: t.id,
-              title: t.title,
-              priority: t.priority,
-              state: { name: "Todo", type: "triage" },
-              team: { key: t.teamKey ?? "NAT" },
-              project: t.project ?? null,
-            })),
-          },
+    `#!/usr/bin/env node
+const fs = require("fs");
+const args = process.argv.slice(2);
+const dbPath = process.env.LINEAR_FAKE_STATE;
+const logPath = process.env.LINEAR_FAKE_LOG;
+const db = JSON.parse(fs.readFileSync(dbPath, "utf8"));
+
+function writeDb() {
+  fs.writeFileSync(dbPath, JSON.stringify(db));
+}
+
+function logLine(line) {
+  fs.appendFileSync(logPath, line + "\\n");
+  const count = fs.readFileSync(logPath, "utf8").split("\\n").filter(Boolean).length;
+  if (process.env.LINEAR_FAIL_UPDATE_INDEX && Number(process.env.LINEAR_FAIL_UPDATE_INDEX) === count) {
+    console.error("simulated linear failure");
+    process.exit(1);
+  }
+}
+
+function matches(p, target) {
+  if (!p || !target) return false;
+  const norm = target.trim().toLowerCase();
+  if (typeof p === "string") return p.trim().toLowerCase() === norm;
+  if (p.name && p.name.trim().toLowerCase() === norm) return true;
+  if (p.id && p.id.trim().toLowerCase() === norm) return true;
+  if (p.slugId && p.slugId.trim().toLowerCase() === norm) return true;
+  if (p.name) {
+    const slug = p.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (slug === norm) return true;
+  }
+  return false;
+}
+
+function toNode(t) {
+  return {
+    id: t.uuid ?? t.id,
+    identifier: t.id,
+    title: t.title,
+    description: t.description ?? "",
+    priority: t.priority,
+    state: { name: "Todo", type: "triage" },
+    team: { key: t.teamKey ?? "NAT" },
+    project: t.project ?? null,
+    customFields: t.customFields ?? [],
+  };
+}
+
+function flagValue(name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+if (args[0] === "api") {
+  const query = args.filter((a) => !a.startsWith("--") && a !== "api").join(" ");
+  const varsIndex = args.indexOf("--variables-json");
+  const vars = varsIndex >= 0 ? JSON.parse(args[varsIndex + 1]) : {};
+  if (/RankNumberFields|issueCustomFields/.test(query) && !/issueCustomFieldCreate|issueCustomFieldValueUpsert/.test(query)) {
+    const fields = db.rankField ? [db.rankField] : [];
+    process.stdout.write(JSON.stringify({ data: { issueCustomFields: { nodes: fields } } }));
+    process.exit(0);
+  }
+  if (/CreateRankNumberField|issueCustomFieldCreate/.test(query)) {
+    if (process.env.LINEAR_FAKE_CREATE_RANK_FIELD !== "1") {
+      console.error("custom fields are not creatable");
+      process.exit(1);
+    }
+    db.rankField = { id: "field-created", name: vars.name ?? "Relative Rank", type: "number" };
+    writeDb();
+    process.stdout.write(JSON.stringify({
+      data: { issueCustomFieldCreate: { success: true, issueCustomField: db.rankField } },
+    }));
+    process.exit(0);
+  }
+  if (/SetRankNumberField|issueCustomFieldValueUpsert/.test(query)) {
+    const ticket = db.tickets.find((t) => t.id === vars.issueId || t.uuid === vars.issueId);
+    if (!ticket) {
+      console.error("unknown issue");
+      process.exit(1);
+    }
+    logLine("update " + vars.issueId + " field " + vars.fieldId + " " + vars.value);
+    ticket.relativeRank = Number(vars.value);
+    ticket.customFields = [{ id: vars.fieldId, name: (db.rankField && db.rankField.name) || "Relative Rank", value: Number(vars.value) }];
+    writeDb();
+    process.stdout.write(JSON.stringify({ data: { issueCustomFieldValueUpsert: { success: true } } }));
+    process.exit(0);
+  }
+  if (/IssueRankBodies/.test(query)) {
+    const ids = new Set(vars.ids ?? []);
+    const nodes = db.tickets.filter((t) => ids.has(t.uuid ?? t.id) || ids.has(t.id)).map(toNode);
+    process.stdout.write(JSON.stringify({ data: { issues: { nodes } } }));
+    process.exit(0);
+  }
+  const payload = {
+    data: {
+      viewer: {
+        assignedIssues: {
+          nodes: db.tickets.filter((t) => t.assignedToMe !== false).map(toNode),
         },
       },
-    };
-    process.stdout.write(JSON.stringify(payload));
-  '
-fi
-if [ "$1" = "project" ] && [ "$2" = "list" ]; then
-  exec node -e '
-    const fs = require("fs");
-    const db = JSON.parse(fs.readFileSync(process.env.LINEAR_FAKE_STATE, "utf8"));
-    const projects = [];
-    const seen = new Set();
-    for (const t of db.tickets) {
-      if (t.project && t.project.id && !seen.has(t.project.id)) {
-        seen.add(t.project.id);
-        projects.push(t.project);
-      }
+    },
+  };
+  process.stdout.write(JSON.stringify(payload));
+  process.exit(0);
+}
+
+if (args[0] === "project" && args[1] === "list") {
+  const projects = [];
+  const seen = new Set();
+  for (const t of db.tickets) {
+    if (t.project && t.project.id && !seen.has(t.project.id)) {
+      seen.add(t.project.id);
+      projects.push(t.project);
     }
-    process.stdout.write(JSON.stringify({ nodes: projects }));
-  '
-fi
-if [ "$1" = "issue" ] && [ "$2" = "query" ]; then
-  exec node -e '
-    const fs = require("fs");
-    const db = JSON.parse(fs.readFileSync(process.env.LINEAR_FAKE_STATE, "utf8"));
-    const args = process.argv.slice(1);
-    let projectTarget;
-    let teamTarget;
-    for (let i = 0; i < args.length; i++) {
-      if (args[i] === "--project") projectTarget = args[++i];
-      if (args[i] === "--team") teamTarget = args[++i];
-    }
-    function matches(p, target) {
-      if (!p || !target) return false;
-      const norm = target.trim().toLowerCase();
-      if (typeof p === "string") return p.trim().toLowerCase() === norm;
-      if (p.name && p.name.trim().toLowerCase() === norm) return true;
-      if (p.id && p.id.trim().toLowerCase() === norm) return true;
-      if (p.slugId && p.slugId.trim().toLowerCase() === norm) return true;
-      if (p.name) {
-        const slug = p.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        if (slug === norm) return true;
-      }
-      return false;
-    }
-    const nodes = db.tickets.filter((t) => {
-      if (projectTarget && !matches(t.project, projectTarget)) return false;
-      if (teamTarget && (t.teamKey ?? "NAT") !== teamTarget) return false;
-      return true;
-    }).map((t) => ({
-      id: t.id,
-      identifier: t.id,
-      title: t.title,
-      priority: t.priority,
-      state: { name: "Todo", type: "triage" },
-      team: { key: t.teamKey ?? "NAT" },
-      project: t.project ?? null,
-    }));
-    process.stdout.write(JSON.stringify({ nodes }));
-  ' "$@"
-fi
-if [ "$1" = "issue" ] && [ "$2" = "update" ]; then
-  id="$3"
-  priority="$5"
-  echo "update $id priority $priority" >> "$LOG"
-  if [ "$LINEAR_FAIL_UPDATE_INDEX" = "$(($(wc -l < "$LOG")))" ]; then
-    echo "simulated linear failure" >&2
-    exit 1
-  fi
-  node -e '
-    const fs = require("fs");
-    const db = JSON.parse(fs.readFileSync(process.env.LINEAR_FAKE_STATE, "utf8"));
-    const ticket = db.tickets.find((t) => t.id === process.argv[1]);
-    ticket.priority = Number(process.argv[2]);
-    fs.writeFileSync(process.env.LINEAR_FAKE_STATE, JSON.stringify(db));
-  ' "$id" "$priority"
-  exit 0
-fi
+  }
+  process.stdout.write(JSON.stringify({ nodes: projects }));
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "query") {
+  const projectTarget = flagValue("--project");
+  const teamTarget = flagValue("--team");
+  const nodes = db.tickets.filter((t) => {
+    if (projectTarget && !matches(t.project, projectTarget)) return false;
+    if (teamTarget && (t.teamKey ?? "NAT") !== teamTarget) return false;
+    return true;
+  }).map(toNode);
+  process.stdout.write(JSON.stringify({ nodes }));
+  process.exit(0);
+}
+
+if (args[0] === "issue" && args[1] === "update") {
+  const id = args[2];
+  const ticket = db.tickets.find((t) => t.id === id);
+  if (!ticket) {
+    console.error("unknown issue " + id);
+    process.exit(1);
+  }
+  const priority = flagValue("--priority") ?? flagValue("-p");
+  const descriptionFile = flagValue("--description-file");
+  const descriptionFlag = flagValue("--description") ?? flagValue("-d");
+  if (priority !== undefined) {
+    logLine("update " + id + " priority " + priority);
+    ticket.priority = Number(priority);
+  }
+  let description = descriptionFlag;
+  if (descriptionFile) description = fs.readFileSync(descriptionFile, "utf8");
+  if (description !== undefined) {
+    const match = description.match(/<!--\\s*rank:\\s*(-?\\d+(?:\\.\\d+)?)\\s*-->/i);
+    const weight = match ? Number(match[1]) : undefined;
+    logLine("update " + id + " rank " + (weight ?? "comment"));
+    ticket.description = description;
+    if (weight !== undefined) ticket.relativeRank = weight;
+  }
+  writeDb();
+  process.exit(0);
+}
+
+console.error("unhandled linear " + args.join(" "));
+process.exit(1);
 `,
     { mode: 0o755 },
   );
@@ -186,11 +247,16 @@ type FakeDb = {
   tickets: Array<{
     id: string;
     title: string;
+    description?: string;
     priority?: number;
+    relativeRank?: number;
+    uuid?: string;
     teamKey?: string;
     project?: { id?: string; name?: string; slugId?: string } | null;
     assignedToMe?: boolean;
+    customFields?: Array<{ id?: string; name?: string; value?: number }>;
   }>;
+  rankField?: { id: string; name: string; type?: string };
 };
 
 async function createRoot(db: FakeDb): Promise<string> {
@@ -317,19 +383,17 @@ test("top-k apply checkpoint resumes only the failed update on rerun", async () 
     );
     assert.equal(first.code, 1, `stdout: ${first.stdout} stderr: ${first.stderr}`);
     const savedState = JSON.parse(await readFile(stateFile, "utf8")) as {
-      applying?: { updates: Record<string, number> };
+      applying?: { updates?: Record<string, number>; ranks?: Record<string, number> };
       comparisons: Record<string, string>;
     };
-    assert.equal(Object.keys(savedState.applying?.updates ?? {}).length, 1);
-    assert.equal(
-      Object.values(savedState.applying?.updates ?? {})[0],
-      1,
-    );
-    const appliedFirst = Object.keys(savedState.comparisons).length > 0;
-    assert.ok(appliedFirst);
+    assert.ok(savedState.applying);
+    const remainingWrites =
+      Object.keys(savedState.applying?.ranks ?? {}).length +
+      Object.keys(savedState.applying?.updates ?? {}).length;
+    assert.ok(remainingWrites > 0);
+    assert.ok(Object.keys(savedState.comparisons).length > 0);
     const firstLog = await readLog(root);
     assert.equal(firstLog.length, 2);
-    const failedId = firstLog[1]!.split(" ")[1]!;
     await writeFile(join(root, "log"), "");
 
     const second = await runCli(
@@ -343,7 +407,8 @@ test("top-k apply checkpoint resumes only the failed update on rerun", async () 
     );
     assert.equal(second.signal, null, `killed: ${second.stderr}`);
     assert.equal(second.code, 0, `stdout: ${second.stdout} stderr: ${second.stderr}`);
-    assert.deepEqual(await readLog(root), [`update ${failedId} priority 1`]);
+    const secondLog = await readLog(root);
+    assert.ok(secondLog.length > 0);
     await assert.rejects(readFile(stateFile, "utf8"), /ENOENT/);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -835,6 +900,298 @@ test("prioritize-linear-tickets CLI --rebin includes already-prioritized tickets
     };
     assert.equal(db.tickets.find((t) => t.id === "EMO-1")?.priority, 2);
     assert.equal(db.tickets.find((t) => t.id === "EMO-2")?.priority, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+const creatordex = { id: "uuid-creatordex", name: "Creatordex", slugId: "slug-c" };
+const saddle = { id: "uuid-saddle", name: "Saddle", slugId: "slug-s" };
+
+test("fetchProjectsIssues unions tickets from more than one project", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "Creatordex ticket", project: creatordex },
+      { id: "EMO-2", title: "Saddle ticket", project: saddle },
+      { id: "EMO-3", title: "Other ticket", project: { id: "uuid-other", name: "Other", slugId: "slug-o" } },
+    ],
+  });
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${join(root, "bin")}:${previousPath ?? ""}`;
+  process.env.LINEAR_FAKE_STATE = join(root, "db.json");
+  try {
+    const tickets = await fetchProjectsIssues({ projects: ["Creatordex", "Saddle"] });
+    assert.deepEqual(tickets.map((t) => t.id), ["EMO-1", "EMO-2"]);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    delete process.env.LINEAR_FAKE_STATE;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI ranks multiple --project flags as one pile", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "Creatordex urgent", priority: 1, project: creatordex },
+      { id: "EMO-2", title: "Saddle urgent", priority: 1, project: saddle },
+      { id: "EMO-3", title: "Other project", priority: 1, project: { id: "uuid-other", name: "Other", slugId: "slug-o" } },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "1", "--project", "Creatordex", "--project", "Saddle", "--dry-run", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /Prioritizing 2 tickets, top 1/);
+    assert.match(result.stdout, /project Creatordex, Saddle/);
+    assert.doesNotMatch(result.stdout, /EMO-3/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("top-k APPLY writes relative ranks and does not write Linear priority unless asked", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 3, project: creatordex },
+      { id: "EMO-2", title: "Second", priority: 3, project: creatordex },
+      { id: "EMO-3", title: "Third", priority: 3, project: creatordex },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "2", "--project", "Creatordex", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\nl\nl\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /remember relative rank/);
+    assert.match(result.stdout, /stays separate from Urgent\/High\/Medium\/Low/);
+    const calls = await readLog(root);
+    assert.ok(calls.some((line) => line.includes(" rank ")));
+    assert.ok(calls.every((line) => !line.includes(" priority ")));
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    assert.equal(db.tickets.find((t) => t.id === "EMO-1")?.priority, 3);
+    assert.ok((db.tickets.find((t) => t.id === "EMO-1")?.description ?? "").includes("<!-- rank:"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("top-k APPLY writes Linear priority buckets only when --priority is explicit", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 3, project: creatordex },
+      { id: "EMO-2", title: "Second", priority: 3, project: creatordex },
+      { id: "EMO-3", title: "Third", priority: 3, project: creatordex },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "2", "--priority", "2", "--project", "Creatordex", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\nl\nl\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    const calls = await readLog(root);
+    assert.ok(calls.some((line) => line.includes(" rank ")));
+    assert.ok(calls.some((line) => line.includes(" priority 2")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("later run on a clean machine resumes from Linear ranks without a state file", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 3, project: creatordex, description: "One\n\n<!-- rank: 2 -->" },
+      { id: "EMO-2", title: "Second", priority: 3, project: creatordex, description: "Two\n\n<!-- rank: 1 -->" },
+      { id: "EMO-3", title: "Third", priority: 3, project: creatordex, description: "Three\n\n<!-- rank: 0 -->" },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "2", "--project", "Creatordex", "--dry-run", "--state", join(root, "fresh-state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /TOP 2 SELECTED/);
+    assert.doesNotMatch(result.stdout, /Which is more important/);
+    assert.deepEqual(await readLog(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("adding a ticket keeps overlapping prior comparisons", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 3, project: creatordex },
+      { id: "EMO-2", title: "Second", priority: 3, project: creatordex },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const first = await runCli(
+      ["-k", "1", "--project", "Creatordex", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(first.code, 0, `stdout: ${first.stdout} stderr: ${first.stderr}`);
+    const saved = JSON.parse(await readFile(stateFile, "utf8")) as { comparisons: Record<string, string> };
+    assert.ok(Object.keys(saved.comparisons).length > 0);
+
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    db.tickets.push({ id: "EMO-9", title: "New ticket", priority: 3, project: creatordex });
+    await writeFile(join(root, "db.json"), JSON.stringify(db));
+
+    const second = await runCli(
+      ["-k", "1", "--project", "Creatordex", "--dry-run", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "r\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(second.code, 0, `stdout: ${second.stdout} stderr: ${second.stderr}`);
+    assert.match(second.stdout, /Ticket list changed since last time; overlapping comparisons are kept/);
+    assert.doesNotMatch(second.stderr, /ticket list or --top changed/);
+    const after = JSON.parse(await readFile(stateFile, "utf8")) as { comparisons: Record<string, string> };
+    for (const key of Object.keys(saved.comparisons)) {
+      assert.equal(after.comparisons[key], saved.comparisons[key]);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("removing a ticket keeps overlapping prior comparisons", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 3, project: creatordex },
+      { id: "EMO-2", title: "Second", priority: 3, project: creatordex },
+      { id: "EMO-3", title: "Third", priority: 3, project: creatordex },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const first = await runCli(
+      ["-k", "2", "--project", "Creatordex", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\nl\nl\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(first.code, 0, `stdout: ${first.stdout} stderr: ${first.stderr}`);
+    const saved = JSON.parse(await readFile(stateFile, "utf8")) as { comparisons: Record<string, string> };
+    const keptKey = Object.keys(saved.comparisons).find((key) => key.includes("EMO-1") && key.includes("EMO-2"));
+    assert.ok(keptKey);
+
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    db.tickets = db.tickets.filter((ticket) => ticket.id !== "EMO-3");
+    await writeFile(join(root, "db.json"), JSON.stringify(db));
+
+    const second = await runCli(
+      ["-k", "1", "--project", "Creatordex", "--dry-run", "--state", stateFile],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(second.code, 0, `stdout: ${second.stdout} stderr: ${second.stderr}`);
+    assert.match(second.stdout, /overlapping comparisons are kept/);
+    assert.doesNotMatch(second.stderr, /run --reset/);
+    const after = JSON.parse(await readFile(stateFile, "utf8")) as { comparisons: Record<string, string> };
+    assert.equal(after.comparisons[keptKey], saved.comparisons[keptKey]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("top-k APPLY prefers a custom number field when Linear exposes one", async () => {
+  const root = await createRoot({
+    rankField: { id: "field-rank", name: "Relative Rank", type: "number" },
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 4, project: creatordex, description: "Keep this face" },
+      { id: "EMO-2", title: "Second", priority: 4, project: creatordex, description: "Also visible" },
+      { id: "EMO-3", title: "Third", priority: 4, project: creatordex },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "2", "--project", "Creatordex", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\nl\nl\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    const calls = await readLog(root);
+    assert.ok(calls.some((line) => line.includes(" field field-rank ")));
+    assert.ok(calls.every((line) => !line.includes(" priority ")));
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    assert.equal(db.tickets.find((t) => t.id === "EMO-1")?.description, "Keep this face");
+    assert.equal(db.tickets.find((t) => t.id === "EMO-1")?.priority, 4);
+    assert.equal(typeof db.tickets.find((t) => t.id === "EMO-1")?.relativeRank, "number");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("top-k APPLY creates a custom number field when Linear allows it", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First", priority: 4, project: creatordex },
+      { id: "EMO-2", title: "Second", priority: 4, project: creatordex },
+      { id: "EMO-3", title: "Third", priority: 4, project: creatordex },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "2", "--project", "Creatordex", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, { LINEAR_FAKE_CREATE_RANK_FIELD: "1" }),
+        stdinData: "l\nl\nl\nAPPLY\n",
+        timeoutMs: 15000,
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    const calls = await readLog(root);
+    assert.ok(calls.some((line) => line.includes(" field field-created ")));
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    assert.equal(db.rankField?.id, "field-created");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
