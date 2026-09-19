@@ -15,12 +15,13 @@ password_env = "SMART_HOME_KASA_PASSWORD"
 
 # Optional second backend when a Home Assistant box can see the IoT VLAN.
 # [homeassistant]
-# url = "http://homeassistant.local:8123"
+# url = "http://ha.example:8123"
 # token_env = "SMART_HOME_HA_TOKEN"
 # token_op = "op://Personal/Home Assistant/token"
 
-# Kasa app names: Sparks, PC, 4090, Mac Studio.
+# Kasa app names: Sparks, PC, 4090, Mac Studio, Media Rack.
 # spark0 and spark1 share one KP125M ("Sparks"); cycling it reboots both.
+# SMART.KASAPLUG needs host = "IP" for unicast KLAP (no UDP discover).
 
 [[device]]
 alias = "spark0"
@@ -51,3 +52,10 @@ alias = "mac-studio"
 connector = "kasa"
 match = "Mac Studio"
 allow_cycle = false       # this machine's own plug
+
+[[device]]
+alias = "media-rack"
+connector = "kasa"
+match = "Media Rack"
+allow_cycle = false
+host = "192.168.50.152"   # KP125M SMART.KASAPLUG via KLAP :80

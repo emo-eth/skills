@@ -87,3 +87,37 @@ Operator map:
 
 Kasa Cloud still reports Sparks/PC/4090 as `status: 0` and passthrough `-20571` (IOT and SMART payloads). They are `SMART.KASAPLUG` Matter plugs. EP25 IOT plugs (Entertainment, Studio Desk, Mac Studio) return live watts.
 
+## EMO-479 KLAP for SMART.KASAPLUG (2026-09-19)
+
+KP125M Matter plugs (`SMART.KASAPLUG`) stay `status: 0` on Kasa Cloud. Passthrough is `-20571` because TP-Link does not tunnel the legacy XOR IOT protocol for them. They speak KLAP on HTTP :80 at a unicast host using the TP-Link account.
+
+`smart_home.py` now:
+
+- persists `host` on `[[device]]`
+- routes SMART.KASAPLUG energy/on/off through python-kasa when importable, else `uvx --from python-kasa kasa --json --host` with `KASA_PASSWORD` in the environment
+- keeps IOT EP25 on cloud `passthrough`
+- ships default alias `media-rack` → Media Rack `192.168.50.152` (`allow_cycle = false`)
+
+Live on studio (no cycle, no UDP discover):
+
+```
+$ python3 skills/smart-home/scripts/smart_home.py --json energy "Media Rack"
+{
+  "alias": "Media Rack",
+  "amps": 1.738,
+  "connector": "kasa",
+  "host": "192.168.50.152",
+  "id": "803ABE5ED92F38252F2968C06265A37F2430D06F",
+  "kwh": 215.131,
+  "model": "KP125M(US)",
+  "on": true,
+  "online": true,
+  "parent_id": null,
+  "volts": 124.037,
+  "watts": 203.99
+}
+```
+
+`energy media-rack` matched. `status` reported Media Rack ~204 W on, Mac Studio (EP25) ~31 W on, and Sparks/PC/4090 as SMART.KASAPLUG missing `host` (not `-20571` auth confusion). `python3 skills/smart-home/tests/test_smart_home.py` — 38 tests OK.
+
+Sparks/PC/4090 still need their LAN IPs in `[[device]] host` before KLAP can read them.

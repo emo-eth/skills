@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""API-only smart home CLI. No local UDP discovery."""
+"""Smart home CLI: Kasa Cloud (IOT) plus unicast KLAP for SMART.KASAPLUG."""
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import getpass
 import hashlib
@@ -30,7 +31,9 @@ DEFAULT_OFF_SECONDS = 8.0
 KASA_DEVICE_OFFLINE_CODE = -20571
 KASA_AUTH_ERROR_CODES = {-20651, -20600, -20004}
 SECRET_SUBPROCESS_TIMEOUT = 10.0
+LOCAL_KASA_TIMEOUT = 25.0
 _B64_ALIAS = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
+_SMART_FAMILY_PREFIX = "SMART."
 
 
 class SmartHomeError(Exception):
@@ -97,6 +100,7 @@ class Alias:
     connector: str
     match: str
     allow_cycle: bool = False
+    host: str | None = None
     entity_id: str | None = None
     power_entity: str | None = None
     voltage_entity: str | None = None
@@ -104,12 +108,21 @@ class Alias:
 
 
 # Human host names -> Kasa app aliases. spark0 and spark1 share plug "Sparks".
+# SMART.KASAPLUG (KP125M) needs a unicast host for local KLAP; cloud passthrough
+# returns -20571 because TP-Link does not tunnel the IOT XOR protocol for them.
 DEFAULT_ALIASES = (
     Alias("spark0", "kasa", "Sparks", allow_cycle=True),
     Alias("spark1", "kasa", "Sparks", allow_cycle=True),
     Alias("emo-win", "kasa", "PC", allow_cycle=True),
     Alias("emo-4090", "kasa", "4090", allow_cycle=True),
     Alias("mac-studio", "kasa", "Mac Studio", allow_cycle=False),
+    Alias(
+        "media-rack",
+        "kasa",
+        "Media Rack",
+        allow_cycle=False,
+        host="192.168.50.152",
+    ),
 )
 
 
@@ -160,11 +173,18 @@ class UrlLibTransport:
 
 
 def _run_capture(
-    argv: list[str], timeout: float = SECRET_SUBPROCESS_TIMEOUT
+    argv: list[str],
+    timeout: float = SECRET_SUBPROCESS_TIMEOUT,
+    environ: dict[str, str] | None = None,
 ) -> str:
     try:
         result = subprocess.run(
-            argv, check=False, capture_output=True, text=True, timeout=timeout
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=environ,
         )
     except subprocess.TimeoutExpired as exc:
         raise AuthError(f"{argv[0]} timed out after {timeout}s") from exc
@@ -310,6 +330,8 @@ def write_local_config(
                 f"allow_cycle = {_bool_toml(alias.allow_cycle)}",
             ]
         )
+        if alias.host:
+            lines.append(f"host = {_toml_string(alias.host)}")
         if alias.entity_id:
             lines.append(f"entity_id = {_toml_string(alias.entity_id)}")
         if alias.power_entity:
@@ -440,11 +462,13 @@ def load_config(
             raise ConfigError("[[device]] entries need alias")
         connector = str(item.get("connector") or cfg.default_connector)
         match = str(item.get("match") or item.get("device_id") or item.get("entity_id") or name)
+        host = item.get("host")
         cfg.aliases[name.lower()] = Alias(
             name=name,
             connector=connector,
             match=match,
             allow_cycle=bool(item.get("allow_cycle", False)),
+            host=str(host).strip() if host else None,
             entity_id=item.get("entity_id"),
             power_entity=item.get("power_entity"),
             voltage_entity=item.get("voltage_entity"),
@@ -511,6 +535,251 @@ def _hash_password(password: str, encoding: str) -> str:
     raise ConfigError(f"unknown kasa.password_encoding {encoding!r}")
 
 
+
+def is_smart_kasa_device(device: Device) -> bool:
+    family = str(
+        device.extras.get("deviceType")
+        or device.extras.get("type")
+        or ""
+    ).upper()
+    model = (device.model or "").upper()
+    if family.startswith(_SMART_FAMILY_PREFIX):
+        return True
+    return "KP125M" in model or "P125M" in model
+
+
+def copy_device(device: Device, **changes: Any) -> Device:
+    payload = {
+        "connector": device.connector,
+        "device_id": device.device_id,
+        "alias": device.alias,
+        "model": device.model,
+        "online": device.online,
+        "parent_id": device.parent_id,
+        "extras": dict(device.extras),
+    }
+    payload.update(changes)
+    return Device(**payload)
+
+
+def host_for_device(config: AppConfig, device: Device, needle: str | None = None) -> str | None:
+    host = device.extras.get("host")
+    if isinstance(host, str) and host.strip():
+        return host.strip()
+    names = {device.alias.lower(), device.device_id.lower()}
+    if needle:
+        names.add(needle.lower())
+    for alias in config.aliases.values():
+        if alias.host and (
+            alias.name.lower() in names
+            or alias.match.lower() in names
+        ):
+            return alias.host
+    for alias in DEFAULT_ALIASES:
+        if alias.host and (
+            alias.name.lower() in names
+            or alias.match.lower() in names
+        ):
+            return alias.host
+    return None
+
+
+def parse_klap_state(payload: dict[str, Any]) -> tuple[Device, Energy]:
+    """Parse python-kasa `--json state` / internal SMART protocol dump."""
+    info = payload.get("get_device_info")
+    if not isinstance(info, dict):
+        info = payload
+    emeter = payload.get("get_emeter_data")
+    if not isinstance(emeter, dict):
+        emeter = {}
+    usage = payload.get("get_energy_usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    if emeter.get("power_mw") is not None:
+        watts = float(emeter.get("power_mw") or 0) / 1000.0
+        volts = float(emeter.get("voltage_mv") or 0) / 1000.0
+        amps = float(emeter.get("current_ma") or 0) / 1000.0
+        kwh = float(emeter.get("energy_wh") or 0) / 1000.0
+    elif usage.get("current_power") is not None:
+        current_power = float(usage.get("current_power") or 0)
+        watts = current_power / 1000.0 if current_power > 1000 else current_power
+        volts = 0.0
+        amps = 0.0
+        kwh = float(usage.get("today_energy") or 0) / 1000.0
+    else:
+        current = payload.get("get_current_power")
+        watts = float((current or {}).get("current_power") or 0) if isinstance(current, dict) else 0.0
+        volts = 0.0
+        amps = 0.0
+        kwh = 0.0
+    on = info.get("device_on")
+    if on is None:
+        on = info.get("relay_state")
+    alias = decode_kasa_alias(str(info.get("nickname") or info.get("alias") or ""))
+    device = Device(
+        connector="kasa",
+        device_id=str(info.get("device_id") or ""),
+        alias=alias or str(info.get("ip") or "klap"),
+        model=str(info.get("model") or ""),
+        online=True,
+        extras={
+            "deviceType": info.get("type"),
+            "host": info.get("ip"),
+            "path": "klap",
+        },
+    )
+    energy = Energy(
+        watts=watts,
+        volts=volts,
+        amps=amps,
+        kwh=kwh,
+        on=bool(on) if on is not None else None,
+        raw={"get_emeter_data": emeter, "get_energy_usage": usage},
+    )
+    return device, energy
+
+
+class LocalKasaBackend(Protocol):
+    def read(self, host: str, username: str, password: str) -> tuple[Device, Energy]:
+        ...
+
+    def set_power(self, host: str, username: str, password: str, on: bool) -> None:
+        ...
+
+
+class PythonKasaBackend:
+    """Unicast KLAP via python-kasa (import) or `uvx --from python-kasa kasa`."""
+
+    def __init__(
+        self,
+        run: Callable[..., str] = _run_capture,
+        timeout: float = LOCAL_KASA_TIMEOUT,
+    ) -> None:
+        self.run = run
+        self.timeout = timeout
+
+    def read(self, host: str, username: str, password: str) -> tuple[Device, Energy]:
+        try:
+            payload = self._read_library(host, username, password)
+        except ImportError:
+            payload = self._uvx_json(host, username, password, "state")
+        device, energy = parse_klap_state(payload)
+        extras = dict(device.extras)
+        extras["host"] = host
+        return copy_device(device, extras=extras), energy
+
+    def set_power(self, host: str, username: str, password: str, on: bool) -> None:
+        try:
+            self._set_library(host, username, password, on)
+        except ImportError:
+            self._uvx_json(host, username, password, "on" if on else "off")
+
+    def _kasa_env(self, username: str, password: str) -> dict[str, str]:
+        env = os.environ.copy()
+        env["KASA_USERNAME"] = username
+        env["KASA_PASSWORD"] = password
+        return env
+
+    def _uvx_json(
+        self, host: str, username: str, password: str, command: str
+    ) -> dict[str, Any]:
+        argv = [
+            "uvx",
+            "--from",
+            "python-kasa",
+            "kasa",
+            "--json",
+            "--username",
+            username,
+            "--host",
+            host,
+            command,
+        ]
+        try:
+            stdout = self.run(
+                argv, timeout=self.timeout, environ=self._kasa_env(username, password)
+            )
+        except TypeError:
+            stdout = self.run(argv)
+        except AuthError as exc:
+            raise DeviceOffline(f"KLAP {host} failed: {exc}") from exc
+        if command in {"on", "off"}:
+            return {}
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise SmartHomeError(f"python-kasa JSON was invalid from {host}") from exc
+        if not isinstance(payload, dict):
+            raise SmartHomeError(f"python-kasa JSON from {host} was not an object")
+        return payload
+
+    def _read_library(self, host: str, username: str, password: str) -> dict[str, Any]:
+        from kasa import Credentials, Device, DeviceConfig  # type: ignore
+
+        async def _go() -> dict[str, Any]:
+            config = DeviceConfig(host=host, credentials=Credentials(username, password))
+            dev = await asyncio.wait_for(Device.connect(config=config), self.timeout)
+            try:
+                await asyncio.wait_for(dev.update(), self.timeout)
+                state = getattr(dev, "internal_state", None) or {}
+                if not isinstance(state, dict) or "get_device_info" not in state:
+                    energy_mod = None
+                    try:
+                        energy_mod = dev.modules.get("Energy")
+                    except Exception:
+                        energy_mod = None
+                    info = {
+                        "device_id": getattr(dev, "device_id", "") or "",
+                        "nickname": getattr(dev, "alias", "") or "",
+                        "model": getattr(dev, "model", "") or "",
+                        "type": "SMART.KASAPLUG",
+                        "device_on": bool(dev.is_on),
+                        "ip": host,
+                    }
+                    emeter = {}
+                    if energy_mod is not None:
+                        watts = getattr(energy_mod, "current_consumption", None)
+                        volts = getattr(energy_mod, "voltage", None)
+                        amps = getattr(energy_mod, "current", None)
+                        today = getattr(energy_mod, "consumption_today", None)
+                        emeter = {
+                            "power_mw": (watts or 0) * 1000,
+                            "voltage_mv": (volts or 0) * 1000,
+                            "current_ma": (amps or 0) * 1000,
+                            "energy_wh": (today or 0) * 1000,
+                        }
+                    return {"get_device_info": info, "get_emeter_data": emeter}
+                return state
+            finally:
+                await dev.disconnect()
+
+        try:
+            return asyncio.run(_go())
+        except Exception as exc:
+            raise DeviceOffline(f"KLAP {host} failed: {exc}") from exc
+
+    def _set_library(self, host: str, username: str, password: str, on: bool) -> None:
+        from kasa import Credentials, Device, DeviceConfig  # type: ignore
+
+        async def _go() -> None:
+            config = DeviceConfig(host=host, credentials=Credentials(username, password))
+            dev = await asyncio.wait_for(Device.connect(config=config), self.timeout)
+            try:
+                if on:
+                    await asyncio.wait_for(dev.turn_on(), self.timeout)
+                else:
+                    await asyncio.wait_for(dev.turn_off(), self.timeout)
+            finally:
+                await dev.disconnect()
+
+        try:
+            asyncio.run(_go())
+        except ImportError:
+            raise
+        except Exception as exc:
+            raise DeviceOffline(f"KLAP {host} power failed: {exc}") from exc
+
+
 class KasaCloudConnector:
     name = "kasa"
 
@@ -519,13 +788,51 @@ class KasaCloudConnector:
         config: AppConfig,
         transport: HttpTransport | None = None,
         timeout: float = 20.0,
+        local: LocalKasaBackend | None = None,
     ) -> None:
         self.config = config
         self.transport = transport or UrlLibTransport()
         self.timeout = timeout
+        self._local = local
         self._token: str | None = None
         self._devices: list[Device] | None = None
         self._terminal = self._load_terminal_uuid()
+
+    def _local_backend(self) -> LocalKasaBackend:
+        if self._local is None:
+            self._local = PythonKasaBackend()
+        return self._local
+
+    def _kasa_user_pass(self) -> tuple[str, str]:
+        if not self.config.kasa_username or not self.config.kasa_password:
+            raise AuthError(
+                "Kasa credentials missing. Set SMART_HOME_KASA_USERNAME and "
+                "SMART_HOME_KASA_PASSWORD, or ~/.config/smart-home/config.toml."
+            )
+        return self.config.kasa_username, self.config.kasa_password
+
+    def _attach_host(self, device: Device, needle: str | None = None) -> Device:
+        host = host_for_device(self.config, device, needle)
+        if not host or device.extras.get("host") == host:
+            return device
+        extras = dict(device.extras)
+        extras["host"] = host
+        extras.setdefault("deviceType", extras.get("deviceType") or "SMART.KASAPLUG")
+        return copy_device(device, extras=extras)
+
+    def _klap_read(self, device: Device) -> tuple[Device, Energy]:
+        host = host_for_device(self.config, device)
+        if not host:
+            raise DeviceOffline(
+                f"{device.alias!r} is SMART.KASAPLUG; cloud passthrough is not "
+                "tunneled. Set host = \"IP\" on [[device]] for local KLAP."
+            )
+        username, password = self._kasa_user_pass()
+        found, energy = self._local_backend().read(host, username, password)
+        extras = dict(found.extras)
+        extras["host"] = host
+        extras["path"] = "klap"
+        return copy_device(found, extras=extras, online=True), energy
 
     def _load_terminal_uuid(self) -> str:
         path = self.config.state_dir / "kasa-terminal-uuid"
@@ -629,8 +936,11 @@ class KasaCloudConnector:
                     "deviceType": item.get("deviceType"),
                 },
             )
+            parent = self._attach_host(parent)
+            if parent.extras.get("host") and is_smart_kasa_device(parent):
+                parent = copy_device(parent, online=True)
             devices.append(parent)
-            if parent.online:
+            if parent.online and not is_smart_kasa_device(parent):
                 devices.extend(self._expand_children(parent))
         self._devices = devices
         return devices
@@ -693,9 +1003,43 @@ class KasaCloudConnector:
         raise DeviceNotFound(f"no Kasa device matching {needle!r}")
 
     def resolve(self, needle: str) -> Device:
-        return self._find(self.list_devices(), needle)
+        alias = self.config.aliases.get(needle.lower())
+        match = alias.match if alias else needle
+        try:
+            device = self._find(self.list_devices(), match)
+        except DeviceNotFound:
+            host = (alias.host if alias else None) or host_for_device(
+                self.config, Device("kasa", needle, needle), needle
+            )
+            if host:
+                label = alias.match if alias else needle
+                if alias is None:
+                    for da in DEFAULT_ALIASES:
+                        if da.name.lower() == needle.lower() or da.match.lower() == needle.lower():
+                            label = da.match
+                            break
+                return Device(
+                    connector=self.name,
+                    device_id=needle,
+                    alias=label,
+                    model="KP125M",
+                    online=True,
+                    extras={
+                        "host": host,
+                        "deviceType": "SMART.KASAPLUG",
+                        "path": "klap",
+                    },
+                )
+            raise
+        return self._attach_host(device, needle)
 
     def get_power(self, device: Device) -> bool:
+        device = self._attach_host(device)
+        if is_smart_kasa_device(device):
+            _, energy = self._klap_read(device)
+            if energy.on is None:
+                raise DeviceOffline(f"{device.alias!r} KLAP did not report power state")
+            return bool(energy.on)
         request: dict[str, Any] = {"system": {"get_sysinfo": {}}}
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
@@ -710,12 +1054,26 @@ class KasaCloudConnector:
         return bool(sysinfo.get("relay_state"))
 
     def set_power(self, device: Device, on: bool) -> None:
+        device = self._attach_host(device)
+        if is_smart_kasa_device(device):
+            host = host_for_device(self.config, device)
+            if not host:
+                raise DeviceOffline(
+                    f"{device.alias!r} is SMART.KASAPLUG; set host on [[device]] for KLAP"
+                )
+            username, password = self._kasa_user_pass()
+            self._local_backend().set_power(host, username, password, on)
+            return
         request: dict[str, Any] = {"system": {"set_relay_state": {"state": 1 if on else 0}}}
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
         self._passthrough(device, request)
 
     def energy(self, device: Device) -> Energy:
+        device = self._attach_host(device)
+        if is_smart_kasa_device(device):
+            _, energy = self._klap_read(device)
+            return energy
         request: dict[str, Any] = {"emeter": {"get_realtime": {}}}
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
@@ -904,11 +1262,20 @@ def build_connector(
 
 
 def resolve_target(
-    config: AppConfig, needle: str, transport: HttpTransport | None = None
+    config: AppConfig,
+    needle: str,
+    transport: HttpTransport | None = None,
+    connectors: dict[str, KasaCloudConnector | HomeAssistantConnector] | None = None,
 ) -> tuple[KasaCloudConnector | HomeAssistantConnector, Device, Alias | None]:
     alias = config.aliases.get(needle.lower())
     connector_name = alias.connector if alias else config.default_connector
-    connector = build_connector(connector_name, config, transport=transport)
+    connector: KasaCloudConnector | HomeAssistantConnector | None = None
+    if connectors is not None:
+        connector = connectors.get(connector_name)
+    if connector is None:
+        connector = build_connector(connector_name, config, transport=transport)
+        if connectors is not None:
+            connectors[connector_name] = connector
     match = alias.match if alias else needle
     if isinstance(connector, HomeAssistantConnector):
         device = connector.resolve(match, alias=alias)
@@ -1003,7 +1370,7 @@ def _print(data: Any, as_json: bool) -> None:
 
 
 def _device_row(device: Device) -> dict[str, Any]:
-    return {
+    row = {
         "alias": device.alias,
         "id": device.device_id,
         "connector": device.connector,
@@ -1011,6 +1378,13 @@ def _device_row(device: Device) -> dict[str, Any]:
         "online": device.online,
         "parent_id": device.parent_id,
     }
+    host = device.extras.get("host")
+    if isinstance(host, str) and host.strip():
+        row["host"] = host.strip()
+    path = device.extras.get("path")
+    if isinstance(path, str) and path.strip():
+        row["path"] = path.strip()
+    return row
 
 
 def collect_whoami(
@@ -1049,10 +1423,11 @@ def status_rows_for_targets(
     transport: HttpTransport | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    connectors: dict[str, KasaCloudConnector | HomeAssistantConnector] = {}
     for target in targets:
         try:
             connector, device, alias = resolve_target(
-                config, target, transport=transport
+                config, target, transport=transport, connectors=connectors
             )
         except SmartHomeError as exc:
             rows.append({"alias": target, "error": str(exc)})
@@ -1064,7 +1439,7 @@ def status_rows_for_targets(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="smart-home",
-        description="Control smart plugs over authenticated APIs (no LAN broadcast).",
+        description="Control smart plugs over Kasa Cloud (IOT) or unicast KLAP (SMART.KASAPLUG).",
     )
     parser.add_argument(
         "--config",
@@ -1186,6 +1561,11 @@ def main(argv: list[str] | None = None) -> int:
                 targets = [args.target]
             elif config.aliases:
                 targets = [alias.name for alias in config.aliases.values()]
+                seen = {name.lower() for name in targets}
+                for alias in DEFAULT_ALIASES:
+                    if alias.host and alias.name.lower() not in seen:
+                        targets.append(alias.name)
+                        seen.add(alias.name.lower())
             else:
                 connector = build_connector(config.default_connector, config)
                 rows = [energy_row(connector, device) for device in connector.list_devices()]

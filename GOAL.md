@@ -1,31 +1,33 @@
-# Goal: Ranker --project filter
-
-Linear: [EMO-456](https://linear.app/emo-eth/issue/EMO-456/ranker-project-filter)
-Herdr: prioritize-project-flag (w46)
-Worktree: `/Users/emo/.herdr/worktrees/skills/prioritize-project-flag`
-
-Standing instruction: update Linear only when intention, vibe, done-when, or map actually changes.
-
 ## Intention
 
-Allow operator and automation to rank Linear tickets scoped to a specific project (`--project <name|uuid|slug>`) without rewriting ranking UX.
+Setup smart home connectors on studio (Kasa power cycling & power monitoring), including Matter SMART.KASAPLUG via local KLAP.
 
 ## Vibe
 
-Naming a project should feel like looking at that project's work, not at your assigned pile. Missing tickets because they were unassigned or already Urgent is a failure. Ranking is still your comparisons. Writing Linear is still a deliberate apply, never a surprise.
+Doing smart-home-connectors should feel like finished work you can trust, not a reminder stub.
 
 ## Done-when
 
-- `--project Creatordex` fetches ALL open tickets in that project: assigned to anyone, any priority (including Urgent). Then the operator ranks them (L/R/T).
-- Do NOT skip already-Urgent when `--project` is set.
-- Do NOT use viewer.assignedIssues for `--project`.
-- `--team EMO` is a team key. Never pass `--team creatordex`. `--project creatordex` is case-insensitive project name.
-- Proof: `./tools/prioritize-linear-tickets.ts -k 5 --project Creatordex --reset` must print TOP 5 of ~40+ tickets, not TOP 0, and must not print Skipping already-Urgent.
-- Ticket-scoped tests. Ready PR. Ship/merge origin/main (operator said ship this flag).
-- Check in via standup INBOX.md with Linear HTTPS + PR HTTPS. Never prompt w2D:p1.
+1. Separate SSID compatibility: IOT plugs work across network boundaries via Kasa Cloud without LAN broadcast.
+2. SMART.KASAPLUG / KP125M: unicast KLAP on a configured host (python-kasa or `uvx --from python-kasa`) reports live watts; no UDP discover.
+3. Extensible architecture: General smart home connector pattern, especially supporting Kasa devices.
+4. Power monitoring: Queries live wattage accurately (cloud emeter or KLAP).
+5. Power cycling: Supports safe power toggling/cycling to reboot frozen hardware.
+
+## Acceptance criteria
+1. `smart-home energy "Media Rack"` and `smart-home energy media-rack` return live watts/volts/amps/on via KLAP.
+2. `smart-home status` includes Media Rack wattage without aborting on other offline SMART plugs.
+3. Existing IOT cloud tests and new KLAP unit tests pass.
+4. Secrets stay in mode-600 config; password never on uvx argv.
+
+## Validation criteria
+1. Live KLAP energy on studio for Media Rack at 192.168.50.152.
+2. `python3 skills/smart-home/tests/test_smart_home.py` passes.
+3. Execution log recorded with proof outputs (no secrets, no Matter setup codes).
 
 ## Map
-
-- Herdr: prioritize-project-flag (w46)
-- Worktree: `/Users/emo/.herdr/worktrees/skills/prioritize-project-flag`
-- Files: `tools/prioritize-linear-tickets.ts`, `tools/linear-client.ts`, `tools/prioritize-linear-tickets.test.ts`
+- Herdr: smart-home-connectors (w59)
+- Linear: https://linear.app/emo-eth/issue/EMO-474/setup-smart-home-connectors-on-studio-kasa-power-cycling-and-power
+- Linear: https://linear.app/emo-eth/issue/EMO-479/support-matter-smart-klap-protocol-for-kp125m-kasa-plugs-on-studio
+- Worktree: `/Users/emo/.herdr/worktrees/skills/smart-home-connectors`
+- Host: `studio`

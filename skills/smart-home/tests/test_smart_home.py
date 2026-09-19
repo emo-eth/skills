@@ -676,13 +676,23 @@ class TestSetup(unittest.TestCase):
             self.assertEqual(cfg.kasa_password, "secret-from-stdin")
             self.assertEqual(
                 [a.name for a in cfg.aliases.values()],
-                ["spark0", "spark1", "emo-win", "emo-4090", "mac-studio"],
+                [
+                    "spark0",
+                    "spark1",
+                    "emo-win",
+                    "emo-4090",
+                    "mac-studio",
+                    "media-rack",
+                ],
             )
             self.assertEqual(cfg.aliases["spark0"].match, "Sparks")
             self.assertEqual(cfg.aliases["spark1"].match, "Sparks")
             self.assertEqual(cfg.aliases["emo-win"].match, "PC")
             self.assertEqual(cfg.aliases["emo-4090"].match, "4090")
             self.assertFalse(cfg.aliases["mac-studio"].allow_cycle)
+            self.assertEqual(cfg.aliases["media-rack"].match, "Media Rack")
+            self.assertEqual(cfg.aliases["media-rack"].host, "192.168.50.152")
+            self.assertFalse(cfg.aliases["media-rack"].allow_cycle)
 
     def test_setup_password_stdin_reads_one_line(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -808,7 +818,7 @@ class TestStatusIsolation(unittest.TestCase):
         }
         original = sh.resolve_target
 
-        def fake(config, needle, transport=None):
+        def fake(config, needle, transport=None, connectors=None):
             if needle == "dead":
                 raise sh.DeviceOffline("Kasa device offline (error_code -20571)")
             device = sh.Device("kasa", "live1", "live", online=True)
@@ -833,6 +843,224 @@ class TestStatusIsolation(unittest.TestCase):
         self.assertNotIn("error", rows[1])
         self.assertAlmostEqual(rows[1]["watts"], 10.0)
         self.assertTrue(rows[1]["on"])
+
+
+
+KLAP_STATE = {
+    "get_device_info": {
+        "device_id": "803ABE5ED92F38252F2968C06265A37F2430D06F",
+        "nickname": "TWVkaWEgUmFjaw==",
+        "model": "KP125M",
+        "type": "SMART.KASAPLUG",
+        "device_on": True,
+        "ip": "192.168.50.152",
+    },
+    "get_emeter_data": {
+        "current_ma": 1815,
+        "voltage_mv": 124510,
+        "power_mw": 213765,
+        "energy_wh": 215100,
+    },
+    "get_energy_usage": {
+        "today_energy": 4424,
+        "current_power": 213765,
+    },
+}
+
+
+class FakeLocal:
+    def __init__(self, energy=None):
+        self.reads = []
+        self.powers = []
+        self.energy = energy or sh.Energy(
+            watts=206.6, volts=124.3, amps=1.74, kwh=4.399, on=True
+        )
+
+    def read(self, host, username, password):
+        self.reads.append({"host": host, "username": username, "password": password})
+        device = sh.Device(
+            connector="kasa",
+            device_id="local-id",
+            alias="Media Rack",
+            model="KP125M",
+            online=True,
+            extras={
+                "host": host,
+                "deviceType": "SMART.KASAPLUG",
+                "path": "klap",
+            },
+        )
+        return device, self.energy
+
+    def set_power(self, host, username, password, on):
+        self.powers.append(
+            {"host": host, "username": username, "password": password, "on": on}
+        )
+
+
+class TestKlapSmart(unittest.TestCase):
+    def _config(self, tmp: str) -> "sh.AppConfig":
+        cfg = sh.AppConfig(path=Path(tmp) / "unused.toml", state_dir=Path(tmp))
+        cfg.kasa_username = "user@example.com"
+        cfg.kasa_password = "pw"
+        return cfg
+
+    def _media_list(self, status=0):
+        return kasa_ok(
+            {
+                "deviceList": [
+                    {
+                        "deviceId": "803ABE5ED92F38252F2968C06265A37F2430D06F",
+                        "alias": "TWVkaWEgUmFjaw==",
+                        "deviceModel": "KP125M(US)",
+                        "deviceType": "SMART.KASAPLUG",
+                        "status": status,
+                    }
+                ]
+            }
+        )
+
+    def test_parse_klap_state_milliwatt_fields(self):
+        device, energy = sh.parse_klap_state(KLAP_STATE)
+        self.assertEqual(device.alias, "Media Rack")
+        self.assertEqual(device.model, "KP125M")
+        self.assertEqual(device.extras["deviceType"], "SMART.KASAPLUG")
+        self.assertAlmostEqual(energy.watts, 213.765)
+        self.assertAlmostEqual(energy.volts, 124.51)
+        self.assertAlmostEqual(energy.amps, 1.815)
+        self.assertAlmostEqual(energy.kwh, 215.1)
+        self.assertTrue(energy.on)
+
+    def test_smart_with_host_uses_local_not_passthrough(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [kasa_ok({"token": "tok"}), self._media_list()]
+            )
+            local = FakeLocal()
+            connector = sh.KasaCloudConnector(
+                self._config(tmp), transport=transport, local=local
+            )
+            device = connector.resolve("Media Rack")
+            self.assertEqual(device.extras.get("host"), "192.168.50.152")
+            self.assertTrue(device.online)
+            reading = connector.energy(device)
+            self.assertAlmostEqual(reading.watts, 206.6)
+            self.assertAlmostEqual(reading.volts, 124.3)
+            self.assertTrue(reading.on)
+            self.assertEqual(connector.get_power(device), True)
+            connector.set_power(device, False)
+            self.assertEqual(local.reads[0]["host"], "192.168.50.152")
+            self.assertEqual(local.powers[0]["on"], False)
+            passthrough = [
+                call
+                for call in transport.calls
+                if call["body"] and call["body"].get("method") == "passthrough"
+            ]
+            self.assertEqual(passthrough, [])
+
+    def test_smart_without_host_is_offline_not_passthrough(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok"}),
+                    kasa_ok(
+                        {
+                            "deviceList": [
+                                {
+                                    "deviceId": "kp1",
+                                    "alias": "U3Bhcmtz",
+                                    "deviceModel": "KP125M(US)",
+                                    "deviceType": "SMART.KASAPLUG",
+                                    "status": 0,
+                                }
+                            ]
+                        }
+                    ),
+                ]
+            )
+            local = FakeLocal()
+            connector = sh.KasaCloudConnector(
+                self._config(tmp), transport=transport, local=local
+            )
+            device = connector.resolve("Sparks")
+            with self.assertRaises(sh.DeviceOffline) as ctx:
+                connector.energy(device)
+            self.assertIn("host", str(ctx.exception))
+            self.assertEqual(local.reads, [])
+            passthrough = [
+                call
+                for call in transport.calls
+                if call["body"] and call["body"].get("method") == "passthrough"
+            ]
+            self.assertEqual(passthrough, [])
+
+    def test_resolve_media_rack_alias_without_cloud_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [kasa_ok({"token": "tok"}), kasa_ok({"deviceList": []})]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            device = connector.resolve("media-rack")
+            self.assertEqual(device.extras.get("host"), "192.168.50.152")
+            self.assertEqual(device.alias, "Media Rack")
+            self.assertTrue(sh.is_smart_kasa_device(device))
+
+    def test_load_and_write_host(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        "[kasa]",
+                        'username = "a@b.c"',
+                        'password = "secret"',
+                        "[[device]]",
+                        'alias = "media-rack"',
+                        'match = "Media Rack"',
+                        'host = "192.168.50.152"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            path.chmod(0o600)
+            cfg = sh.load_config(path, environ={})
+            self.assertEqual(cfg.aliases["media-rack"].host, "192.168.50.152")
+            sh.write_local_config(
+                path,
+                username="a@b.c",
+                password="secret",
+                devices=list(cfg.aliases.values()),
+            )
+            text = path.read_text(encoding="utf-8")
+            self.assertIn('host = "192.168.50.152"', text)
+            again = sh.load_config(path, environ={})
+            self.assertEqual(again.aliases["media-rack"].host, "192.168.50.152")
+
+    def test_uvx_keeps_password_in_env(self):
+        seen = []
+
+        def run(argv, timeout=None, environ=None):
+            seen.append({"argv": argv, "environ": environ, "timeout": timeout})
+            return json.dumps(KLAP_STATE)
+
+        backend = sh.PythonKasaBackend(run=run)
+
+        def boom(host, username, password):
+            raise ImportError("no kasa")
+
+        backend._read_library = boom
+        device, energy = backend.read("192.168.50.152", "user@example.com", "s3cret")
+        self.assertAlmostEqual(energy.watts, 213.765)
+        self.assertEqual(device.alias, "Media Rack")
+        call = seen[0]
+        self.assertNotIn("s3cret", call["argv"])
+        self.assertEqual(call["environ"]["KASA_PASSWORD"], "s3cret")
+        self.assertEqual(call["environ"]["KASA_USERNAME"], "user@example.com")
+        self.assertIn("--host", call["argv"])
+        self.assertIn("192.168.50.152", call["argv"])
+        self.assertIn("user@example.com", call["argv"])
+
 
 
 
