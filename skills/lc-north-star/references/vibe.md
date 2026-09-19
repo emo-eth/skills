@@ -1,10 +1,10 @@
 # Vibe Reference
 
-`vibe.md` is the upstream north-star document. It distills the user's word dump about their ideal reality into qualitative promises, anti-vibes, use circumstances, and success signals.
+`vibe.md` is the upstream north-star contract. It is the single source of truth for the problem-as-felt, why-as-stakes, qualitative feel promises, and anti-vibes.
 
-Vibe is not advisory. The PRD is downstream of the vibe and should translate it into observable product requirements. If the finished product violates `vibe.md`, it violates the contract even when the PRD's functional requirements technically pass.
+Stakes live on the vibe. The PRD copies stakes from the vibe rather than originating a second why. The vibe is void of implementations: definitions and clauses describe goals, tension, and feel; mechanisms appear only as labeled examples if at all. A vibe that reads as an implementation or procedure is a spec in the wrong document.
 
-Describe, never prescribe. Definitions and clauses state goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods. A vibe that reads as a procedure is a spec in the wrong document.
+Vibe is not advisory. The PRD translates the vibe into observable product requirements, while feel clauses remain in the vibe. If the finished product violates `vibe.md`, it violates the contract even when the PRD's functional requirements technically pass.
 
 ## Vibe Template
 
@@ -17,6 +17,14 @@ source_material: user ideal-reality dump, conversation, notes, or linked artifac
 ---
 
 # <Product Or Feature> Vibe
+
+## Problem As Felt
+
+[What hurts, who feels the friction, and what is broken in the current world. Expressed in user and product terms, void of implementation mechanisms.]
+
+## Why As Stakes
+
+[The single source of truth for why this work matters: what happens if nothing changes, what success unlocks, and what is at risk. The PRD copies these stakes rather than authoring a second why.]
 
 ## Vibe Promise
 
@@ -60,6 +68,7 @@ source_material: user ideal-reality dump, conversation, notes, or linked artifac
 - Approved by:
 - Approved on:
 - Amendment rule: This vibe changes only by explicit user request or direct user edit.
+(Note: Keep vibe.md as pure normative law. Do not append review round ledgers, tallies, or audit logs here; review histories belong in git PRs and review artifacts.)
 ```
 
 ## Vibe Quality Bar
@@ -110,3 +119,5 @@ Before approval, verify:
 - No clause is merely a synonym for a PRD requirement.
 - No clause is secretly an implementation instruction.
 - The document is rich enough for a PRD to be derived from it without inventing product intent.
+- Problem-as-felt and why-as-stakes are articulated clearly without mentioning implementation mechanisms.
+- The document is clean normative law and contains no review audit ledgers or changelogs.

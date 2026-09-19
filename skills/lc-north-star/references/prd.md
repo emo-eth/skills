@@ -1,6 +1,8 @@
 # PRD Reference
 
-The PRD is downstream of the vibe. It translates the user's ideal-reality dump and `vibe.md` into observable product behavior, scope, requirements, and acceptance criteria. Downstream specs and plans must satisfy the PRD while preserving the source vibe.
+The PRD is downstream of the vibe. It translates the settled vibe into observable product behavior, scope, requirements, and acceptance criteria.
+
+The PRD copies stakes from the vibe; it does not author a second original why. Feel clauses remain in the vibe and are preserved through traceability, not rewritten into PRD functional requirements. Downstream specs and plans must satisfy the PRD while preserving the source vibe.
 
 ## PRD Template
 
@@ -14,14 +16,13 @@ source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
 
 # <Product Or Feature> PRD
 
-## North Star
+## North Star & Stakes
 
-[One paragraph distilled from the source vibe: who this is for, what ideal reality exists when the work is done, and why it matters.]
-
+[Copied directly from the source vibe's Problem As Felt and Why As Stakes: who this is for, the core stakes, and what ideal reality exists when the work is done. Do not reauthor an independent problem or why.]
 ## Source Vibe Summary
 
 - Ideal reality: [What the user wants to be true.]
-- Feel promises: [Vibe IDs or summary.]
+- Feel promises: [Vibe IDs referenced for traceability. Feel clauses stay in vibe.md.]
 - Anti-vibes: [What must not happen or how it must not feel.]
 
 ## Users And Jobs
@@ -134,3 +135,5 @@ Before approval, verify:
 - Every requirement is traceable to the source vibe, an explicit user correction, or a stated product constraint.
 - Every "Resolve Before Spec" question is answered.
 - There are no phases masquerading as scope.
+- North Star & Stakes are copied faithfully from the source vibe without originating a second why.
+- Feel clauses remain in the vibe and are referenced for traceability, not rewritten or replaced by PRD requirements.

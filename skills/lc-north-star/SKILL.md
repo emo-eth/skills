@@ -18,13 +18,13 @@ Ideal-reality dump -> vibe.md -> PRD -> Spec -> Plan -> Implementation
 
 Treat this chain as one current shape, not a fixed system. When the project keeps a repo-level philosophy vibe (convention: `docs/vibe.md`), that vibe is the source of truth and this chain is a downstream facet of it, updated as the vibe iterates. Keep stages few: three is ideal, four or five in practice, and the whole pipeline should be as painless and fast as possible while still productive. Do not add stages, and do not treat the chain's form as settled.
 
-The ideal-reality dump is the raw material. `vibe.md` distills the desired feel, taste, anti-vibes, and north star. The PRD is downstream of the vibe: it translates the settled ideal into observable product behavior, scope, requirements, and acceptance criteria. The spec defines **how the product will satisfy the PRD and preserve the vibe**. The plan defines **how the agent will execute the spec**.
+The ideal-reality dump is the raw material. `vibe.md` is the single source of truth for problem-as-felt, why-as-stakes, feel clauses, and anti-vibes; it remains void of implementation details. The PRD is downstream of the vibe: it copies stakes from the vibe rather than authoring a second why, preserves feel clauses in the vibe via traceability, and translates the settled ideal into observable product behavior, scope, requirements, and acceptance criteria. The spec defines **how the product will satisfy the PRD and preserve the vibe**. The plan defines **how the agent will execute the spec**.
 
 ## Artifact Rules
 
 - Do not require a PRD, create files, or force a product/feature pipeline for exploratory north-star or vibe work.
-- Capture or approve the vibe before drafting a PRD. The PRD should read as a product-requirements translation of the vibe, not a parallel source of truth invented from scratch.
-- Treat `vibe.md` as the upstream product-feel source when it exists. A target that technically satisfies the PRD but violates `vibe.md` is still wrong.
+- Capture or approve the vibe before drafting a PRD. Stakes originate on the vibe and the PRD copies them; do not author an independent second why in the PRD. Feel clauses remain in the vibe.
+- Treat `vibe.md` as the upstream product-feel and stakes source when it exists. A target that technically satisfies the PRD but violates `vibe.md` is still wrong.
 - Treat the PRD and `vibe.md` as immutable after approval. Change either only when the user explicitly asks to amend it or edits it directly.
 - Treat the spec as living when it exists. Update it when implementation research, design changes, or refactors change the technical approach.
 - Treat the plan as disposable execution choreography when it exists. Rewrite it when the spec changes materially.
@@ -52,8 +52,10 @@ Completion criterion: choose the lightest mode that will answer the user. Block 
 
 Read enough local context to avoid asking questions the repo already answers, but keep the interview at product level. Ask all currently known blocking questions in one compact batch, then wait for the answers before asking another batch. Do not serialize independent questions one per turn. Prefer concrete choices when possible. Probe understanding, not just requirements: a successful interview leaves the user able to explain the product back, not merely a document that captures it.
 
-Pressure-test every important behavior with negative probes:
+Probe positive ownership and verification loops alongside negative probes:
 
+- "Who owns making this happen, and who acts on it?"
+- "Who verifies the outcome before operator escalation?"
 - "Would it be acceptable if..."
 - "What should happen when..."
 - "Who must be unable to..."
@@ -70,9 +72,8 @@ Only write contract files when the user asks for a durable artifact, approves es
 
 For formal contract work, prefer vibe first, then PRD:
 
-- Vibe: `docs/prds/YYYY-MM-DD-<topic>/vibe.md`
-- PRD: `docs/prds/YYYY-MM-DD-<topic>/prd.md`
-
+- For root system or operating cockpit contracts governing a whole workspace fleet or repository, place the canonical contract at root `./vibe.md`.
+- For feature or topic contracts, place under `docs/prds/YYYY-MM-DD-<topic>/vibe.md` beside `prd.md`.
 If the repo already uses a flat PRD convention, keep the PRD path and place the source `vibe.md` beside it when possible. Use stable vibe IDs (`V1`, `V2`, ...) and PRD requirement IDs (`R1`, `R2`, ...). Keep both product-facing and free of implementation choreography.
 
 Before moving on, use `prd-grill` when the user wants a Socratic expectation check or the contract is high-stakes enough that approval needs pressure-testing. Then ask the user to approve the `vibe.md` and PRD, or request amendments. Do not infer approval from silence.
@@ -116,6 +117,9 @@ Before finalizing any artifact, check:
 - **No prescriptive vibe:** clauses and definitions describe goals and feel; mechanisms appear only as labeled examples, never as formulas or required methods.
 - **No silent narrowing:** platform, mobile, auth, permissions, empty states, errors, persistence, performance, and data visibility are either specified, explicitly irrelevant, or marked as blocking questions.
 - **No unowned amendments:** any desired PRD or vibe change discovered during spec or implementation is surfaced as an amendment request before downstream docs proceed.
+- **No second why:** PRD copies problem and stakes from the upstream vibe rather than authoring an independent why.
+- **No implementation in vibe:** `vibe.md` describes qualitative goals, feel, and stakes; mechanisms appear only as labeled examples if at all.
+- **No review ledger in contract:** `vibe.md` and PRD remain clean normative law; review round mappings, tallies, and debate logs live in git PRs or review artifacts, not in the contract itself.
 
 Before finalizing an exploratory north-star or vibe pass, check:
 
