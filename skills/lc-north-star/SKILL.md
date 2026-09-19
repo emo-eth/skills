@@ -9,13 +9,14 @@ description: "VRD-first north-star loop. Use when the user wants to word-dump an
 Lead with the VRD: the what and why of the vibe, before requirements or implementation.
 
 ```text
-VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md)]
+VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md, optional)] -> Ticket Spec
 ```
 
 - **VRD** (Vibe Requirements Document): single source of truth for problem-as-felt, what is desired, why-as-stakes, feel clauses, and anti-vibes. Void of implementation.
 - **PRD**: copies VRD stakes (no second original why); translates what is desired into observable product behavior and acceptance criteria; references feel clauses, does not absorb them.
 - **Spec**: technical how — architecture, interfaces, state, verification — to satisfy the PRD while preserving the VRD.
 - **Plan**: optional sequencing when execution complexity needs it. Never ritual.
+- **Ticket Spec**: concrete downstream artifact produced from the Spec/Plan before dispatch to workers. A structured object living directly on the issue/ticket: Intention, Vibe, Done-when, Map.
 
 A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices at the current stage. Do not re-interview approved upstream what/why.
 
@@ -42,6 +43,7 @@ Read local context first. Ask one compact batch of currently blocking questions 
 | PRD | Unresolved observable behaviors, scope, success signals, acceptance | Why it matters, feel restated as a new why, implementation |
 | Spec | Unresolved technical how that still satisfies PRD+VRD | Product what/why already in the VRD/PRD |
 | Plan | Sequencing only, and only if a plan is warranted | Product or design questions |
+| Ticket Spec | Concrete boundaries, acceptance criteria mapping, workspace/worktree topology | Redefining product what/why or re-architecting spec |
 
 If missing upstream would change this stage, capture that upstream minimum first. If it is approved, treat it as given.
 
@@ -113,7 +115,23 @@ Skip this stage when the spec is executable as-is. Write `plan.md` only when ord
 
 Completion criterion when a plan is written: every spec implementation need has a task or a deliberate non-code check, and no task implements behavior outside the VRD/PRD/spec without calling it out as a proposed amendment.
 
-### 6. Grill Downstream Artifacts
+### 6. Produce The Ticket Spec (Before Dispatch)
+
+Before dispatching work to a worker or spawning an executing workspace, produce the concrete **Ticket Spec**. Use the Ticket Spec reference: [references/ticket-spec.md](references/ticket-spec.md).
+
+A Ticket Spec is a named, structured object with explicit requirements:
+- **Intention:** One crisp paragraph stating what problem is being solved and why now, traced to VRD/PRD.
+- **Vibe:** Qualitative feel promises, stakes, and boundaries (traced to VRD).
+- **Done-when:** Observable, verifiable criteria for product acceptance (traced to PRD/Spec).
+- **Map:** Explicit topology: workspace label, git worktree path, branch, and where related contracts live.
+
+Rules:
+- A ticket spec is not a title stub, not a session dump, and not a copy-pasted second PRD.
+- Because it is a named concrete artifact, validate its structure and criteria before dispatch. Workers must never be prompted with vague one-liners or unbounded tasks.
+
+Completion criterion: every dispatched task has a valid Ticket Spec with all four sections verified.
+
+### 7. Grill Downstream Artifacts
 
 After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` when that skill is available; otherwise audit inline against the VRD and PRD. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly so discovery does not depend on a `vibe.md` filename. Use `prd-grill` only when grilling the human on whether the VRD and PRD themselves match expectations.
 
@@ -136,6 +154,8 @@ Before finalizing any artifact, check:
 - **No re-interview:** approved VRD what/why is not asked again at PRD, spec, or plan.
 - **No ritual plan:** a plan exists only because sequencing is needed or the user asked.
 - **Root PRD visibility:** the primary or whole-project PRD lives at the project root (`./prd.md`) alongside the root vibe/VRD, not buried in nested dated directories.
+- **Ticket Spec structure:** every dispatched ticket has a valid Ticket Spec with Intention, Vibe, Done-when, and Map before workers are prompted.
+- **No unanchored dispatch:** workers are dispatched only with an approved Ticket Spec referencing verified worktree and contract paths.
 
 Before finalizing an exploratory north-star or VRD pass, check:
 
