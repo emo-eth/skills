@@ -1,5 +1,6 @@
-# Copy to ~/.config/smart-home/config.toml and chmod 600.
-# Never commit a filled copy. Prefer env / 1Password / keychain over inline secrets.
+# Prefer `smart-home setup --username EMAIL --password-stdin`.
+# Copy to ~/.config/smart-home/config.toml and chmod 600 if you edit by hand.
+# Never commit a filled copy. Keychain does not work from agent/sudo sessions.
 
 default_connector = "kasa"
 

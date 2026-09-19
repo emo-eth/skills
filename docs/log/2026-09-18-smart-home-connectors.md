@@ -5,7 +5,7 @@ Parent: [EMO-474](https://linear.app/emo-eth/issue/EMO-474/setup-smart-home-conn
 
 ## What landed
 
-`skills/smart-home/` is an API-only connector skill. Agents call `scripts/smart-home` for `whoami`, `devices`, `energy`, `on`/`off`, and `cycle`. Kasa Cloud (`https://wap.tplinkcloud.com` login + `getDeviceList` + `passthrough`) is the default path so isolated-SSID plugs are reachable without LAN broadcast. Home Assistant REST is the second connector. Secrets stay in env, `op://` refs, macOS keychain, or a mode-`600` file under `~/.config/smart-home/` — never in git.
+`skills/smart-home/` is an API-only connector skill. Agents call `scripts/smart-home` for `whoami`, `devices`, `energy`, `on`/`off`, and `cycle`. Kasa Cloud (`https://wap.tplinkcloud.com` login + `getDeviceList` + `passthrough`) is the default path so isolated-SSID plugs are reachable without LAN broadcast. Home Assistant REST is the second connector. Secrets stay in env, `op://` refs, macOS keychain, or a mode-`600` file under `~/.config/smart-home/` written by `smart-home setup` — never in git. Keychain/`sudo security` fails on studio agent sessions (`User interaction is not allowed`).
 
 ## Studio check (2026-09-18)
 
@@ -23,4 +23,14 @@ Cloud API is the reachable control plane. Live wattage still needs TP-Link crede
 
 ## Proof
 
-- `python3 skills/smart-home/tests/test_smart_home.py` — 15/15 pass (HTTPS-only Kasa login/list/energy, HS300 child cycle, HA watts + toggle, cycle confirm, chmod-600 secrets, env vs `op read`).
+- `python3 skills/smart-home/tests/test_smart_home.py` — 17/17 pass (HTTPS-only Kasa login/list/energy, HS300 child cycle, HA watts + toggle, cycle confirm, chmod-600 secrets, env vs `op read`).
+
+## Credential store (2026-09-19)
+
+`sudo security add-generic-password` fails with `User interaction is not allowed` (sudo + non-GUI keychain). Use:
+
+```
+printf '%s' "$KASA_PASSWORD" | ./skills/smart-home/scripts/smart-home setup --username EMAIL --password-stdin --verify
+```
+
+That writes `~/.config/smart-home/config.toml` mode 600. 17/17 tests.

@@ -403,6 +403,61 @@ class TestHomeAssistant(unittest.TestCase):
         self.assertTrue(any(call["url"].endswith("/api/services/switch/turn_off") for call in transport.calls))
 
 
+class TestSetup(unittest.TestCase):
+    def test_writes_mode_600_and_preserves_devices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        'default_connector = "kasa"',
+                        "[kasa]",
+                        'username = "old@example.com"',
+                        'password_env = "SMART_HOME_KASA_PASSWORD"',
+                        "[[device]]",
+                        'alias = "spark0"',
+                        "allow_cycle = true",
+                        'match = "spark0-psu"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            sh.write_local_config(
+                path, username="new@example.com", password='p"w\\ord'
+            )
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            cfg = sh.load_config(path, environ={})
+            self.assertEqual(cfg.kasa_username, "new@example.com")
+            self.assertEqual(cfg.kasa_password, 'p"w\\ord')
+            self.assertEqual(cfg.aliases["spark0"].match, "spark0-psu")
+            self.assertTrue(cfg.aliases["spark0"].allow_cycle)
+            self.assertNotIn("password_env", path.read_text(encoding="utf-8"))
+
+    def test_setup_cli_reads_stdin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "nested" / "config.toml"
+            old_stdin = sys.stdin
+            try:
+                sys.stdin = __import__("io").StringIO("secret-from-stdin\n")
+                code = sh.main(
+                    [
+                        "--config",
+                        str(path),
+                        "--json",
+                        "setup",
+                        "--username",
+                        "kasa@example.com",
+                        "--password-stdin",
+                    ]
+                )
+            finally:
+                sys.stdin = old_stdin
+            self.assertEqual(code, 0)
+            cfg = sh.load_config(path, environ={})
+            self.assertEqual(cfg.kasa_password, "secret-from-stdin")
+
+
 class TestCliSafety(unittest.TestCase):
     def test_whoami_without_creds_exits_2(self):
         with tempfile.TemporaryDirectory() as tmp:

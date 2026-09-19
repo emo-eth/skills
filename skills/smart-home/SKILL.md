@@ -36,21 +36,21 @@ fi
 
 ## Credentials (never in git)
 
-On studio, keep secrets in env, 1Password, or macOS keychain. Copy `references/config.example.toml` to `~/.config/smart-home/config.toml` and `chmod 600` it.
+Studio agents cannot write the login keychain (`User interaction is not allowed`, with or without `sudo`). Do not use `sudo security`. Write a mode-`600` file instead:
 
 ```bash
-export SMART_HOME_KASA_USERNAME='you@example.com'
-export SMART_HOME_KASA_PASSWORD='...'   # or KASA_USERNAME / KASA_PASSWORD
-# optional HA
-export SMART_HOME_HA_URL='http://homeassistant.local:8123'
-export SMART_HOME_HA_TOKEN='...'
+printf '%s' "$KASA_PASSWORD" | bash "$smart_home_skill_script" setup \
+  --username 'you@example.com' --password-stdin --verify
 ```
 
-Inline `password =` / `token =` in the config file is allowed only if the file is mode `600`. Prefer `password_op = "op://vault/item/field"` or `password_keychain = "smart-home.kasa"`.
+That writes `~/.config/smart-home/config.toml` (chmod 600) and calls Kasa Cloud. `--verify` is optional.
+
+1Password (`password_op`) works after `op signin` in a GUI session. macOS keychain (`password_keychain`) only works from a logged-in GUI terminal, not from this agent.
 
 ## Commands
 
 ```bash
+bash "$smart_home_skill_script" setup --username 'you@example.com' --password-stdin --verify
 bash "$smart_home_skill_script" --json whoami
 bash "$smart_home_skill_script" --json devices
 bash "$smart_home_skill_script" --json energy spark0

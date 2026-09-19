@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import hashlib
 import json
 import os
@@ -178,6 +179,114 @@ def _require_private_file(path: Path, reason: str) -> None:
     mode = path.stat().st_mode
     if mode & (stat.S_IRWXG | stat.S_IRWXO):
         raise ConfigError(f"{path} {reason}; chmod 600 it (group/other bits are set)")
+
+
+def _toml_string(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return f'"{escaped}"'
+
+
+def _bool_toml(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def write_local_config(
+    path: Path,
+    *,
+    username: str,
+    password: str,
+    devices: list[Alias] | None = None,
+) -> None:
+    if not username.strip() or not password:
+        raise ConfigError("Kasa username and password are required")
+    existing_devices = devices
+    if existing_devices is None and path.is_file():
+        try:
+            existing_devices = list(load_config(path, environ={}).aliases.values())
+        except (SmartHomeError, OSError, tomllib.TOMLDecodeError):
+            existing_devices = []
+    if not existing_devices:
+        existing_devices = [
+            Alias("spark0", "kasa", "spark0", allow_cycle=True),
+            Alias("emo-win", "kasa", "emo-win", allow_cycle=True),
+        ]
+    lines = [
+        "# Written by `smart-home setup`. chmod 600. Do not commit.",
+        'default_connector = "kasa"',
+        "",
+        "[kasa]",
+        f"username = {_toml_string(username.strip())}",
+        f"password = {_toml_string(password)}",
+        'password_encoding = "plain"',
+        "",
+    ]
+    for alias in existing_devices:
+        lines.extend(
+            [
+                "[[device]]",
+                f"alias = {_toml_string(alias.name)}",
+                f"connector = {_toml_string(alias.connector)}",
+                f"match = {_toml_string(alias.match)}",
+                f"allow_cycle = {_bool_toml(alias.allow_cycle)}",
+            ]
+        )
+        if alias.entity_id:
+            lines.append(f"entity_id = {_toml_string(alias.entity_id)}")
+        if alias.power_entity:
+            lines.append(f"power_entity = {_toml_string(alias.power_entity)}")
+        if alias.voltage_entity:
+            lines.append(f"voltage_entity = {_toml_string(alias.voltage_entity)}")
+        if alias.energy_entity:
+            lines.append(f"energy_entity = {_toml_string(alias.energy_entity)}")
+        lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
+def read_setup_password(*, password: str | None, password_stdin: bool) -> str:
+    if password and password_stdin:
+        raise ConfigError("pass --password or --password-stdin, not both")
+    if password:
+        return password
+    if password_stdin or not sys.stdin.isatty():
+        value = sys.stdin.read()
+        if value.endswith("\n"):
+            value = value[:-1]
+        if value.endswith("\r"):
+            value = value[:-1]
+        if not value:
+            raise ConfigError("no password on stdin")
+        return value
+    value = getpass.getpass("Kasa password: ")
+    if not value:
+        raise ConfigError("empty password")
+    return value
+
+
+def run_setup(args: argparse.Namespace) -> int:
+    password = read_setup_password(
+        password=args.password, password_stdin=args.password_stdin
+    )
+    write_local_config(args.config, username=args.username, password=password)
+    loaded = load_config(args.config)
+    payload = {
+        "config": str(args.config),
+        "mode": oct(args.config.stat().st_mode & 0o777),
+        "username": loaded.kasa_username,
+        "devices": [alias.name for alias in loaded.aliases.values()],
+    }
+    if args.verify:
+        who = KasaCloudConnector(loaded).whoami()
+        payload["whoami"] = who
+    _print(payload, args.json)
+    return 0
 
 
 def load_config(
@@ -802,12 +911,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     cycle.add_argument("--even-if-off", action="store_true")
     status = sub.add_parser("status", help="List devices and energy where available")
     status.add_argument("target", nargs="?")
+    setup = sub.add_parser(
+        "setup",
+        help="Write Kasa credentials to a mode-600 config (not the keychain)",
+    )
+    setup.add_argument("--username", required=True, help="TP-Link / Kasa account email")
+    setup.add_argument(
+        "--password",
+        default=None,
+        help="Kasa password (prefer --password-stdin so it stays out of argv)",
+    )
+    setup.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="Read the password from stdin (one line, no prompt)",
+    )
+    setup.add_argument(
+        "--verify",
+        action="store_true",
+        help="Call Kasa Cloud whoami after writing the file",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        if args.command == "setup":
+            return run_setup(args)
         config = load_config(args.config)
         if args.command == "whoami":
             reports = []
