@@ -147,6 +147,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md`, `docs/review/2026-09-11-vibe-surgical-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md`, `.context/review/2026-09-11-vibe-surgical-round-1.md` | raw snapshots and answers docs | verified-live |
+| Smart home connectors | IOT plugs via Kasa Cloud; SMART.KASAPLUG (KP125M) via unicast KLAP when `[[device]] host` is set. Fleet: spark0/spark1→Sparks, emo-win→PC, emo-4090→4090, media-rack→Media Rack `192.168.50.152`. | `skills/smart-home/` | `skills/smart-home/tests/test_smart_home.py`; live proof in `docs/log/2026-09-18-smart-home-connectors.md` | verified-live: EP25 cloud energy; Media Rack KLAP watts |
 
 ## Maintenance rule
 
