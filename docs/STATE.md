@@ -147,6 +147,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Decision log | `docs/DECISIONS.md` | — | this map | documented |
 | Distilled taste | `docs/taste.md` | — | this map | documented |
 | Review capture | `docs/review/2026-08-11-wall-clock-round-1-answers.md`, `docs/review/2026-09-11-vibe-surgical-round-1-answers.md` | `.context/review/2026-08-11-wall-clock-round-1.md`, `.context/review/2026-09-11-vibe-surgical-round-1.md` | raw snapshots and answers docs | verified-live |
+| Smart home connectors | Isolated-SSID Kasa/HA via authenticated API, never LAN broadcast; EMO-474 | `skills/smart-home/` | `skills/smart-home/tests/test_smart_home.py`; studio probe in `docs/log/2026-09-18-smart-home-connectors.md` | source-verified; live wattage blocked on TP-Link credentials |
 
 ## Maintenance rule
 

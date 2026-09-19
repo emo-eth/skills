@@ -1,0 +1,427 @@
+#!/usr/bin/env python3
+import importlib.util
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+TEST_ROOT = Path(__file__).resolve().parent
+SCRIPT = TEST_ROOT.parent / "scripts" / "smart_home.py"
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("smart_home", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules["smart_home"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+sh = load_module()
+
+
+class FakeTransport:
+    def __init__(self, responses: list[tuple[int, str]]):
+        self.responses = list(responses)
+        self.calls: list[dict] = []
+
+    def request(self, method, url, headers, body, timeout):
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": headers,
+                "body": json.loads(body.decode()) if body else None,
+                "timeout": timeout,
+            }
+        )
+        if not self.responses:
+            raise AssertionError(f"no fake response for {method} {url}")
+        return self.responses.pop(0)
+
+
+def kasa_ok(result):
+    return (200, json.dumps({"error_code": 0, "result": result}))
+
+
+def passthrough(payload: dict):
+    return kasa_ok({"responseData": json.dumps(payload)})
+
+
+class TestNormalizeEmeter(unittest.TestCase):
+    def test_milliwatt_fields(self):
+        energy = sh.normalize_emeter(
+            {
+                "emeter": {
+                    "get_realtime": {
+                        "voltage_mv": 121400,
+                        "current_ma": 390,
+                        "power_mw": 47200,
+                        "total_wh": 1500,
+                        "err_code": 0,
+                    }
+                }
+            },
+            on=True,
+        )
+        self.assertAlmostEqual(energy.watts, 47.2)
+        self.assertAlmostEqual(energy.volts, 121.4)
+        self.assertAlmostEqual(energy.amps, 0.39)
+        self.assertAlmostEqual(energy.kwh, 1.5)
+        self.assertTrue(energy.on)
+
+    def test_legacy_watt_fields(self):
+        energy = sh.normalize_emeter(
+            {"power": 12.5, "voltage": 120.0, "current": 0.1, "total": 0.4}
+        )
+        self.assertAlmostEqual(energy.watts, 12.5)
+        self.assertAlmostEqual(energy.kwh, 0.4)
+
+
+class TestSecretsAndConfig(unittest.TestCase):
+    def test_env_beats_op(self):
+        value = sh.resolve_secret(
+            inline="inline",
+            env_name="CUSTOM",
+            op_ref="op://x",
+            keychain="kc",
+            extra_env=("SMART_HOME_KASA_PASSWORD",),
+            environ={"SMART_HOME_KASA_PASSWORD": "from-env"},
+            run=lambda argv: "from-op",
+        )
+        self.assertEqual(value, "from-env")
+
+    def test_op_used_when_env_empty(self):
+        seen = []
+
+        def run(argv):
+            seen.append(argv)
+            return "from-op"
+
+        value = sh.resolve_secret(
+            inline=None,
+            env_name="CUSTOM",
+            op_ref="op://vault/item/password",
+            keychain=None,
+            extra_env=("SMART_HOME_KASA_PASSWORD",),
+            environ={},
+            run=run,
+        )
+        self.assertEqual(value, "from-op")
+        self.assertEqual(seen, [["op", "read", "op://vault/item/password"]])
+
+    def test_inline_password_requires_chmod_600(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                '[kasa]\nusername = "a@b.c"\npassword = "secret"\n',
+                encoding="utf-8",
+            )
+            path.chmod(0o644)
+            with self.assertRaises(sh.ConfigError):
+                sh.load_config(path, environ={})
+            path.chmod(0o600)
+            cfg = sh.load_config(path, environ={})
+            self.assertEqual(cfg.kasa_password, "secret")
+
+    def test_device_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        'default_connector = "kasa"',
+                        "[kasa]",
+                        'username = "a@b.c"',
+                        'password_env = "SMART_HOME_KASA_PASSWORD"',
+                        "[[device]]",
+                        'alias = "spark0"',
+                        "allow_cycle = true",
+                        'match = "spark0-psu"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            cfg = sh.load_config(
+                path, environ={"SMART_HOME_KASA_PASSWORD": "pw"}
+            )
+            self.assertEqual(cfg.aliases["spark0"].match, "spark0-psu")
+            self.assertTrue(cfg.aliases["spark0"].allow_cycle)
+
+
+class TestKasaCloud(unittest.TestCase):
+    def _config(self, tmp: str) -> "sh.AppConfig":
+        cfg = sh.AppConfig(path=Path(tmp) / "unused.toml", state_dir=Path(tmp))
+        cfg.kasa_username = "user@example.com"
+        cfg.kasa_password = "pw"
+        return cfg
+
+    def test_login_list_energy_over_https_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok-1"}),
+                    kasa_ok(
+                        {
+                            "deviceList": [
+                                {
+                                    "deviceId": "dev1",
+                                    "alias": "spark0-psu",
+                                    "deviceModel": "KP125(US)",
+                                    "status": 1,
+                                    "appServerUrl": "https://use1-wap.tplinkcloud.com",
+                                }
+                            ]
+                        }
+                    ),
+                    passthrough({"system": {"get_sysinfo": {"relay_state": 1}}}),
+                    passthrough(
+                        {
+                            "emeter": {
+                                "get_realtime": {
+                                    "power_mw": 55100,
+                                    "voltage_mv": 120100,
+                                    "current_ma": 458,
+                                    "total_wh": 2200,
+                                    "err_code": 0,
+                                }
+                            }
+                        }
+                    ),
+                    passthrough({"system": {"get_sysinfo": {"relay_state": 1}}}),
+                ]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            who = connector.whoami()
+            self.assertEqual(who["account"], "user@example.com")
+            self.assertEqual(who["device_count"], 1)
+            device = connector.resolve("spark0-psu")
+            reading = connector.energy(device)
+            self.assertAlmostEqual(reading.watts, 55.1)
+            self.assertAlmostEqual(reading.volts, 120.1)
+            self.assertTrue(reading.on)
+            for call in transport.calls:
+                self.assertTrue(call["url"].startswith("https://"))
+                self.assertNotIn("9999", call["url"])
+            self.assertEqual(transport.calls[0]["body"]["method"], "login")
+            self.assertEqual(transport.calls[1]["body"]["method"], "getDeviceList")
+
+    def test_auth_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [(200, json.dumps({"error_code": -20600, "msg": "bad"}))]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            with self.assertRaises(sh.AuthError):
+                connector.login()
+
+    def test_strip_child_cycle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parent_id = "parent"
+            child_id = parent_id + "00"
+            sysinfo_on = {
+                "system": {
+                    "get_sysinfo": {
+                        "alias": "strip",
+                        "children": [{"id": "00", "alias": "spark0", "state": 1}],
+                    }
+                }
+            }
+            sysinfo_off = {
+                "system": {
+                    "get_sysinfo": {
+                        "alias": "strip",
+                        "children": [{"id": "00", "alias": "spark0", "state": 0}],
+                    }
+                }
+            }
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok"}),
+                    kasa_ok(
+                        {
+                            "deviceList": [
+                                {
+                                    "deviceId": parent_id,
+                                    "alias": "strip",
+                                    "deviceModel": "HS300(US)",
+                                    "status": 1,
+                                }
+                            ]
+                        }
+                    ),
+                    passthrough(sysinfo_on),
+                    passthrough(sysinfo_on),
+                    passthrough({"system": {"set_relay_state": {"err_code": 0}}}),
+                    passthrough({"system": {"set_relay_state": {"err_code": 0}}}),
+                    passthrough(sysinfo_on),
+                ]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            device = connector.resolve("spark0")
+            self.assertEqual(device.device_id, child_id)
+            self.assertEqual(device.parent_id, parent_id)
+            alias = sh.Alias("spark0", "kasa", "spark0", allow_cycle=True)
+            slept = []
+            result = sh.cycle_device(
+                connector,
+                device,
+                alias=alias,
+                confirm="cycle",
+                off_seconds=8,
+                allow_unmapped=False,
+                even_if_off=False,
+                sleep=slept.append,
+            )
+            self.assertEqual(slept, [8])
+            self.assertTrue(result["on"])
+            relay_calls = [
+                call
+                for call in transport.calls
+                if call["body"]
+                and call["body"].get("method") == "passthrough"
+                and "set_relay_state" in json.dumps(call["body"])
+            ]
+            self.assertEqual(len(relay_calls), 2)
+            off_req = json.loads(relay_calls[0]["body"]["params"]["requestData"])
+            on_req = json.loads(relay_calls[1]["body"]["params"]["requestData"])
+            self.assertEqual(off_req["system"]["set_relay_state"]["state"], 0)
+            self.assertEqual(on_req["system"]["set_relay_state"]["state"], 1)
+            self.assertEqual(off_req["context"]["child_ids"], [child_id])
+
+
+class TestCycleSafety(unittest.TestCase):
+    def test_requires_confirm(self):
+        device = sh.Device("kasa", "id", "spark0")
+        with self.assertRaises(sh.SafetyError):
+            sh.cycle_device(
+                connector=None,  # type: ignore[arg-type]
+                device=device,
+                alias=sh.Alias("spark0", "kasa", "spark0", allow_cycle=True),
+                confirm=None,
+                off_seconds=1,
+                allow_unmapped=False,
+                even_if_off=False,
+            )
+
+    def test_refuses_unmapped_without_flag(self):
+        device = sh.Device("kasa", "id", "spark0")
+        with self.assertRaises(sh.SafetyError) as ctx:
+            sh.cycle_device(
+                connector=None,  # type: ignore[arg-type]
+                device=device,
+                alias=None,
+                confirm="cycle",
+                off_seconds=1,
+                allow_unmapped=False,
+                even_if_off=False,
+            )
+        self.assertIn("allow-unmapped", str(ctx.exception))
+
+    def test_refuses_when_already_off(self):
+        class OffConnector:
+            def get_power(self, device):
+                return False
+
+        device = sh.Device("kasa", "id", "spark0")
+        with self.assertRaises(sh.SafetyError) as ctx:
+            sh.cycle_device(
+                connector=OffConnector(),  # type: ignore[arg-type]
+                device=device,
+                alias=sh.Alias("spark0", "kasa", "spark0", allow_cycle=True),
+                confirm="cycle",
+                off_seconds=1,
+                allow_unmapped=False,
+                even_if_off=False,
+            )
+        self.assertIn("already off", str(ctx.exception))
+
+
+class TestHomeAssistant(unittest.TestCase):
+    def test_energy_and_toggle(self):
+        cfg = sh.AppConfig(path=Path("/tmp/unused.toml"))
+        cfg.ha_url = "http://ha.example:8123"
+        cfg.ha_token = "token"
+        transport = FakeTransport(
+            [
+                (
+                    200,
+                    json.dumps(
+                        {
+                            "entity_id": "switch.spark0",
+                            "state": "on",
+                            "attributes": {
+                                "friendly_name": "spark0",
+                                "current_power_w": 88.4,
+                                "voltage": 121.0,
+                            },
+                        }
+                    ),
+                ),
+                (
+                    200,
+                    json.dumps(
+                        {
+                            "entity_id": "switch.spark0",
+                            "state": "on",
+                            "attributes": {
+                                "friendly_name": "spark0",
+                                "current_power_w": 88.4,
+                                "voltage": 121.0,
+                            },
+                        }
+                    ),
+                ),
+                (
+                    200,
+                    json.dumps(
+                        {
+                            "entity_id": "switch.spark0",
+                            "state": "on",
+                            "attributes": {"current_power_w": 88.4, "voltage": 121.0},
+                        }
+                    ),
+                ),
+                (200, "[]"),
+                (
+                    200,
+                    json.dumps({"entity_id": "switch.spark0", "state": "off"}),
+                ),
+            ]
+        )
+        connector = sh.HomeAssistantConnector(cfg, transport=transport)
+        device = connector.resolve("switch.spark0")
+        reading = connector.energy(device)
+        self.assertAlmostEqual(reading.watts, 88.4)
+        self.assertAlmostEqual(reading.volts, 121.0)
+        self.assertTrue(reading.on)
+        connector.set_power(device, False)
+        self.assertFalse(connector.get_power(device))
+        self.assertTrue(any(call["url"].endswith("/api/services/switch/turn_off") for call in transport.calls))
+
+
+class TestCliSafety(unittest.TestCase):
+    def test_whoami_without_creds_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            code = sh.main(["--config", str(cfg), "--json", "whoami"])
+            self.assertEqual(code, 2)
+
+    def test_cycle_without_confirm_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text(
+                '[kasa]\nusername = "a@b.c"\npassword_env = "SMART_HOME_KASA_PASSWORD"\n',
+                encoding="utf-8",
+            )
+            code = sh.main(
+                ["--config", str(cfg), "cycle", "spark0"]
+            )
+            self.assertEqual(code, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

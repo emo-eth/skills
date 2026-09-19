@@ -1,0 +1,31 @@
+# Copy to ~/.config/smart-home/config.toml and chmod 600.
+# Never commit a filled copy. Prefer env / 1Password / keychain over inline secrets.
+
+default_connector = "kasa"
+
+[kasa]
+username = "you@example.com"
+# Exactly one password source:
+password_env = "SMART_HOME_KASA_PASSWORD"
+# password_op = "op://Personal/TP-Link/password"
+# password_keychain = "smart-home.kasa"
+# password_encoding = "plain"  # or "md5"
+# url = "https://wap.tplinkcloud.com"
+
+# Optional second backend when a Home Assistant box can see the IoT VLAN.
+# [homeassistant]
+# url = "http://homeassistant.local:8123"
+# token_env = "SMART_HOME_HA_TOKEN"
+# token_op = "op://Personal/Home Assistant/token"
+
+[[device]]
+alias = "spark0"
+connector = "kasa"
+match = "spark0"          # Kasa app alias or deviceId
+allow_cycle = true
+
+[[device]]
+alias = "emo-win"
+connector = "kasa"
+match = "emo-win"
+allow_cycle = true

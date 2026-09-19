@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+smart_home_script=""
+for smart_home_candidate in \
+    "${SMART_HOME_SKILL_DIR:-}/scripts/smart_home.py" \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/smart_home.py" \
+    "${CODEX_HOME:-$HOME/.codex}/skills/smart-home/scripts/smart_home.py" \
+    "$HOME/.agents/skills/smart-home/scripts/smart_home.py" \
+    "$HOME/.claude/skills/smart-home/scripts/smart_home.py" \
+    "$HOME/dev/skills/skills/smart-home/scripts/smart_home.py"
+do
+  if [[ -n "$smart_home_candidate" && -f "$smart_home_candidate" ]]; then
+    smart_home_script="$smart_home_candidate"
+    break
+  fi
+done
+
+if [[ -z "$smart_home_script" ]]; then
+  echo "smart-home skill: scripts/smart_home.py was not found" >&2
+  exit 127
+fi
+
+exec python3 "$smart_home_script" "$@"
