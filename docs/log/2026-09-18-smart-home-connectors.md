@@ -23,14 +23,21 @@ Cloud API is the reachable control plane. Live wattage still needs TP-Link crede
 
 ## Proof
 
-- `python3 skills/smart-home/tests/test_smart_home.py` — 17/17 pass (HTTPS-only Kasa login/list/energy, HS300 child cycle, HA watts + toggle, cycle confirm, chmod-600 secrets, env vs `op read`).
+- `python3 skills/smart-home/tests/test_smart_home.py` — tests for HTTPS-only Kasa login/list/energy, HS300 child cycle, HA watts + toggle, cycle confirm, chmod-600 secrets, env vs `op read`.
 
 ## Credential store (2026-09-19)
 
-`sudo security add-generic-password` fails with `User interaction is not allowed` (sudo + non-GUI keychain). Use:
+`sudo security add-generic-password` fails with `User interaction is not allowed` (sudo + non-GUI keychain). Interactive `setup --password-stdin` used `sys.stdin.read()` and hung waiting for EOF (Ctrl-D). Setup now uses a hidden `getpass` prompt on a TTY, and one line (`readline`) when piped.
 
 ```
-printf '%s' "$KASA_PASSWORD" | ./skills/smart-home/scripts/smart-home setup --username EMAIL --password-stdin --verify
+./skills/smart-home/scripts/smart-home setup --username EMAIL --verify
 ```
 
-That writes `~/.config/smart-home/config.toml` mode 600. 17/17 tests.
+That writes `~/.config/smart-home/config.toml` mode 600.
+
+## PR review fixes (2026-09-19)
+
+- Kasa cloud `-20571` is `DeviceOffline`, not `AuthError`.
+- `off` requires `--confirm cycle` and refuses `allow_cycle = false`.
+- Offline parents skip child `get_sysinfo` passthrough.
+- `write_local_config` keeps an existing `[homeassistant]` table.

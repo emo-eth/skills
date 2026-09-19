@@ -36,10 +36,18 @@ fi
 
 ## Credentials (never in git)
 
-Studio agents cannot write the login keychain (`User interaction is not allowed`, with or without `sudo`). Do not use `sudo security`. Write a mode-`600` file instead:
+Studio agents cannot write the login keychain (`User interaction is not allowed`, with or without `sudo`). Do not use `sudo security`. Write a mode-`600` file instead.
+
+Interactive (hidden prompt; type the password and press Enter — no Ctrl-D):
 
 ```bash
-printf '%s' "$KASA_PASSWORD" | bash "$smart_home_skill_script" setup \
+bash "$smart_home_skill_script" setup --username 'you@example.com' --verify
+```
+
+Piped (one line on stdin; `--password-stdin` used to hang waiting for EOF):
+
+```bash
+printf '%s\n' "$KASA_PASSWORD" | bash "$smart_home_skill_script" setup \
   --username 'you@example.com' --password-stdin --verify
 ```
 
@@ -50,15 +58,16 @@ That writes `~/.config/smart-home/config.toml` (chmod 600) and calls Kasa Cloud.
 ## Commands
 
 ```bash
-bash "$smart_home_skill_script" setup --username 'you@example.com' --password-stdin --verify
+bash "$smart_home_skill_script" setup --username 'you@example.com' --verify
 bash "$smart_home_skill_script" --json whoami
 bash "$smart_home_skill_script" --json devices
 bash "$smart_home_skill_script" --json energy spark0
 bash "$smart_home_skill_script" --json status
+bash "$smart_home_skill_script" off spark0 --confirm cycle
 bash "$smart_home_skill_script" cycle spark0 --confirm cycle --off-seconds 8
 ```
 
-`energy` returns live `watts`, `volts`, `amps`, `kwh`, and `on`. `cycle` is off → wait → on. It refuses unless `--confirm cycle` is passed, the alias has `allow_cycle = true` (or `--allow-unmapped`), and the outlet is currently on (or `--even-if-off`). Turning off an unmapped device also requires `--confirm cycle`.
+`energy` returns live `watts`, `volts`, `amps`, `kwh`, and `on`. `cycle` is off → wait → on. `off` and `cycle` refuse unless `--confirm cycle` is passed. Mapped aliases also need `allow_cycle = true` (or `--allow-unmapped` for `cycle`). The outlet must currently be on for `cycle` (or `--even-if-off`). `on` is unguarded so a stuck host can be recovered.
 
 ## Rules
 

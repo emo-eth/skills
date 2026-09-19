@@ -218,6 +218,69 @@ class TestKasaCloud(unittest.TestCase):
             with self.assertRaises(sh.AuthError):
                 connector.login()
 
+    def test_device_offline_not_auth_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok"}),
+                    (200, json.dumps({"error_code": -20571, "msg": "Device is offline"})),
+                ]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            connector.login()
+            device = sh.Device("kasa", "dev1", "spark0", extras={})
+            with self.assertRaises(sh.DeviceOffline) as ctx:
+                connector.set_power(device, False)
+            self.assertNotIsInstance(ctx.exception, sh.AuthError)
+
+    def test_skips_child_discovery_for_offline_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live_sysinfo = {
+                "system": {
+                    "get_sysinfo": {
+                        "alias": "live-strip",
+                        "children": [{"id": "00", "alias": "live-outlet", "state": 1}],
+                    }
+                }
+            }
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok"}),
+                    kasa_ok(
+                        {
+                            "deviceList": [
+                                {
+                                    "deviceId": "dead",
+                                    "alias": "dead-strip",
+                                    "deviceModel": "HS300(US)",
+                                    "status": 0,
+                                },
+                                {
+                                    "deviceId": "live",
+                                    "alias": "live-strip",
+                                    "deviceModel": "HS300(US)",
+                                    "status": 1,
+                                },
+                            ]
+                        }
+                    ),
+                    passthrough(live_sysinfo),
+                ]
+            )
+            connector = sh.KasaCloudConnector(self._config(tmp), transport=transport)
+            devices = connector.list_devices()
+            aliases = [d.alias for d in devices]
+            self.assertEqual(aliases, ["dead-strip", "live-strip", "live-outlet"])
+            dead = next(d for d in devices if d.alias == "dead-strip")
+            self.assertFalse(dead.online)
+            self.assertIsNone(dead.parent_id)
+            passthrough_ids = [
+                call["body"]["params"]["deviceId"]
+                for call in transport.calls
+                if call["body"] and call["body"].get("method") == "passthrough"
+            ]
+            self.assertEqual(passthrough_ids, ["live"])
+
     def test_strip_child_cycle(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent_id = "parent"
@@ -434,6 +497,43 @@ class TestSetup(unittest.TestCase):
             self.assertTrue(cfg.aliases["spark0"].allow_cycle)
             self.assertNotIn("password_env", path.read_text(encoding="utf-8"))
 
+    def test_preserves_homeassistant_section(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        'default_connector = "homeassistant"',
+                        "[kasa]",
+                        'username = "old@example.com"',
+                        'password_env = "SMART_HOME_KASA_PASSWORD"',
+                        "[homeassistant]",
+                        'url = "http://ha.example:8123"',
+                        'token_env = "SMART_HOME_HA_TOKEN"',
+                        "[[device]]",
+                        'alias = "spark0"',
+                        'connector = "homeassistant"',
+                        "allow_cycle = true",
+                        'match = "switch.spark0"',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            sh.write_local_config(
+                path, username="new@example.com", password="secret"
+            )
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("[homeassistant]", text)
+            self.assertIn('url = "http://ha.example:8123"', text)
+            self.assertIn('token_env = "SMART_HOME_HA_TOKEN"', text)
+            self.assertIn('default_connector = "homeassistant"', text)
+            cfg = sh.load_config(path, environ={"SMART_HOME_HA_TOKEN": "tok"})
+            self.assertEqual(cfg.ha_url, "http://ha.example:8123")
+            self.assertEqual(cfg.ha_token, "tok")
+            self.assertEqual(cfg.kasa_username, "new@example.com")
+            self.assertEqual(cfg.aliases["spark0"].connector, "homeassistant")
+
     def test_setup_cli_reads_stdin(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "nested" / "config.toml"
@@ -457,6 +557,31 @@ class TestSetup(unittest.TestCase):
             cfg = sh.load_config(path, environ={})
             self.assertEqual(cfg.kasa_password, "secret-from-stdin")
 
+    def test_setup_password_stdin_reads_one_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            old_stdin = sys.stdin
+            try:
+                sys.stdin = __import__("io").StringIO(
+                    "one-line-secret\nshould-not-be-included"
+                )
+                code = sh.main(
+                    [
+                        "--config",
+                        str(path),
+                        "--json",
+                        "setup",
+                        "--username",
+                        "kasa@example.com",
+                        "--password-stdin",
+                    ]
+                )
+            finally:
+                sys.stdin = old_stdin
+            self.assertEqual(code, 0)
+            cfg = sh.load_config(path, environ={})
+            self.assertEqual(cfg.kasa_password, "one-line-secret")
+
 
 class TestCliSafety(unittest.TestCase):
     def test_whoami_without_creds_exits_2(self):
@@ -474,6 +599,50 @@ class TestCliSafety(unittest.TestCase):
             )
             code = sh.main(
                 ["--config", str(cfg), "cycle", "spark0"]
+            )
+            self.assertEqual(code, 2)
+
+    def test_off_mapped_without_confirm_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text(
+                "\n".join(
+                    [
+                        "[kasa]",
+                        'username = "a@b.c"',
+                        'password = "pw"',
+                        "[[device]]",
+                        'alias = "spark0"',
+                        "allow_cycle = true",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            cfg.chmod(0o600)
+            code = sh.main(["--config", str(cfg), "off", "spark0"])
+            self.assertEqual(code, 2)
+
+    def test_off_allow_cycle_false_exits_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text(
+                "\n".join(
+                    [
+                        "[kasa]",
+                        'username = "a@b.c"',
+                        'password = "pw"',
+                        "[[device]]",
+                        'alias = "spark0"',
+                        "allow_cycle = false",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            cfg.chmod(0o600)
+            code = sh.main(
+                ["--config", str(cfg), "off", "spark0", "--confirm", "cycle"]
             )
             self.assertEqual(code, 2)
 

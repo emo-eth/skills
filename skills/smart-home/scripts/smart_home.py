@@ -25,6 +25,8 @@ DEFAULT_CONFIG = Path.home() / ".config" / "smart-home" / "config.toml"
 KASA_CLOUD_URL = "https://wap.tplinkcloud.com"
 CONFIRM_CYCLE = "cycle"
 DEFAULT_OFF_SECONDS = 8.0
+KASA_DEVICE_OFFLINE_CODE = -20571
+KASA_AUTH_ERROR_CODES = {-20651, -20600, -20004}
 
 
 class SmartHomeError(Exception):
@@ -48,6 +50,10 @@ class DeviceNotFound(SmartHomeError):
 
 
 class EnergyUnsupported(SmartHomeError):
+    pass
+
+
+class DeviceOffline(SmartHomeError):
     pass
 
 
@@ -196,6 +202,36 @@ def _bool_toml(value: bool) -> str:
     return "true" if value else "false"
 
 
+
+def _read_toml_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+
+
+def _toml_scalar(value: Any) -> str | None:
+    if isinstance(value, bool):
+        return _bool_toml(value)
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return _toml_string(value)
+    return None
+
+
+def _toml_table_lines(name: str, mapping: dict[str, Any]) -> list[str]:
+    lines = [f"[{name}]"]
+    for key, value in mapping.items():
+        rendered = _toml_scalar(value)
+        if rendered is None:
+            continue
+        lines.append(f"{key} = {rendered}")
+    lines.append("")
+    return lines
+
 def write_local_config(
     path: Path,
     *,
@@ -205,6 +241,7 @@ def write_local_config(
 ) -> None:
     if not username.strip() or not password:
         raise ConfigError("Kasa username and password are required")
+    existing = _read_toml_file(path)
     existing_devices = devices
     if existing_devices is None and path.is_file():
         try:
@@ -216,9 +253,15 @@ def write_local_config(
             Alias("spark0", "kasa", "spark0", allow_cycle=True),
             Alias("emo-win", "kasa", "emo-win", allow_cycle=True),
         ]
+    default_connector = existing.get("default_connector") or "kasa"
+    if not isinstance(default_connector, str) or not default_connector.strip():
+        default_connector = "kasa"
+    ha = existing.get("homeassistant")
+    if not isinstance(ha, dict):
+        ha = {}
     lines = [
         "# Written by `smart-home setup`. chmod 600. Do not commit.",
-        'default_connector = "kasa"',
+        f"default_connector = {_toml_string(default_connector.strip())}",
         "",
         "[kasa]",
         f"username = {_toml_string(username.strip())}",
@@ -226,6 +269,8 @@ def write_local_config(
         'password_encoding = "plain"',
         "",
     ]
+    if ha:
+        lines.extend(_toml_table_lines("homeassistant", ha))
     for alias in existing_devices:
         lines.extend(
             [
@@ -255,8 +300,13 @@ def read_setup_password(*, password: str | None, password_stdin: bool) -> str:
         raise ConfigError("pass --password or --password-stdin, not both")
     if password:
         return password
+    if password_stdin and sys.stdin.isatty():
+        value = getpass.getpass("Kasa password: ")
+        if not value:
+            raise ConfigError("empty password")
+        return value
     if password_stdin or not sys.stdin.isatty():
-        value = sys.stdin.read()
+        value = sys.stdin.readline()
         if value.endswith("\n"):
             value = value[:-1]
         if value.endswith("\r"):
@@ -461,7 +511,9 @@ class KasaCloudConnector:
         if status >= 400:
             raise SmartHomeError(f"Kasa cloud HTTP {status}: {text[:200]}")
         code = data.get("error_code", 0)
-        if code in (-20651, -20571, -20600, -20004):
+        if code == KASA_DEVICE_OFFLINE_CODE:
+            raise DeviceOffline(f"Kasa device offline (error_code {code})")
+        if code in KASA_AUTH_ERROR_CODES:
             raise AuthError(f"Kasa auth failed (error_code {code})")
         if code:
             raise SmartHomeError(f"Kasa cloud error_code {code}: {data.get('msg') or data}")
@@ -526,7 +578,8 @@ class KasaCloudConnector:
                 },
             )
             devices.append(parent)
-            devices.extend(self._expand_children(parent))
+            if parent.online:
+                devices.extend(self._expand_children(parent))
         self._devices = devices
         return devices
 
@@ -544,6 +597,8 @@ class KasaCloudConnector:
         return decode_passthrough(result)
 
     def _expand_children(self, parent: Device) -> list[Device]:
+        if parent.online is False:
+            return []
         try:
             info = self._passthrough(parent, {"system": {"get_sysinfo": {}}})
         except SmartHomeError:
@@ -810,6 +865,25 @@ def resolve_target(
     return connector, device, alias
 
 
+def require_power_cut_permission(
+    *,
+    name: str,
+    alias: Alias | None,
+    confirm: str | None,
+    allow_unmapped: bool,
+    action: str = "cycle",
+) -> None:
+    if confirm != CONFIRM_CYCLE:
+        raise SafetyError(f"refusing to {action} {name!r}; pass --confirm {CONFIRM_CYCLE}")
+    if alias is None and not allow_unmapped:
+        raise SafetyError(
+            f"{name!r} is not in ~/.config/smart-home/config.toml; "
+            "add [[device]] allow_cycle = true, or pass --allow-unmapped"
+        )
+    if alias is not None and not alias.allow_cycle:
+        raise SafetyError(f"{alias.name} has allow_cycle = false")
+
+
 def cycle_device(
     connector: KasaCloudConnector | HomeAssistantConnector,
     device: Device,
@@ -821,15 +895,13 @@ def cycle_device(
     even_if_off: bool,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
-    if confirm != CONFIRM_CYCLE:
-        raise SafetyError(f"refusing to cycle {device.alias!r}; pass --confirm {CONFIRM_CYCLE}")
-    if alias is None and not allow_unmapped:
-        raise SafetyError(
-            f"{device.alias!r} is not in ~/.config/smart-home/config.toml; "
-            "add [[device]] allow_cycle = true, or pass --allow-unmapped"
-        )
-    if alias is not None and not alias.allow_cycle:
-        raise SafetyError(f"{alias.name} has allow_cycle = false")
+    require_power_cut_permission(
+        name=device.alias,
+        alias=alias,
+        confirm=confirm,
+        allow_unmapped=allow_unmapped,
+        action="cycle",
+    )
     was_on = connector.get_power(device)
     if not was_on and not even_if_off:
         raise SafetyError(
@@ -975,12 +1047,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command in {"on", "off"}:
-            if args.command == "off" and args.confirm != CONFIRM_CYCLE:
+            if args.command == "off":
                 alias = config.aliases.get(args.target.lower())
-                if alias is None:
-                    raise SafetyError(
-                        "turning off an unmapped device requires --confirm cycle"
-                    )
+                require_power_cut_permission(
+                    name=args.target,
+                    alias=alias,
+                    confirm=args.confirm,
+                    allow_unmapped=True,
+                    action="turn off",
+                )
             connector, device, _alias = resolve_target(config, args.target)
             connector.set_power(device, args.command == "on")
             on = connector.get_power(device)
