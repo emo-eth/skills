@@ -45,6 +45,25 @@ A ticket spec is:
 
 ---
 
+## Execution Mode: Slice vs Ratchet
+
+Every ticket spec must declare its execution mode:
+
+### 1. Mode: Slice (Mechanical / Plumbing)
+Default mode for deterministic implementation: API routes, schema migrations, UI components, wiring, and standard bug fixes.
+- **Verification:** Unit tests, integration tests, end-to-end smoke tests, and observable outcome criteria.
+- **Lifecycle:** Single pass or short phased execution to satisfying all Done-when criteria.
+
+### 2. Mode: Ratchet (Empirical Optimization / AutoResearch + AutoImplement)
+Mandatory mode for tuning, semantic search relevance, latency reduction, prompt engineering, and heuristic classifiers.
+- **The Rule:** Empirical optimization cannot be verified by "tests pass." It requires a frozen scalar oracle, a tiny editable surface, and an automatic keep/revert ratchet.
+- **Mandatory Ratchet Clauses (Required for Ratchet Tickets):**
+  1. **`## Frozen Oracle`**: The exact command (e.g. `npm run search:compare`), target metric (e.g. `NDCG@10`), and frozen test dataset path. The agent is strictly forbidden from editing the evaluator, tests, or benchmark data.
+  2. **`## Edit Surface`**: Exact bounded list of files or directories the agent may touch (e.g. `src/lib/search/retrieval.ts`, `src/lib/search/rollup.ts`). Edits outside this surface trigger an immediate revert.
+  3. **`## Ratchet Rule`**: Baseline score, required improvement threshold (e.g. `≥ 2%`), and mechanical keep/reset policy: improved $\rightarrow$ commit and log `keep`; degraded/neutral $\rightarrow$ `git reset --hard HEAD~1` and log `discard`.
+  4. **`## Negative Memory`**: Untracked log paths (`results.tsv` / `journal.md`) recording tested hypotheses, scores, and failure reasons so fresh iterations do not retry failed ideas.
+
+---
 ## Field Requirements
 
 ### 1. Intention
