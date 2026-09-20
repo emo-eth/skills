@@ -37,6 +37,7 @@ A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices 
 - Approve the VRD before drafting a PRD. Stakes originate on the VRD; the PRD copies them. Feel clauses stay on the VRD.
 - A target that satisfies the PRD but violates the VRD is still wrong.
 - VRD and PRD are immutable after approval except by explicit user request or direct user edit.
+- **No bug reports in the VRD:** When unwanted runtime behavior or operational failure is observed, do not rewrite the VRD's Problem As Felt to document the bug. The VRD is the timeless qualitative feel contract. First check if the Vibe is underspecified (does it already rule out the failure?). If not, trace the gap down the hierarchy: PRD (missing surface/requirement) -> Spec (missing interface/state) -> Implementation (bug).
 - Spec is living. Plan, when it exists, is disposable choreography.
 - At most two review-and-fix rounds per contract document; the goal is one. After two failures, rewrite.
 - If a behavior matters to the desired world, include it now or record an explicit scope boundary.
@@ -136,14 +137,25 @@ Before dispatching work to a worker or spawning an executing workspace, produce 
 Rules:
 - A ticket spec is not a title stub, not a session dump, and not a copy-pasted second PRD.
 - The ticket spec must inherit its what/why directly from the VRD. A ticket spec with missing or ungrounded what/why fails the quality gate.
-- Because it is a named concrete artifact, validate its structure and criteria before dispatch. Workers must never be prompted with vague one-liners or unbounded tasks.
-Completion criterion: every dispatched task has a valid Ticket Spec with all four sections verified.
+- **Specification Sufficiency Gate ("Underspecified Gate"):** Run an evaluation gate before prompting any worker. Classify into:
+  - `SPECIFIED`: All four canonical sections present, non-tautological, observable proof surface named -> pull work and prompt worker automatically without asking permission.
+  - `UNDERSPECIFIED`: Structural flaw or missing section -> auto-repair from upstream VRD/PRD if possible, or ask a targeted nuance question before dispatch.
+  - `NEEDS_HUMAN_NUANCE`: Core intent missing or hollow stub -> halt dispatch and ask operator.
+- **Four Ticket Spec Anti-Vibes:** Forbid *The Hollow Ticket* (placeholder stubs), *Prescriptive Vibe* (specifying code mechanics, CLI flags, or file surgery instead of user experience), *Tautological Done-When* (unobservable criteria like "when finished"), and *The Unmapped Orphan* (missing Map, HTTPS links, or proof commands).
+Completion criterion: every dispatched task has a valid Ticket Spec evaluated as `SPECIFIED`.
 
-### 7. Grill Downstream Artifacts
+### 7. Grill Downstream Artifacts & Finish Gate
 
 After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` when that skill is available; otherwise audit inline against the VRD and PRD. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly so discovery does not depend on a `vibe.md` filename. Use `prd-grill` only when grilling the human on whether the VRD and PRD themselves match expectations.
 
-Completion criterion: no open P0/P1/P2 VRD/PRD contract violations remain, or the user has explicitly accepted the residual risk.
+**Finish Gate & Merge Presentation Standards:**
+- A worker completion ping (`agent_status: "done"`) or passing CI is an evidence report, NOT finish authority.
+- **Two Mandatory Answers for Any Merge Presentation:** Every presentation of a PR to the operator for merge authorization must explicitly answer:
+  1. **What does this PR actually do?** (Exact behavioral changes, modified routes/components, and customer-visible differences).
+  2. **How do we know it actually works?** (Concrete observable proof: executed test commands, live verification in controlled environments, or reproduction evidence).
+- **Strict Prohibition on Hollow Merge Pressure:** Never ask for or push a merge if the ticket spec is hollow/underspecified, if the PR is titled or marked `(do not merge)` or `WIP`, or if concrete validation evidence is missing.
+
+Completion criterion: no open P0/P1/P2 VRD/PRD contract violations remain, technical and observable outcome proof is verified, the Two Mandatory Answers are answered, and the operator explicitly approves the merge call.
 
 ## Quality Gates
 
@@ -164,8 +176,11 @@ Before finalizing any artifact, check:
 - **Root PRD visibility:** the primary or whole-project PRD lives at the project root (`./prd.md`) alongside the root vibe/VRD, not buried in nested dated directories.
 - **Ticket Spec structure:** every dispatched ticket has a valid Ticket Spec with Intention, Vibe, Done-when, and Map before workers are prompted.
 - **Ticket Spec What/Why Anchor:** Intention and Vibe must inherit directly from the VRD's What and Why-as-Stakes; no unanchored or context-free dispatch.
+- **Ticket Spec Sufficiency Gate:** no worker is dispatched with an underspecified ticket (evaluated for the 4 anti-vibes; must be `SPECIFIED`).
 - **No unanchored dispatch:** workers are dispatched only with an approved Ticket Spec referencing verified worktree and contract paths.
-
+- **Two Mandatory Merge Answers:** every PR presented for merge authorization explicitly answers what it does and proves how it actually works.
+- **No Hollow Merge Pressure:** never push or ask for a merge if the ticket spec is hollow/underspecified, if the PR is marked `(do not merge)` or `WIP`, or if concrete validation evidence is missing.
+- **No bug reports in VRD:** runtime operational failures do not edit the VRD; trace through PRD -> Spec -> Implementation.
 Before finalizing an exploratory north-star or VRD pass, check:
 
 - **No forced artifact:** a PRD, VRD, spec, or plan is created only because the user asked for it or because downstream execution truly needs it.

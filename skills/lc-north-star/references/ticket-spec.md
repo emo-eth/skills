@@ -68,14 +68,38 @@ A ticket spec is:
 
 ---
 
+## Specification Sufficiency Gate ("Underspecified Gate")
+
+Before a worker is dispatched, evaluate the ticket spec against the sufficiency rubric:
+
+### The Four Ticket Spec Anti-Vibes
+
+| Anti-Vibe | Definition & Failure Mode | Example Violation |
+| :--- | :--- | :--- |
+| **The Hollow Ticket** | Placeholder, tautological, or boilerplate text substituted for genuine intent. | *"The work named here is finished. Work captured from a herdr worktree."* |
+| **Prescriptive Vibe** | Vibe specifies code mechanics, CLI flags, or file surgery instead of user experience and qualitative boundaries. | *"Add `--filter-mode=fast` and edit line 45 of search.ts."* |
+| **Tautological Done-When** | Criteria state circular or unobservable conditions lacking a concrete proof surface. | *"Done when finished"*, *"Done when bug is fixed"*, *"PR is merged"*. |
+| **The Unmapped Orphan** | Missing Map section, unclickable paths, or missing proof command. | Omits Map or gives raw filesystem paths with no test command. |
+
+### Tri-State Classification & Operational Dispatch Rule
+
+1. **`SPECIFIED`**: All four sections present, non-tautological, and observable proof surfaces named.
+   - **Action:** Pull work and dispatch worker automatically without asking operator permission.
+2. **`UNDERSPECIFIED`**: Structural flaw or missing section that is repairable from upstream contracts.
+   - **Action:** Auto-repair from VRD/PRD if possible, or prompt the operator with a targeted nuance question before dispatch.
+3. **`NEEDS_HUMAN_NUANCE`**: Core product outcome missing or hollow placeholder stub.
+   - **Action:** Halt dispatch; prompt the operator for product nuance or re-examine source voice memo.
+
+---
+
 ## Completeness Check
 
 Before dispatching a worker with a Ticket Spec, verify:
 
 - [ ] The ticket has all four canonical sections: Intention, Vibe, Done-when, and Map.
 - [ ] Intention explicitly answers both **what** is being delivered and **why** it matters now, grounded in the VRD/PRD.
-- [ ] Vibe references concrete VRD feel clauses and anti-vibes.
-- [ ] Done-when criteria are observable, specific, and verifiable (no placeholders).
-- [ ] Map lists valid, existing workspace label, worktree path, branch name, and contract paths.
+- [ ] Vibe references concrete VRD feel clauses and anti-vibes (no code mechanics or CLI flags).
+- [ ] Done-when criteria are observable, specific, and verifiable (contains proof command, HTTP status, or test assertions).
+- [ ] Map lists valid, existing workspace label, worktree path, branch name, and contract paths with clickable HTTPS links.
 - [ ] The ticket does not contain raw conversation transcripts or unedited session dumps.
-- [ ] The ticket is not a bare title stub.
+- [ ] The ticket is not a bare title stub or hollow placeholder.
