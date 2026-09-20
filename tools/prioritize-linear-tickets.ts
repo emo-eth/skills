@@ -9,7 +9,7 @@
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   findTopKOrNextComparison,
@@ -472,6 +472,8 @@ type BinState = {
   tiers: Record<string, number | undefined>;
   canceled?: string[];
   done?: string[];
+  pendingCanceled?: string[];
+  pendingDone?: string[];
   applying?: ApplyingCheckpoint;
   updatedAt: string;
 };
@@ -508,6 +510,8 @@ async function writeBinState(
   applying?: ApplyingCheckpoint,
   canceled?: string[],
   done?: string[],
+  pendingCanceled?: string[],
+  pendingDone?: string[],
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
@@ -518,6 +522,8 @@ async function writeBinState(
     tiers,
     canceled,
     done,
+    pendingCanceled,
+    pendingDone,
     applying,
     updatedAt: new Date().toISOString(),
   };
@@ -747,7 +753,7 @@ async function runBin(args: Arguments): Promise<void> {
       );
   if (args.reset) await removeState(stateFile);
 
-  const snapshot = snapshotFor(tickets, args.top);
+  let snapshot = snapshotFor(tickets, args.top);
   const saved = await readsBinState(stateFile);
   if (saved?.applying) {
     const mismatch = applyingSourceMismatch(saved.applying, usingLinear, args.team, args.projects);
@@ -760,29 +766,66 @@ async function runBin(args: Arguments): Promise<void> {
     }
     console.log("Resuming an interrupted Linear write.");
     await applyCheckpoint(stateFile, saved.applying, rawTickets, (applying) =>
-      writeBinState(stateFile, snapshot, saved.tiers, applying, saved.canceled, saved.done),
+      writeBinState(
+        stateFile,
+        snapshot,
+        saved.tiers,
+        applying,
+        saved.canceled,
+        saved.done,
+        saved.pendingCanceled,
+        saved.pendingDone,
+      ),
     );
     return;
   }
-  if (saved && saved.snapshot !== snapshot) {
-    const combinedIds = [
-      ...tickets.map((t) => t.id),
-      ...(saved.canceled ?? []),
-      ...(saved.done ?? []),
-    ].sort();
-    const candidateSnapshot = createHash("sha256")
-      .update(`${combinedIds.join(",")}:${args.top}:${STATE_VERSION}`)
-      .digest("hex");
-    if (saved.snapshot !== candidateSnapshot) {
-      throw new Error(
-        "The ticket list changed since the saved session. Inspect it, then run --reset.",
-      );
+
+  const canceled = new Set<string>(saved?.canceled ?? []);
+  const done = new Set<string>(saved?.done ?? []);
+  const pendingCanceled = new Set<string>(saved?.pendingCanceled ?? []);
+  const pendingDone = new Set<string>(saved?.pendingDone ?? []);
+  const tiers: Record<string, number | undefined> = {};
+
+  if (saved) {
+    const currentTicketIds = new Set(tickets.map((t) => t.id));
+    for (const [id, tier] of Object.entries(saved.tiers)) {
+      if (currentTicketIds.has(id)) {
+        tiers[id] = tier;
+      }
+    }
+    if (saved.snapshot !== snapshot) {
+      console.log("Ticket list changed since last time; overlapping tiers are kept.");
     }
   }
 
-  const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
-  const canceled = new Set<string>(saved?.canceled ?? []);
-  const done = new Set<string>(saved?.done ?? []);
+  if (usingLinear && !args.dryRun) {
+    if (pendingCanceled.size > 0 || pendingDone.size > 0) {
+      console.log("Applying pending triage actions from saved dry-run session...");
+      for (const id of pendingCanceled) {
+        await markIssueCanceled(id);
+        canceled.add(id);
+        console.log(`Ticket ${id} marked canceled in Linear.`);
+      }
+      pendingCanceled.clear();
+      for (const id of pendingDone) {
+        await markIssueDone(id);
+        done.add(id);
+        console.log(`Ticket ${id} marked Done in Linear.`);
+      }
+      pendingDone.clear();
+    }
+  }
+
+  // Update working snapshot for remaining tickets
+  const remainingTickets = tickets.filter(
+    (t) =>
+      !canceled.has(t.id) &&
+      !done.has(t.id) &&
+      !pendingCanceled.has(t.id) &&
+      !pendingDone.has(t.id),
+  );
+  snapshot = snapshotFor(remainingTickets, args.top);
+
   const filterParts: string[] = [];
   if (args.team) filterParts.push(`team ${args.team}`);
   if (args.projects.length > 0) filterParts.push(`project ${projectSetLabel(args.projects)}`);
@@ -793,47 +836,132 @@ async function runBin(args: Arguments): Promise<void> {
     `${args.rebin ? "Re-binning" : "Binning"} ${tickets.length} ticket(s). Source: ${sourceLabel}.`,
   );
   if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
-  await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
+  await writeBinState(
+    stateFile,
+    snapshot,
+    tiers,
+    undefined,
+    [...canceled],
+    [...done],
+    [...pendingCanceled],
+    [...pendingDone],
+  );
 
   let triaged = 0;
   for (let index = 0; index < tickets.length; index += 1) {
     const ticket = tickets[index];
-    if (tiers[ticket.id] !== undefined || canceled.has(ticket.id) || done.has(ticket.id)) {
+    if (
+      tiers[ticket.id] !== undefined ||
+      canceled.has(ticket.id) ||
+      done.has(ticket.id) ||
+      pendingCanceled.has(ticket.id) ||
+      pendingDone.has(ticket.id)
+    ) {
       continue;
     }
     const result = await binForTicket(ticket, index, tickets.length);
     if (result.action === "pause") {
-      await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
+      await writeBinState(
+        stateFile,
+        snapshot,
+        tiers,
+        undefined,
+        [...canceled],
+        [...done],
+        [...pendingCanceled],
+        [...pendingDone],
+      );
       console.log("Paused. Progress is saved; rerun to resume.");
       return;
     }
     if (result.action === "delete") {
+      delete tiers[ticket.id];
       if (usingLinear && !args.dryRun) {
         await markIssueCanceled(ticket.id);
+        canceled.add(ticket.id);
+        console.log(`Ticket ${ticket.id} deleted/canceled.`);
+      } else {
+        pendingCanceled.add(ticket.id);
+        if (args.dryRun) {
+          console.log(`[dry-run] Would mark ticket ${ticket.id} canceled in Linear.`);
+        } else {
+          console.log(`Ticket ${ticket.id} deleted/canceled from triage.`);
+        }
       }
-      canceled.add(ticket.id);
-      delete tiers[ticket.id];
-      await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
-      console.log(`Ticket ${ticket.id} deleted/canceled.`);
+      const remaining = tickets.filter(
+        (t) =>
+          !canceled.has(t.id) &&
+          !done.has(t.id) &&
+          !pendingCanceled.has(t.id) &&
+          !pendingDone.has(t.id),
+      );
+      snapshot = snapshotFor(remaining, args.top);
+      await writeBinState(
+        stateFile,
+        snapshot,
+        tiers,
+        undefined,
+        [...canceled],
+        [...done],
+        [...pendingCanceled],
+        [...pendingDone],
+      );
       continue;
     }
     if (result.action === "done") {
+      delete tiers[ticket.id];
       if (usingLinear && !args.dryRun) {
         await markIssueDone(ticket.id);
+        done.add(ticket.id);
+        console.log(`Ticket ${ticket.id} marked Done.`);
+      } else {
+        pendingDone.add(ticket.id);
+        if (args.dryRun) {
+          console.log(`[dry-run] Would mark ticket ${ticket.id} Done in Linear.`);
+        } else {
+          console.log(`Ticket ${ticket.id} marked Done from triage.`);
+        }
       }
-      done.add(ticket.id);
-      delete tiers[ticket.id];
-      await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
-      console.log(`Ticket ${ticket.id} marked Done.`);
+      const remaining = tickets.filter(
+        (t) =>
+          !canceled.has(t.id) &&
+          !done.has(t.id) &&
+          !pendingCanceled.has(t.id) &&
+          !pendingDone.has(t.id),
+      );
+      snapshot = snapshotFor(remaining, args.top);
+      await writeBinState(
+        stateFile,
+        snapshot,
+        tiers,
+        undefined,
+        [...canceled],
+        [...done],
+        [...pendingCanceled],
+        [...pendingDone],
+      );
       continue;
     }
     triaged += 1;
     tiers[ticket.id] = result.index;
-    await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
+    await writeBinState(
+      stateFile,
+      snapshot,
+      tiers,
+      undefined,
+      [...canceled],
+      [...done],
+      [...pendingCanceled],
+      [...pendingDone],
+    );
   }
 
   const activeTickets = tickets.filter(
-    (t) => !canceled.has(t.id) && !done.has(t.id),
+    (t) =>
+      !canceled.has(t.id) &&
+      !done.has(t.id) &&
+      !pendingCanceled.has(t.id) &&
+      !pendingDone.has(t.id),
   );
 
   // Group by bin for the plan.
@@ -856,23 +984,42 @@ async function runBin(args: Arguments): Promise<void> {
     console.log(`\nMarked Done (${done.size}):`);
     for (const id of done) console.log(`- ${id}`);
   }
+  if (pendingDone.size > 0) {
+    console.log(`\nPending Mark Done (${pendingDone.size}):`);
+    for (const id of pendingDone) console.log(`- ${id}`);
+  }
   if (canceled.size > 0) {
     console.log(`\nDeleted/Canceled (${canceled.size}):`);
     for (const id of canceled) console.log(`- ${id}`);
+  }
+  if (pendingCanceled.size > 0) {
+    console.log(`\nPending Delete/Cancel (${pendingCanceled.size}):`);
+    for (const id of pendingCanceled) console.log(`- ${id}`);
   }
   console.log(`\n${triaged} ticket(s) triaged into a priority tier.`);
 
   if (!usingLinear) {
     if (args.output) {
       await mkdir(dirname(args.output), { recursive: true });
-      await writeFile(args.output, `${JSON.stringify({
-        tickets: activeTickets.map((ticket) => ({
-          ...ticket,
-          priority: tiers[ticket.id] === undefined ? ticket.priority : TRIAGE_BINS[tiers[ticket.id]!]?.p,
-        })),
-        canceled: [...canceled],
-        done: [...done],
-      }, null, 2)}\n`, "utf8");
+      await writeFile(
+        args.output,
+        `${JSON.stringify(
+          {
+            tickets: activeTickets.map((ticket) => ({
+              ...ticket,
+              priority:
+                tiers[ticket.id] === undefined
+                  ? ticket.priority
+                  : TRIAGE_BINS[tiers[ticket.id]!]?.p,
+            })),
+            canceled: [...canceled, ...pendingCanceled],
+            done: [...done, ...pendingDone],
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
     }
     return;
   }
@@ -912,9 +1059,27 @@ async function runBin(args: Arguments): Promise<void> {
     projects: args.projects.length > 0 ? args.projects : undefined,
     updates,
   };
-  await writeBinState(stateFile, snapshot, tiers, applying, [...canceled], [...done]);
+  await writeBinState(
+    stateFile,
+    snapshot,
+    tiers,
+    applying,
+    [...canceled],
+    [...done],
+    [...pendingCanceled],
+    [...pendingDone],
+  );
   await applyCheckpoint(stateFile, applying, rawTickets, (applying) =>
-    writeBinState(stateFile, snapshot, tiers, applying, [...canceled], [...done]),
+    writeBinState(
+      stateFile,
+      snapshot,
+      tiers,
+      applying,
+      [...canceled],
+      [...done],
+      [...pendingCanceled],
+      [...pendingDone],
+    ),
   );
 }
 
@@ -1150,7 +1315,7 @@ async function main(): Promise<void> {
   );
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`\nPrioritization stopped: ${message}`);
