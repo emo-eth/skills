@@ -12,6 +12,10 @@ import {
   fetchProjectsIssues,
   matchesProject,
 } from "./linear-client.ts";
+import {
+  formatProgress,
+  normalizeTriageChoice,
+} from "./prioritize-linear-tickets.ts";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
 const cli = join(toolsDir, "prioritize-linear-tickets.ts");
@@ -27,13 +31,13 @@ type RunOptions = {
   cwd: string;
   env: NodeJS.ProcessEnv;
   stdinData: string;
-  timeoutMs: number;
+  timeoutMs?: number;
 };
 
 async function runCli(args: string[], options: RunOptions): Promise<RunResult> {
   const { promise, resolve, reject } = Promise.withResolvers<RunResult>();
   const controller = new AbortController();
-  const abortSignal = AbortSignal.timeout(options.timeoutMs);
+  const abortSignal = AbortSignal.timeout(options.timeoutMs ?? 15000);
   const child = spawn(
     process.execPath,
     [
@@ -217,8 +221,13 @@ if (args[0] === "issue" && args[1] === "update") {
     process.exit(1);
   }
   const priority = flagValue("--priority") ?? flagValue("-p");
+  const state = flagValue("--state") ?? flagValue("-s");
   const descriptionFile = flagValue("--description-file");
   const descriptionFlag = flagValue("--description") ?? flagValue("-d");
+  if (state !== undefined) {
+    logLine("update " + id + " state " + state);
+    ticket.state = { name: state, type: state.toLowerCase() };
+  }
   if (priority !== undefined) {
     logLine("update " + id + " priority " + priority);
     ticket.priority = Number(priority);
@@ -1192,6 +1201,120 @@ test("top-k APPLY creates a custom number field when Linear allows it", async ()
     assert.ok(calls.some((line) => line.includes(" field field-created ")));
     const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
     assert.equal(db.rankField?.id, "field-created");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("normalizeTriageChoice and formatProgress return expected values", () => {
+  assert.equal(normalizeTriageChoice("y"), "yes");
+  assert.equal(normalizeTriageChoice("yes"), "yes");
+  assert.equal(normalizeTriageChoice("right"), "yes");
+  assert.equal(normalizeTriageChoice("j"), "yes");
+  assert.equal(normalizeTriageChoice("n"), "no");
+  assert.equal(normalizeTriageChoice("no"), "no");
+  assert.equal(normalizeTriageChoice("left"), "no");
+  assert.equal(normalizeTriageChoice("k"), "no");
+  assert.equal(normalizeTriageChoice("d"), "delete");
+  assert.equal(normalizeTriageChoice("D"), "delete");
+  assert.equal(normalizeTriageChoice("del"), "delete");
+  assert.equal(normalizeTriageChoice("delete"), "delete");
+  assert.equal(normalizeTriageChoice("cancel"), "delete");
+  assert.equal(normalizeTriageChoice("c"), "done");
+  assert.equal(normalizeTriageChoice("C"), "done");
+  assert.equal(normalizeTriageChoice("done"), "done");
+  assert.equal(normalizeTriageChoice("complete"), "done");
+  assert.equal(normalizeTriageChoice("x"), "done");
+  assert.equal(normalizeTriageChoice("X"), "done");
+  assert.equal(normalizeTriageChoice("q"), "pause");
+  assert.equal(normalizeTriageChoice("quit"), "pause");
+  assert.equal(normalizeTriageChoice("pause"), "pause");
+  assert.equal(normalizeTriageChoice("unknown"), undefined);
+
+  assert.equal(formatProgress(0, 5), "[Ticket 1 of 5 (20%)]");
+  assert.equal(formatProgress(1, 5), "[Ticket 2 of 5 (40%)]");
+  assert.equal(formatProgress(4, 5), "[Ticket 5 of 5 (100%)]");
+  assert.equal(formatProgress(0, 0), "[Ticket 1 of 0 (100%)]");
+});
+
+test("prioritize-linear-tickets CLI --bin handles D action (cancel/delete) and removes ticket from triage", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First ticket to delete" },
+      { id: "EMO-2", title: "Second ticket to keep" },
+    ],
+  });
+  try {
+    const result = await runCli(["--bin", "--state", join(root, "state.json")], {
+      cwd: root,
+      env: childEnv(root, {}),
+      stdinData: "d\ny\ny\nAPPLY\n",
+    });
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /\[Ticket 1 of 2 \(50%\)\]/);
+    assert.match(result.stdout, /\[Ticket 2 of 2 \(100%\)\]/);
+    assert.match(result.stdout, /\[Y\] Yes\s+\[N\] No\s+\[D\] Delete\/Cancel\s+\[C\] Mark Done\s+\[Q\] Pause\/Quit/);
+    assert.match(result.stdout, /Ticket EMO-1 deleted\/canceled/);
+    const calls = await readLog(root);
+    assert.ok(calls.includes("update EMO-1 state Canceled"), `calls: ${JSON.stringify(calls)}`);
+    assert.ok(calls.includes("update EMO-2 priority 1"), `calls: ${JSON.stringify(calls)}`);
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    const emo1 = db.tickets.find((t) => t.id === "EMO-1");
+    assert.equal(emo1?.state?.name, "Canceled");
+    assert.equal(emo1?.priority, undefined);
+    const emo2 = db.tickets.find((t) => t.id === "EMO-2");
+    assert.equal(emo2?.priority, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI --bin handles C and X actions (mark Done) and removes tickets from triage", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First ticket done via C" },
+      { id: "EMO-2", title: "Second ticket done via X" },
+    ],
+  });
+  try {
+    const result = await runCli(["--bin", "--state", join(root, "state.json")], {
+      cwd: root,
+      env: childEnv(root, {}),
+      stdinData: "c\nx\n",
+    });
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /Ticket EMO-1 marked Done/);
+    assert.match(result.stdout, /Ticket EMO-2 marked Done/);
+    const calls = await readLog(root);
+    assert.ok(calls.includes("update EMO-1 state Done"), `calls: ${JSON.stringify(calls)}`);
+    assert.ok(calls.includes("update EMO-2 state Done"), `calls: ${JSON.stringify(calls)}`);
+    const db = JSON.parse(await readFile(join(root, "db.json"), "utf8")) as FakeDb;
+    assert.equal(db.tickets.find((t) => t.id === "EMO-1")?.state?.name, "Done");
+    assert.equal(db.tickets.find((t) => t.id === "EMO-2")?.state?.name, "Done");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("prioritize-linear-tickets CLI displays progress counter and shortcuts banner on comparison cards", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "First ticket", priority: 4, project: creatordex },
+      { id: "EMO-2", title: "Second ticket", priority: 4, project: creatordex },
+    ],
+  });
+  try {
+    const result = await runCli(
+      ["-k", "1", "--project", "Creatordex", "--state", join(root, "state.json")],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "l\nAPPLY\n",
+      },
+    );
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /\[Ticket 2 of 2 \(100%\)\]/);
+    assert.match(result.stdout, /\[L\] Left\s+\[R\] Right\s+\[T\] Tie\s+\[Q\] Pause\/Quit/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

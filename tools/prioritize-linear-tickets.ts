@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   findTopKOrNextComparison,
   pairKey,
@@ -21,6 +22,8 @@ import {
 import {
   fetchAssignedNotCompleted,
   fetchProjectsIssues,
+  markIssueCanceled,
+  markIssueDone,
   resolveRankStorage,
   setPriority,
   writeRelativeRank,
@@ -361,12 +364,19 @@ function renderPair(
   ticketsTotal: number,
   top: number,
   maxComparisons: number,
+  candidateIndex?: number,
 ): void {
   clearScreen();
   const line = "-".repeat(72);
   const remaining = Math.max(0, maxComparisons - decided);
+  const percent = candidateIndex !== undefined && ticketsTotal > 0
+    ? Math.round((candidateIndex / ticketsTotal) * 100)
+    : 0;
+  const progress = candidateIndex !== undefined
+    ? `[Ticket ${candidateIndex} of ${ticketsTotal} (${percent}%)]  |  `
+    : "";
   console.log(
-    `TOP-K  |  ${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  TOP ${top} of ${ticketsTotal} tickets  |  ${decided} compared, ~${remaining} left (worst-case)`,
+    `TOP-K  |  ${progress}${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  TOP ${top} of ${ticketsTotal} tickets  |  ${decided} compared, ~${remaining} left (worst-case)`,
   );
   console.log(line);
   console.log(`${paint("LEFT (L) - candidate", BOLD)}`);
@@ -381,7 +391,7 @@ function renderPair(
   const rightDescription = compact(stripRankComment(ticketField(right, "description")));
   if (rightDescription) console.log(`${paint("DESCRIPTION", BOLD)}: ${rightDescription}`);
   console.log(line);
-  console.log("L / Left = LEFT more important    R / Right = RIGHT more important    T = tie    Q = pause");
+  console.log("[L] Left  [R] Right  [T] Tie  [Q] Pause/Quit");
 }
 
 function renderFinal(
@@ -460,6 +470,8 @@ type BinState = {
   mode: "bin";
   snapshot: string;
   tiers: Record<string, number | undefined>;
+  canceled?: string[];
+  done?: string[];
   applying?: ApplyingCheckpoint;
   updatedAt: string;
 };
@@ -494,6 +506,8 @@ async function writeBinState(
   snapshot: string,
   tiers: Record<string, number | undefined>,
   applying?: ApplyingCheckpoint,
+  canceled?: string[],
+  done?: string[],
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
@@ -502,6 +516,8 @@ async function writeBinState(
     mode: "bin",
     snapshot,
     tiers,
+    canceled,
+    done,
     applying,
     updatedAt: new Date().toISOString(),
   };
@@ -632,56 +648,78 @@ async function applyCheckpoint(
   console.log(`Done. ${parts.join("; ") || "nothing to write"}.`);
 }
 
-function normalizeYesNo(value: string): "yes" | "no" | "pause" | undefined {
+export type TriageChoice = "yes" | "no" | "delete" | "done" | "pause";
+
+export function normalizeTriageChoice(value: string): TriageChoice | undefined {
   const answer = value.trim().toLowerCase();
   if (["y", "yes", "right", "j"].includes(answer)) return "yes";
   if (["n", "no", "left", "k"].includes(answer)) return "no";
+  if (["d", "del", "delete", "cancel"].includes(answer)) return "delete";
+  if (["c", "done", "complete", "x"].includes(answer)) return "done";
   if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
   return undefined;
 }
 
-async function chooseYesNo(prompt: string): Promise<"yes" | "no" | "pause"> {
-  const result = await rawChoice(prompt, normalizeYesNo);
+export async function chooseTriageChoice(prompt: string): Promise<TriageChoice> {
+  const result = await rawChoice(prompt, normalizeTriageChoice);
   if (result === undefined) return "pause";
-  return result as "yes" | "no" | "pause";
+  return result as TriageChoice;
 }
 
-function renderBinCard(ticket: Ticket, index: number, total: number, decided: number): void {
+export function formatProgress(index: number, total: number): string {
+  const percent = total > 0 ? Math.round(((index + 1) / total) * 100) : 100;
+  return `[Ticket ${index + 1} of ${total} (${percent}%)]`;
+}
+
+export function renderBinCard(
+  ticket: Ticket,
+  index: number,
+  total: number,
+  tierLabel?: string,
+): void {
   clearScreen();
   const line = "-".repeat(72);
-  const remaining = total - decided;
-  console.log(`BIN  |  TICKET ${index + 1} OF ${total}  |  ${remaining} TO BIN`);
+  const progress = formatProgress(index, total);
+  const tierQuestion = tierLabel
+    ? `  |  Is this ticket at least ${paint(tierLabel, BOLD)} priority?`
+    : "";
+  console.log(`TRIAGE  |  ${progress}${tierQuestion}`);
   console.log(line);
   console.log(`${paint("TITLE", BOLD)}: ${ticket.title}`);
   console.log(`${paint("ID", BOLD)}: ${ticket.id}`);
   const state = compact(ticketField(ticket, "state"));
   if (state) console.log(`${paint("STATE", BOLD)}: ${state}`);
+  const description = compact(stripRankComment(ticketField(ticket, "description")));
+  if (description) console.log(`${paint("DESCRIPTION", BOLD)}: ${description}`);
   console.log(line);
-  console.log("Y = yes   N = no   Q = pause");
+  console.log("[Y] Yes  [N] No  [D] Delete/Cancel  [C] Mark Done  [Q] Pause/Quit");
 }
+
+export type BinTicketResult =
+  | { action: "binned"; index: number; p: number | undefined; label: string }
+  | { action: "delete"; index: -2; p: undefined; label: "deleted" }
+  | { action: "done"; index: -3; p: undefined; label: "done" }
+  | { action: "pause"; index: -1; p: undefined; label: "paused" };
 
 /**
  * Binary-search a ticket into one of the 4 priority tiers by asking whether it
  * is at least as important as the midpoint tier. Cost ~ceil(log2(4)) = 2
  * comparisons per ticket.
  */
-async function binForTicket(
+export async function binForTicket(
   ticket: Ticket,
-): Promise<{ index: number; p: number | undefined; label: string }> {
+  index = 0,
+  total = 1,
+): Promise<BinTicketResult> {
   let lo = 0;
   let hi = TRIAGE_BINS.length - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    clearScreen();
-    console.log(
-      `TRIAGE  |  Is this ticket at least ${paint(TRIAGE_BINS[mid].label, BOLD)} priority?`,
-    );
-    console.log("-".repeat(72));
-    console.log(`${paint("TITLE", BOLD)}: ${ticket.title}`);
-    console.log(`${paint("ID", BOLD)}: ${ticket.id}`);
-    console.log("-".repeat(72));
-    const answer = await chooseYesNo("Y = at least this priority   N = lower   Q = pause: ");
-    if (answer === "pause") return { index: -1, p: undefined, label: "paused" };
+    renderBinCard(ticket, index, total, TRIAGE_BINS[mid].label);
+    const answer = await chooseTriageChoice("Choice [Y/N/D/C/Q]: ");
+    if (answer === "pause") return { action: "pause", index: -1, p: undefined, label: "paused" };
+    if (answer === "delete") return { action: "delete", index: -2, p: undefined, label: "deleted" };
+    if (answer === "done") return { action: "done", index: -3, p: undefined, label: "done" };
     if (answer === "yes") {
       hi = mid;
     } else {
@@ -689,7 +727,7 @@ async function binForTicket(
     }
   }
   const bin = TRIAGE_BINS[lo];
-  return { index: lo, p: bin.p, label: bin.label };
+  return { action: "binned", index: lo, p: bin.p, label: bin.label };
 }
 
 async function runBin(args: Arguments): Promise<void> {
@@ -722,17 +760,29 @@ async function runBin(args: Arguments): Promise<void> {
     }
     console.log("Resuming an interrupted Linear write.");
     await applyCheckpoint(stateFile, saved.applying, rawTickets, (applying) =>
-      writeBinState(stateFile, snapshot, saved.tiers, applying),
+      writeBinState(stateFile, snapshot, saved.tiers, applying, saved.canceled, saved.done),
     );
     return;
   }
   if (saved && saved.snapshot !== snapshot) {
-    throw new Error(
-      "The ticket list changed since the saved session. Inspect it, then run --reset.",
-    );
+    const combinedIds = [
+      ...tickets.map((t) => t.id),
+      ...(saved.canceled ?? []),
+      ...(saved.done ?? []),
+    ].sort();
+    const candidateSnapshot = createHash("sha256")
+      .update(`${combinedIds.join(",")}:${args.top}:${STATE_VERSION}`)
+      .digest("hex");
+    if (saved.snapshot !== candidateSnapshot) {
+      throw new Error(
+        "The ticket list changed since the saved session. Inspect it, then run --reset.",
+      );
+    }
   }
 
   const tiers: Record<string, number | undefined> = saved?.tiers ?? {};
+  const canceled = new Set<string>(saved?.canceled ?? []);
+  const done = new Set<string>(saved?.done ?? []);
   const filterParts: string[] = [];
   if (args.team) filterParts.push(`team ${args.team}`);
   if (args.projects.length > 0) filterParts.push(`project ${projectSetLabel(args.projects)}`);
@@ -743,28 +793,52 @@ async function runBin(args: Arguments): Promise<void> {
     `${args.rebin ? "Re-binning" : "Binning"} ${tickets.length} ticket(s). Source: ${sourceLabel}.`,
   );
   if (saved) console.log(`Resuming (${Object.keys(tiers).length} binned).`);
-  await writeBinState(stateFile, snapshot, tiers);
+  await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
 
   let triaged = 0;
   for (let index = 0; index < tickets.length; index += 1) {
     const ticket = tickets[index];
-    if (tiers[ticket.id] !== undefined) continue;
-    const decided = Object.keys(tiers).length;
-    renderBinCard(ticket, index, tickets.length, decided);
-    const result = await binForTicket(ticket);
-    triaged += 1;
-    if (result.index === -1) {
-      await writeBinState(stateFile, snapshot, tiers);
+    if (tiers[ticket.id] !== undefined || canceled.has(ticket.id) || done.has(ticket.id)) {
+      continue;
+    }
+    const result = await binForTicket(ticket, index, tickets.length);
+    if (result.action === "pause") {
+      await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
       console.log("Paused. Progress is saved; rerun to resume.");
       return;
     }
+    if (result.action === "delete") {
+      if (usingLinear && !args.dryRun) {
+        await markIssueCanceled(ticket.id);
+      }
+      canceled.add(ticket.id);
+      delete tiers[ticket.id];
+      await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
+      console.log(`Ticket ${ticket.id} deleted/canceled.`);
+      continue;
+    }
+    if (result.action === "done") {
+      if (usingLinear && !args.dryRun) {
+        await markIssueDone(ticket.id);
+      }
+      done.add(ticket.id);
+      delete tiers[ticket.id];
+      await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
+      console.log(`Ticket ${ticket.id} marked Done.`);
+      continue;
+    }
+    triaged += 1;
     tiers[ticket.id] = result.index;
-    await writeBinState(stateFile, snapshot, tiers);
+    await writeBinState(stateFile, snapshot, tiers, undefined, [...canceled], [...done]);
   }
+
+  const activeTickets = tickets.filter(
+    (t) => !canceled.has(t.id) && !done.has(t.id),
+  );
 
   // Group by bin for the plan.
   const byTier = new Map<number | undefined, Ticket[]>();
-  for (const ticket of tickets) {
+  for (const ticket of activeTickets) {
     const index = tiers[ticket.id];
     const key = index === undefined ? undefined : TRIAGE_BINS[index]?.p;
     const list = byTier.get(key) ?? [];
@@ -778,16 +852,26 @@ async function runBin(args: Arguments): Promise<void> {
     console.log(`\n${label} (${group.length}):`);
     for (const t of group) console.log(`- ${t.id}  ${t.title}`);
   }
+  if (done.size > 0) {
+    console.log(`\nMarked Done (${done.size}):`);
+    for (const id of done) console.log(`- ${id}`);
+  }
+  if (canceled.size > 0) {
+    console.log(`\nDeleted/Canceled (${canceled.size}):`);
+    for (const id of canceled) console.log(`- ${id}`);
+  }
   console.log(`\n${triaged} ticket(s) triaged into a priority tier.`);
 
   if (!usingLinear) {
     if (args.output) {
       await mkdir(dirname(args.output), { recursive: true });
       await writeFile(args.output, `${JSON.stringify({
-        tickets: tickets.map((ticket) => ({
+        tickets: activeTickets.map((ticket) => ({
           ...ticket,
           priority: tiers[ticket.id] === undefined ? ticket.priority : TRIAGE_BINS[tiers[ticket.id]!]?.p,
         })),
+        canceled: [...canceled],
+        done: [...done],
       }, null, 2)}\n`, "utf8");
     }
     return;
@@ -799,7 +883,7 @@ async function runBin(args: Arguments): Promise<void> {
   }
 
   // Write the meaningful tiers (1..4). No-priority (0) is left as-is.
-  const toWrite = tickets.filter((t) => {
+  const toWrite = activeTickets.filter((t) => {
     const p = tiers[t.id] === undefined ? undefined : TRIAGE_BINS[tiers[t.id]!]?.p;
     return p !== undefined && p >= 1 && p <= 4;
   });
@@ -828,9 +912,9 @@ async function runBin(args: Arguments): Promise<void> {
     projects: args.projects.length > 0 ? args.projects : undefined,
     updates,
   };
-  await writeBinState(stateFile, snapshot, tiers, applying);
+  await writeBinState(stateFile, snapshot, tiers, applying, [...canceled], [...done]);
   await applyCheckpoint(stateFile, applying, rawTickets, (applying) =>
-    writeBinState(stateFile, snapshot, tiers, applying),
+    writeBinState(stateFile, snapshot, tiers, applying, [...canceled], [...done]),
   );
 }
 
@@ -929,6 +1013,7 @@ async function main(): Promise<void> {
       throw new Error(`Internal error: core requested a cached comparison (${key}).`);
     }
 
+    const candidateIndex = tickets.indexOf(left) + 1;
     renderPair(
       left,
       right,
@@ -936,6 +1021,7 @@ async function main(): Promise<void> {
       tickets.length,
       args.top,
       maxComparisons,
+      candidateIndex,
     );
     const choice = await chooseComparison();
     if (choice === "pause") {
@@ -1064,8 +1150,10 @@ async function main(): Promise<void> {
   );
 }
 
-await main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`\nPrioritization stopped: ${message}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\nPrioritization stopped: ${message}`);
+    process.exitCode = 1;
+  });
+}
