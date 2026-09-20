@@ -87,10 +87,39 @@ Before implementation or planning, verify:
 - Every unresolved question is technical, not product-level.
 - Every proposed PRD or VRD change is isolated under `Contract Amendment Requests`.
 
-## Plan Contract
+## Plan Contract: Slice vs Ratchet
 
-A plan is not a stage in the default loop. Skip it when the spec is small enough to execute directly.
+A plan is optional for standard work, but mandatory for complex or empirical tasks. Plans follow one of two execution models:
 
+### 1. Slice Execution Plan (Standard Phased Delivery)
+Used for deterministic implementation across multiple layers:
+- Linear sequence of bounded checkpoints: `Foundation` -> `Implementation` -> `Verification`.
+- Each phase has clear verification criteria and commits.
+
+### 2. Ratchet Execution Plan (Empirical Optimization / AutoResearch + AutoImplement)
+Mandatory for tuning, search relevance, latency reduction, prompt engineering, or heuristic classifiers where code changes must be proved by metric movement on a frozen benchmark.
+
+#### The Four Artifacts of a Ratchet Plan
+1. **`program.md`**: The frozen contract containing:
+   - Scalar goal in one sentence with a number.
+   - Frozen files (evaluator, test suite, benchmark datasets—agent may never touch).
+   - Bounded edit surface (exact files allowed to change).
+   - Mechanical evaluation command and score extraction rule.
+   - Keep vs revert rule: threshold improvement (e.g. `≥ 2%`) required to keep; automatic `git reset --hard HEAD~1` on failure.
+2. **`eval.sh`**: The unfakeable mechanical oracle that executes the benchmark and prints a single greppable scalar line: `SCORE: <number>`.
+3. **`results.tsv`** (untracked): Machine-readable ledger of attempts:
+   `commit_hash\tscore\tkeep_or_discard\thypothesis_summary`
+4. **`journal.md`** (untracked): Negative memory. Records 5 lines per failed attempt explaining *why* it failed so fresh-context iterations never retry discarded hypotheses.
+
+#### The Ralph Loop Runner
+Ratchet plans execute as fresh-context iterations to prevent context rot:
+```bash
+while :; do
+  # 1. autoResearch: reads program.md, results.tsv, journal.md -> emits 1 hypothesis
+  # 2. autoImplement: applies 1 hypothesis to edit surface -> commits
+  # 3. runs eval.sh -> keeps or git reset --hard -> appends to results.tsv & journal.md
+done
+```
 Write `plan.md` beside the spec only when:
 
 - Multiple workstreams need an explicit order
