@@ -6,14 +6,17 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import ipaddress
 import getpass
 import hashlib
 import json
 import os
 import re
+import socket
 import stat
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 import urllib.error
@@ -34,6 +37,9 @@ SECRET_SUBPROCESS_TIMEOUT = 10.0
 LOCAL_KASA_TIMEOUT = 25.0
 _B64_ALIAS = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
 _SMART_FAMILY_PREFIX = "SMART."
+_INET_RE = re.compile(r"\binet(?:\s+addr:)?\s+(\d+\.\d+\.\d+\.\d+)")
+# ASUS guest VLANs for the isolated IoT SSID.
+DEFAULT_SCAN_CIDRS = ("192.168.101.0/24", "192.168.102.0/24")
 
 
 class SmartHomeError(Exception):
@@ -137,6 +143,8 @@ class AppConfig:
     ha_url: str | None = None
     ha_token: str | None = None
     aliases: dict[str, Alias] = field(default_factory=dict)
+    hosts: dict[str, str] = field(default_factory=dict)
+    scan_cidrs: list[str] = field(default_factory=list)
     state_dir: Path = field(default_factory=lambda: Path.home() / ".config" / "smart-home")
 
 
@@ -417,6 +425,7 @@ def load_config(
             environ=env,
             run=run,
         )
+        apply_host_index(cfg)
         return cfg
 
     try:
@@ -436,6 +445,9 @@ def load_config(
     )
     cfg.kasa_password_encoding = str(kasa.get("password_encoding") or "plain")
     cfg.kasa_url = str(kasa.get("url") or KASA_CLOUD_URL)
+    cfg.scan_cidrs = parse_cidr_list(
+        kasa.get("scan_cidrs") if "scan_cidrs" in kasa else kasa.get("extra_cidrs")
+    )
     cfg.kasa_password = resolve_secret(
         inline=kasa.get("password"),
         env_name=kasa.get("password_env"),
@@ -474,6 +486,7 @@ def load_config(
             voltage_entity=item.get("voltage_entity"),
             energy_entity=item.get("energy_entity"),
         )
+    apply_host_index(cfg)
     return cfg
 
 
@@ -536,6 +549,236 @@ def _hash_password(password: str, encoding: str) -> str:
 
 
 
+
+HOSTS_TOML = "hosts.toml"
+
+
+def normalize_mac(raw: str | None) -> str:
+    text = (raw or "").replace(":", "").replace("-", "").replace(".", "").lower()
+    return text
+
+
+def index_host(hosts: dict[str, str], ip: str, *keys: str | None) -> None:
+    ip = (ip or "").strip()
+    if not ip:
+        return
+    for key in keys:
+        if not key:
+            continue
+        cleaned = str(key).strip()
+        if not cleaned:
+            continue
+        hosts[cleaned.lower()] = ip
+        mac = normalize_mac(cleaned)
+        if len(mac) == 12:
+            hosts[mac] = ip
+
+
+def load_host_index(state_dir: Path) -> dict[str, str]:
+    data = _read_toml_file(state_dir / HOSTS_TOML)
+    mapping = data.get("hosts") if isinstance(data.get("hosts"), dict) else {}
+    hosts: dict[str, str] = {}
+    for key, value in mapping.items():
+        if isinstance(value, str) and value.strip():
+            hosts[str(key).strip().lower()] = value.strip()
+    for item in data.get("host") or []:
+        if not isinstance(item, dict):
+            continue
+        ip = str(item.get("ip") or item.get("host") or "").strip()
+        index_host(
+            hosts,
+            ip,
+            item.get("alias"),
+            item.get("match"),
+            item.get("device_id"),
+            normalize_mac(str(item.get("mac") or "")),
+        )
+    return hosts
+
+
+def save_host_index(state_dir: Path, hosts: dict[str, str]) -> None:
+    lines = [
+        "# Local Kasa IPs. chmod 600. No secrets. Written by `smart-home scan`.",
+        "[hosts]",
+    ]
+    for key in sorted(hosts):
+        ip = hosts[key]
+        if ip:
+            lines.append(f"{_toml_string(key)} = {_toml_string(ip)}")
+    lines.append("")
+    _write_private_text(state_dir / HOSTS_TOML, "\n".join(lines))
+
+
+def apply_host_index(cfg: AppConfig) -> None:
+    hosts = load_host_index(cfg.state_dir)
+    for alias in cfg.aliases.values():
+        if alias.host:
+            index_host(hosts, alias.host, alias.name, alias.match)
+    for alias in DEFAULT_ALIASES:
+        if alias.host:
+            index_host(hosts, alias.host, alias.name, alias.match)
+    cfg.hosts = hosts
+
+
+def remember_host(config: AppConfig, device: Device, host: str | None) -> None:
+    host = (host or "").strip()
+    if not host:
+        return
+    mac = normalize_mac(
+        str(device.extras.get("deviceMac") or device.extras.get("mac") or "")
+    )
+    index_host(
+        config.hosts,
+        host,
+        device.alias,
+        device.device_id,
+        mac or None,
+    )
+    save_host_index(config.state_dir, config.hosts)
+
+
+def parse_cidr_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.replace(";", ",").split(",")]
+        return [item for item in parts if item]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def ips_from_ifconfig(text: str) -> list[str]:
+    return [match.group(1) for match in _INET_RE.finditer(text or "")]
+
+
+def cidr_from_ipv4(ip: str) -> str | None:
+    if not ip or ip.startswith("127.") or ip.startswith("169.254.") or ip.startswith("100."):
+        return None
+    try:
+        packed = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    if packed.version != 4 or packed.is_loopback or packed.is_link_local or packed.is_multicast:
+        return None
+    return str(ipaddress.ip_network(f"{ip}/24", strict=False))
+
+
+def cidr_broadcasts(cidrs: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for cidr in ["255.255.255.255", *cidrs]:
+        if cidr == "255.255.255.255":
+            bcast = cidr
+        else:
+            try:
+                bcast = str(ipaddress.ip_network(cidr, strict=False).broadcast_address)
+            except ValueError:
+                continue
+        if bcast not in seen:
+            seen.add(bcast)
+            out.append(bcast)
+    return out
+
+
+def local_ipv4_cidrs(extra: list[str] | None = None) -> list[str]:
+    cidrs: list[str] = []
+    seen: set[str] = set()
+
+    def add_ip(ip: str) -> None:
+        prefix = cidr_from_ipv4(ip)
+        if prefix and prefix not in seen:
+            seen.add(prefix)
+            cidrs.append(prefix)
+
+    def add_cidr(cidr: str) -> None:
+        text = (cidr or "").strip()
+        if not text or text in seen:
+            return
+        try:
+            net = ipaddress.ip_network(text, strict=False)
+        except ValueError:
+            return
+        if net.version != 4 or net.num_addresses > 256:
+            return
+        key = str(net)
+        if key not in seen:
+            seen.add(key)
+            cidrs.append(key)
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        add_ip(sock.getsockname()[0])
+        sock.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            add_ip(info[4][0])
+    except OSError:
+        pass
+    try:
+        blob = subprocess.check_output(["ifconfig"], text=True, timeout=5)
+        for ip in ips_from_ifconfig(blob):
+            add_ip(ip)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            blob = subprocess.check_output(["ip", "-4", "-o", "addr"], text=True, timeout=5)
+            for ip in ips_from_ifconfig(blob):
+                add_ip(ip)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    for cidr in extra or []:
+        add_cidr(cidr)
+    return cidrs or ["192.168.50.0/24"]
+
+
+def scan_cidrs_for(config: AppConfig | None = None, extra: list[str] | None = None) -> list[str]:
+    configured: list[str] = []
+    if config is not None:
+        configured.extend(config.scan_cidrs)
+    configured.extend(parse_cidr_list(os.environ.get("SMART_HOME_SCAN_CIDRS")))
+    if extra:
+        configured.extend(extra)
+    configured.extend(DEFAULT_SCAN_CIDRS)
+    return local_ipv4_cidrs(extra=configured)
+
+
+def tcp_open_hosts(cidrs: list[str], port: int = 80, timeout: float = 0.12) -> list[str]:
+    ips: list[str] = []
+    for cidr in cidrs:
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            continue
+        if net.num_addresses > 256:
+            continue
+        ips.extend(str(host) for host in net.hosts())
+    open_hosts: list[str] = []
+
+    def probe(ip: str) -> str | None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            sock.connect((ip, port))
+            return ip
+        except OSError:
+            return None
+        finally:
+            sock.close()
+
+    if not ips:
+        return []
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        for ip in pool.map(probe, ips):
+            if ip:
+                open_hosts.append(ip)
+    return open_hosts
+
+
 def is_smart_kasa_device(device: Device) -> bool:
     family = str(
         device.extras.get("deviceType")
@@ -569,18 +812,26 @@ def host_for_device(config: AppConfig, device: Device, needle: str | None = None
     names = {device.alias.lower(), device.device_id.lower()}
     if needle:
         names.add(needle.lower())
-    for alias in config.aliases.values():
-        if alias.host and (
+    mac = normalize_mac(
+        str(device.extras.get("deviceMac") or device.extras.get("mac") or "")
+    )
+    if mac:
+        names.add(mac)
+    alias_pool = list(config.aliases.values()) + list(DEFAULT_ALIASES)
+    for alias in alias_pool:
+        hit = (
             alias.name.lower() in names
             or alias.match.lower() in names
-        ):
-            return alias.host
-    for alias in DEFAULT_ALIASES:
-        if alias.host and (
-            alias.name.lower() in names
-            or alias.match.lower() in names
-        ):
-            return alias.host
+        )
+        if hit:
+            names.add(alias.name.lower())
+            names.add(alias.match.lower())
+            if alias.host:
+                return alias.host
+    for key in names:
+        ip = (config.hosts or {}).get(key)
+        if ip:
+            return ip
     return None
 
 
@@ -639,6 +890,61 @@ def parse_klap_state(payload: dict[str, Any]) -> tuple[Device, Energy]:
     return device, energy
 
 
+def parse_local_state(
+    payload: dict[str, Any], host: str | None = None
+) -> tuple[Device, Energy]:
+    """SMART KLAP dump or IOT python-kasa sysinfo/emeter dump."""
+    if isinstance(payload.get("get_device_info"), dict) or "get_emeter_data" in payload:
+        device, energy = parse_klap_state(payload)
+        if host:
+            extras = dict(device.extras)
+            extras["host"] = host
+            extras["path"] = extras.get("path") or "klap"
+            device = copy_device(device, extras=extras)
+        return device, energy
+    sysinfo = payload.get("sys_info") if isinstance(payload.get("sys_info"), dict) else {}
+    nested = payload.get("system")
+    if isinstance(nested, dict) and isinstance(nested.get("get_sysinfo"), dict):
+        sysinfo = nested.get("get_sysinfo") or sysinfo
+    if sysinfo:
+        alias = decode_kasa_alias(str(sysinfo.get("alias") or sysinfo.get("nickname") or ""))
+        on = sysinfo.get("relay_state")
+        if on is None:
+            on = sysinfo.get("device_on")
+        device = Device(
+            connector="kasa",
+            device_id=str(sysinfo.get("deviceId") or sysinfo.get("device_id") or ""),
+            alias=alias or str(host or "kasa"),
+            model=str(sysinfo.get("model") or sysinfo.get("dev_name") or ""),
+            online=True,
+            extras={
+                "deviceType": str(sysinfo.get("type") or sysinfo.get("mic_type") or "IOT.SMARTPLUGSWITCH"),
+                "host": host or sysinfo.get("ip"),
+                "mac": sysinfo.get("mac"),
+                "deviceMac": normalize_mac(str(sysinfo.get("mac") or "")),
+                "path": "local",
+            },
+        )
+        emeter = payload.get("emeter")
+        realtime = {}
+        if isinstance(emeter, dict):
+            realtime = emeter.get("get_realtime") or emeter
+        try:
+            energy = normalize_emeter(
+                {"emeter": {"get_realtime": realtime}} if realtime else payload,
+                on=bool(on) if on is not None else None,
+            )
+        except EnergyUnsupported:
+            energy = Energy(watts=0, volts=0, amps=0, kwh=0, on=bool(on) if on is not None else None)
+        return device, energy
+    device, energy = parse_klap_state(payload)
+    if host:
+        extras = dict(device.extras)
+        extras["host"] = host
+        device = copy_device(device, extras=extras)
+    return device, energy
+
+
 class LocalKasaBackend(Protocol):
     def read(self, host: str, username: str, password: str) -> tuple[Device, Energy]:
         ...
@@ -663,7 +969,7 @@ class PythonKasaBackend:
             payload = self._read_library(host, username, password)
         except ImportError:
             payload = self._uvx_json(host, username, password, "state")
-        device, energy = parse_klap_state(payload)
+        device, energy = parse_local_state(payload, host=host)
         extras = dict(device.extras)
         extras["host"] = host
         return copy_device(device, extras=extras), energy
@@ -673,6 +979,112 @@ class PythonKasaBackend:
             self._set_library(host, username, password, on)
         except ImportError:
             self._uvx_json(host, username, password, "on" if on else "off")
+
+    def discover(
+        self,
+        username: str,
+        password: str,
+        cidrs: list[str] | None = None,
+    ) -> list[tuple[Device, Energy]]:
+        found: dict[str, tuple[Device, Energy]] = {}
+        nets = cidrs or local_ipv4_cidrs()
+        try:
+            payloads = self._discover_library(username, password, nets)
+        except ImportError:
+            payloads = self._discover_uvx(username, password, nets)
+        for host, payload in payloads.items():
+            try:
+                found[host] = parse_local_state(payload, host=host)
+            except (SmartHomeError, TypeError, ValueError, KeyError):
+                continue
+        identify = PythonKasaBackend(run=self.run, timeout=min(self.timeout, 6.0))
+        for ip in tcp_open_hosts(nets, port=80):
+            if ip in found:
+                continue
+            try:
+                found[ip] = identify.read(ip, username, password)
+            except SmartHomeError:
+                continue
+        return list(found.values())
+
+    def _discover_uvx(
+        self,
+        username: str,
+        password: str,
+        cidrs: list[str] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        # Limited broadcast only. Extra guest CIDRs are covered by TCP :80.
+        argv = [
+            "uvx",
+            "--from",
+            "python-kasa",
+            "kasa",
+            "--json",
+            "--username",
+            username,
+            "discover",
+            "detail",
+        ]
+        try:
+            stdout = self.run(
+                argv, timeout=max(self.timeout, 20.0), environ=self._kasa_env(username, password)
+            )
+        except TypeError:
+            stdout = self.run(argv)
+        except AuthError:
+            return {}
+        try:
+            payload = json.loads(stdout)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            str(host): body
+            for host, body in payload.items()
+            if isinstance(body, dict)
+        }
+
+    def _discover_library(
+        self,
+        username: str,
+        password: str,
+        cidrs: list[str] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        from kasa import Credentials, Discover  # type: ignore
+
+        async def _go() -> dict[str, dict[str, Any]]:
+            out: dict[str, dict[str, Any]] = {}
+            devices = await Discover.discover(
+                credentials=Credentials(username, password),
+                timeout=8,
+            )
+            for host, dev in (devices or {}).items():
+                try:
+                    await asyncio.wait_for(dev.update(), 8)
+                    state = getattr(dev, "internal_state", None)
+                    if isinstance(state, dict) and state:
+                        out[str(host)] = state
+                    else:
+                        info = {
+                            "device_id": getattr(dev, "device_id", "") or "",
+                            "nickname": getattr(dev, "alias", "") or "",
+                            "model": getattr(dev, "model", "") or "",
+                            "type": "SMART.KASAPLUG",
+                            "device_on": bool(getattr(dev, "is_on", False)),
+                            "ip": str(host),
+                        }
+                        out[str(host)] = {"get_device_info": info}
+                except Exception:
+                    continue
+                finally:
+                    try:
+                        await dev.disconnect()
+                    except Exception:
+                        pass
+            return out
+
+        return asyncio.run(_go())
 
     def _kasa_env(self, username: str, password: str) -> dict[str, str]:
         env = os.environ.copy()
@@ -796,6 +1208,8 @@ class KasaCloudConnector:
         self._local = local
         self._token: str | None = None
         self._devices: list[Device] | None = None
+        self._scanned = False
+        self._scan_lock = threading.Lock()
         self._terminal = self._load_terminal_uuid()
 
     def _local_backend(self) -> LocalKasaBackend:
@@ -820,18 +1234,59 @@ class KasaCloudConnector:
         extras.setdefault("deviceType", extras.get("deviceType") or "SMART.KASAPLUG")
         return copy_device(device, extras=extras)
 
-    def _klap_read(self, device: Device) -> tuple[Device, Energy]:
+    def ensure_local_hosts(self) -> None:
+        with self._scan_lock:
+            if self._scanned:
+                return
+            self._scanned = True
+            backend = self._local_backend()
+            if not callable(getattr(backend, "discover", None)):
+                return
+            try:
+                self.scan()
+            except SmartHomeError:
+                return
+
+    def scan(self) -> list[Device]:
+        username, password = self._kasa_user_pass()
+        backend = self._local_backend()
+        discover = getattr(backend, "discover", None)
+        if not callable(discover):
+            return []
+        cidrs = scan_cidrs_for(self.config)
+        found: list[Device] = []
+        try:
+            discovered = discover(username, password, cidrs=cidrs)
+        except TypeError:
+            discovered = discover(username, password)
+        for device, _energy in discovered:
+            host = host_for_device(self.config, device) or device.extras.get("host")
+            if isinstance(host, str) and host.strip():
+                remember_host(self.config, device, host.strip())
+                extras = dict(device.extras)
+                extras["host"] = host.strip()
+                device = copy_device(device, extras=extras, online=True)
+            found.append(device)
+        if self._devices is not None:
+            self._devices = [self._attach_host(item) for item in self._devices]
+        return found
+
+    def _local_read(self, device: Device) -> tuple[Device, Energy]:
+        self.ensure_local_hosts()
+        device = self._attach_host(device)
         host = host_for_device(self.config, device)
         if not host:
+            kind = "SMART.KASAPLUG" if is_smart_kasa_device(device) else "Kasa"
             raise DeviceOffline(
-                f"{device.alias!r} is SMART.KASAPLUG; cloud passthrough is not "
-                "tunneled. Set host = \"IP\" on [[device]] for local KLAP."
+                f"{device.alias!r} ({kind}) has no LAN host. "
+                "Run `smart-home scan` from a network that can reach the plug."
             )
         username, password = self._kasa_user_pass()
         found, energy = self._local_backend().read(host, username, password)
+        remember_host(self.config, found, host)
         extras = dict(found.extras)
         extras["host"] = host
-        extras["path"] = "klap"
+        extras.setdefault("path", "local")
         return copy_device(found, extras=extras, online=True), energy
 
     def _load_terminal_uuid(self) -> str:
@@ -934,16 +1389,21 @@ class KasaCloudConnector:
                 extras={
                     "appServerUrl": item.get("appServerUrl"),
                     "deviceType": item.get("deviceType"),
+                    "deviceMac": item.get("deviceMac"),
+                    "mac": item.get("deviceMac"),
                 },
             )
-            parent = self._attach_host(parent)
-            if parent.extras.get("host") and is_smart_kasa_device(parent):
-                parent = copy_device(parent, online=True)
             devices.append(parent)
             if parent.online and not is_smart_kasa_device(parent):
                 devices.extend(self._expand_children(parent))
-        self._devices = devices
-        return devices
+        attached: list[Device] = []
+        for item in devices:
+            item = self._attach_host(item)
+            if item.extras.get("host"):
+                item = copy_device(item, online=True)
+            attached.append(item)
+        self._devices = attached
+        return attached
 
     def _passthrough(self, device: Device, request: dict[str, Any]) -> dict[str, Any]:
         self._ensure_login()
@@ -1036,10 +1496,18 @@ class KasaCloudConnector:
     def get_power(self, device: Device) -> bool:
         device = self._attach_host(device)
         if is_smart_kasa_device(device):
-            _, energy = self._klap_read(device)
+            _, energy = self._local_read(device)
             if energy.on is None:
-                raise DeviceOffline(f"{device.alias!r} KLAP did not report power state")
+                raise DeviceOffline(f"{device.alias!r} did not report power state")
             return bool(energy.on)
+        host = host_for_device(self.config, device)
+        if host:
+            try:
+                _, energy = self._local_read(device)
+                if energy.on is not None:
+                    return bool(energy.on)
+            except SmartHomeError:
+                pass
         request: dict[str, Any] = {"system": {"get_sysinfo": {}}}
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
@@ -1056,14 +1524,24 @@ class KasaCloudConnector:
     def set_power(self, device: Device, on: bool) -> None:
         device = self._attach_host(device)
         if is_smart_kasa_device(device):
+            self.ensure_local_hosts()
+            device = self._attach_host(device)
             host = host_for_device(self.config, device)
             if not host:
                 raise DeviceOffline(
-                    f"{device.alias!r} is SMART.KASAPLUG; set host on [[device]] for KLAP"
+                    f"{device.alias!r} has no LAN host. Run `smart-home scan`."
                 )
             username, password = self._kasa_user_pass()
             self._local_backend().set_power(host, username, password, on)
             return
+        host = host_for_device(self.config, device)
+        if host:
+            try:
+                username, password = self._kasa_user_pass()
+                self._local_backend().set_power(host, username, password, on)
+                return
+            except SmartHomeError:
+                pass
         request: dict[str, Any] = {"system": {"set_relay_state": {"state": 1 if on else 0}}}
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
@@ -1072,8 +1550,15 @@ class KasaCloudConnector:
     def energy(self, device: Device) -> Energy:
         device = self._attach_host(device)
         if is_smart_kasa_device(device):
-            _, energy = self._klap_read(device)
+            _, energy = self._local_read(device)
             return energy
+        host = host_for_device(self.config, device)
+        if host:
+            try:
+                _, energy = self._local_read(device)
+                return energy
+            except SmartHomeError:
+                pass
         request: dict[str, Any] = {"emeter": {"get_realtime": {}}}
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
@@ -1083,7 +1568,12 @@ class KasaCloudConnector:
             on = self.get_power(device)
         except SmartHomeError:
             on = None
-        return normalize_emeter(payload, on=on)
+        try:
+            return normalize_emeter(payload, on=on)
+        except EnergyUnsupported:
+            if on is None:
+                raise
+            return Energy(watts=0.0, volts=0.0, amps=0.0, kwh=0.0, on=on, raw=payload)
 
 
 class HomeAssistantConnector:
@@ -1412,9 +1902,40 @@ def energy_row(
         else:
             reading = connector.energy(device)
         row.update(reading.as_dict())
+        if (
+            reading.watts == 0
+            and reading.volts == 0
+            and reading.amps == 0
+            and reading.kwh == 0
+            and reading.on is not None
+        ):
+            row["energy_supported"] = False
+    except EnergyUnsupported as exc:
+        row["energy_error"] = str(exc)
+        try:
+            row["on"] = connector.get_power(device)
+        except SmartHomeError:
+            pass
     except SmartHomeError as exc:
         row["energy_error"] = str(exc)
+        try:
+            row["on"] = connector.get_power(device)
+        except SmartHomeError:
+            pass
     return row
+
+
+def energy_rows_for_devices(
+    connector: KasaCloudConnector | HomeAssistantConnector,
+    devices: list[Device],
+    workers: int = 8,
+) -> list[dict[str, Any]]:
+    if len(devices) <= 1:
+        return [energy_row(connector, device) for device in devices]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(devices))) as pool:
+        return list(pool.map(lambda device: energy_row(connector, device), devices))
 
 
 def status_rows_for_targets(
@@ -1451,6 +1972,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     sub.add_parser("whoami", help="Verify API authentication")
     sub.add_parser("devices", help="List devices from the API")
+    sub.add_parser("scan", help="Discover local Kasa IPs and write hosts.toml")
     energy = sub.add_parser("energy", help="Live watts / volts / amps / kWh")
     energy.add_argument("target")
     for name in ("on", "off"):
@@ -1512,15 +2034,23 @@ def main(argv: list[str] | None = None) -> int:
             _print(rows, args.json)
             return 0
 
-        if args.command == "energy":
-            connector, device, alias = resolve_target(config, args.target)
-            if isinstance(connector, HomeAssistantConnector):
-                reading = connector.energy(device, alias=alias)
-            else:
-                reading = connector.energy(device)
-            payload = {**_device_row(device), **reading.as_dict()}
+        if args.command == "scan":
+            connector = build_connector(config.default_connector, config)
+            if not isinstance(connector, KasaCloudConnector):
+                raise ConfigError("scan is implemented for the Kasa connector")
+            found = connector.scan()
+            payload = {
+                "hosts_file": str(config.state_dir / HOSTS_TOML),
+                "devices": [_device_row(device) for device in found],
+            }
             _print(payload, args.json)
             return 0
+
+        if args.command == "energy":
+            connector, device, alias = resolve_target(config, args.target)
+            payload = energy_row(connector, device, alias)
+            _print(payload, args.json)
+            return 0 if "watts" in payload or "on" in payload else 2
 
         if args.command in {"on", "off"}:
             if args.command == "off":
@@ -1558,20 +2088,19 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "status":
             if args.target:
-                targets = [args.target]
-            elif config.aliases:
-                targets = [alias.name for alias in config.aliases.values()]
-                seen = {name.lower() for name in targets}
-                for alias in DEFAULT_ALIASES:
-                    if alias.host and alias.name.lower() not in seen:
-                        targets.append(alias.name)
-                        seen.add(alias.name.lower())
-            else:
-                connector = build_connector(config.default_connector, config)
-                rows = [energy_row(connector, device) for device in connector.list_devices()]
+                rows = status_rows_for_targets(config, [args.target])
                 _print(rows, args.json)
                 return 0
-            rows = status_rows_for_targets(config, targets)
+            connector = build_connector(config.default_connector, config)
+            seen: set[str] = set()
+            devices: list[Device] = []
+            for device in connector.list_devices():
+                key = device.device_id or device.alias
+                if key in seen:
+                    continue
+                seen.add(key)
+                devices.append(device)
+            rows = energy_rows_for_devices(connector, devices)
             _print(rows, args.json)
             return 0
 

@@ -121,3 +121,24 @@ $ python3 skills/smart-home/scripts/smart_home.py --json energy "Media Rack"
 `energy media-rack` matched. `status` reported Media Rack ~204 W on, Mac Studio (EP25) ~31 W on, and Sparks/PC/4090 as SMART.KASAPLUG missing `host` (not `-20571` auth confusion). `python3 skills/smart-home/tests/test_smart_home.py` — 38 tests OK.
 
 Sparks/PC/4090 still need their LAN IPs in `[[device]] host` before KLAP can read them.
+
+## EMO-481 auto-discover hosts (2026-09-19)
+
+`smart-home scan` runs python-kasa discover plus TCP :80 on the local /24, matches alias/deviceId/MAC, writes `~/.config/smart-home/hosts.toml` (mode 600, no secrets). `status` lists every cloud device. HS103/HS105 with no emeter still return `on` when the cloud path works.
+
+Live scan on studio: **only Media Rack** `192.168.50.152`. Sparks / PC / 4090 / SSDs (KP125M fw 1.4.1, MACs A82948235757 / A82948234E6B / A82948235A73 / A829482354CC) are not on `192.168.50.0/24`. Isolated IoT SSID has no L3 route from studio, so KLAP cannot reach them until they are on this LAN or the router routes the IoT VLAN.
+
+`python3 skills/smart-home/tests/test_smart_home.py` — 42 tests OK.
+
+
+## Fleet status + extra scan CIDRs (2026-09-20)
+
+`smart-home status` now reads every cloud device in parallel. IOT (EP25 / HS103 / HS105) use Kasa Cloud. SMART.KASAPLUG uses unicast KLAP. `scan` probes every local interface /24 plus ASUS guest `192.168.101.0/24` and `192.168.102.0/24` (override: `scan_cidrs` / `SMART_HOME_SCAN_CIDRS`).
+
+Live studio (no secrets):
+
+- Cloud-online IOT report watts/`on` (Entertainment / Studio Desk / Mac Studio EP25; HS103/HS105 `on` with no emeter chip).
+- Media Rack KP125M KLAP at `192.168.50.152` (~205 W).
+- Sparks / PC / 4090 / SSDs remain on isolated IoT SSID `"`. Guest gateways ping; TCP :80 and UDP discover to those /24s from studio LAN are empty (AP isolation). Cloud passthrough for SMART is still `-20571`. `networksetup` cannot join `!` or `"` (Error -3900 on 1-character SSIDs).
+
+Theater / 3d Printer / Nook Fan stay cloud-offline.

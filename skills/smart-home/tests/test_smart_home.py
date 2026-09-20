@@ -1061,7 +1061,153 @@ class TestKlapSmart(unittest.TestCase):
         self.assertIn("192.168.50.152", call["argv"])
         self.assertIn("user@example.com", call["argv"])
 
+    def test_parse_local_iot_sysinfo(self):
+        device, energy = sh.parse_local_state(
+            {
+                "system": {
+                    "get_sysinfo": {
+                        "alias": "Mix Cubes",
+                        "model": "HS103(US)",
+                        "relay_state": 0,
+                        "mac": "84:D8:1B:8E:24:25",
+                        "deviceId": "hs103",
+                    }
+                },
+                "emeter": {"get_realtime": {"err_code": -1}},
+            },
+            host="192.168.50.10",
+        )
+        self.assertEqual(device.alias, "Mix Cubes")
+        self.assertEqual(device.extras["host"], "192.168.50.10")
+        self.assertFalse(energy.on)
+        self.assertEqual(energy.watts, 0)
 
+    def test_host_cache_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            hosts = {}
+            sh.index_host(hosts, "192.168.50.152", "Media Rack", "a82948234ed5")
+            sh.save_host_index(state, hosts)
+            loaded = sh.load_host_index(state)
+            self.assertEqual(loaded["media rack"], "192.168.50.152")
+            self.assertEqual(loaded["a82948234ed5"], "192.168.50.152")
+
+    def test_scan_persists_and_attaches_host(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self._config(tmp)
+            transport = FakeTransport(
+                [kasa_ok({"token": "tok"}), self._media_list(status=0)]
+            )
+
+            class ScanningLocal(FakeLocal):
+                def discover(self, username, password):
+                    device = sh.Device(
+                        connector="kasa",
+                        device_id="803ABE5ED92F38252F2968C06265A37F2430D06F",
+                        alias="Media Rack",
+                        model="KP125M",
+                        online=True,
+                        extras={
+                            "host": "192.168.50.152",
+                            "deviceMac": "A82948234ED5",
+                            "deviceType": "SMART.KASAPLUG",
+                        },
+                    )
+                    return [(device, self.energy)]
+
+            local = ScanningLocal()
+            connector = sh.KasaCloudConnector(cfg, transport=transport, local=local)
+            found = connector.scan()
+            self.assertEqual(found[0].extras["host"], "192.168.50.152")
+            self.assertEqual(cfg.hosts["media rack"], "192.168.50.152")
+            self.assertEqual(cfg.hosts["a82948234ed5"], "192.168.50.152")
+            device = connector.resolve("Media Rack")
+            self.assertEqual(device.extras.get("host"), "192.168.50.152")
+
+    def test_hs103_energy_returns_on_without_emeter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            transport = FakeTransport(
+                [
+                    kasa_ok({"token": "tok"}),
+                    kasa_ok(
+                        {
+                            "deviceList": [
+                                {
+                                    "deviceId": "hs1",
+                                    "alias": "Mix Cubes",
+                                    "deviceModel": "HS103(US)",
+                                    "deviceType": "IOT.SMARTPLUGSWITCH",
+                                    "status": 1,
+                                }
+                            ]
+                        }
+                    ),
+                    passthrough({"system": {"get_sysinfo": {"relay_state": 0}}}),
+                    passthrough({"emeter": {"get_realtime": {"err_code": -1}}}),
+                    passthrough({"system": {"get_sysinfo": {"relay_state": 0}}}),
+                ]
+            )
+            connector = sh.KasaCloudConnector(
+                self._config(tmp), transport=transport, local=FakeLocal()
+            )
+            device = connector.resolve("Mix Cubes")
+            reading = connector.energy(device)
+            self.assertFalse(reading.on)
+            self.assertEqual(reading.watts, 0.0)
+
+
+
+class TestScanCidrs(unittest.TestCase):
+    def test_ips_from_ifconfig(self):
+        macos = "\n".join(
+            [
+                "en0: flags=8863",
+                "\tinet 192.168.50.221 netmask 0xffffff00 broadcast 192.168.50.255",
+                "en1: flags=8863",
+                "\tinet 192.168.101.14 netmask 0xffffff00 broadcast 192.168.101.255",
+            ]
+        )
+        linux = "2: wlP9s9    inet 192.168.102.20/24 brd 192.168.102.255"
+        self.assertEqual(
+            sh.ips_from_ifconfig(macos),
+            ["192.168.50.221", "192.168.101.14"],
+        )
+        self.assertEqual(sh.ips_from_ifconfig(linux), ["192.168.102.20"])
+
+    def test_extra_and_default_guest_cidrs(self):
+        cidrs = sh.local_ipv4_cidrs(extra=["192.168.77.0/24"])
+        self.assertIn("192.168.77.0/24", cidrs)
+        cfg = sh.AppConfig(path=Path("/tmp/unused.toml"), state_dir=Path("/tmp"))
+        cfg.scan_cidrs = ["10.9.9.0/24"]
+        scanned = sh.scan_cidrs_for(cfg)
+        self.assertIn("10.9.9.0/24", scanned)
+        self.assertIn("192.168.101.0/24", scanned)
+        self.assertIn("192.168.102.0/24", scanned)
+
+    def test_load_scan_cidrs_from_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        "[kasa]",
+                        'username = "a@b.c"',
+                        'password = "secret"',
+                        'scan_cidrs = ["192.168.88.0/24"]',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            path.chmod(0o600)
+            cfg = sh.load_config(path, environ={})
+            self.assertEqual(cfg.scan_cidrs, ["192.168.88.0/24"])
+
+    def test_cidr_broadcasts(self):
+        bcasts = sh.cidr_broadcasts(["192.168.50.0/24", "192.168.101.0/24"])
+        self.assertEqual(bcasts[0], "255.255.255.255")
+        self.assertIn("192.168.50.255", bcasts)
+        self.assertIn("192.168.101.255", bcasts)
 
 
 if __name__ == "__main__":

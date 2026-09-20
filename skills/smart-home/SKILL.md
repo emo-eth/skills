@@ -1,13 +1,13 @@
 ---
 name: smart-home
 disable-model-invocation: true
-description: "Smart home connectors for Kasa power monitoring and safe power cycling. IOT plugs use TP-Link Cloud; Matter SMART.KASAPLUG (KP125M) uses unicast KLAP on a configured host. Never UDP discover."
+description: "Smart home connectors for Kasa power monitoring and safe power cycling. IOT plugs use TP-Link Cloud; SMART.KASAPLUG uses local python-kasa/KLAP. `smart-home scan` probes every local /24 plus ASUS guest VLANs. Isolated IoT SSIDs still need a route."
 license: MIT
 ---
 
 # Smart home connectors
 
-Talk to plugs and strips through authenticated APIs. **IOT** Kasa plugs (EP25 and older XOR LAN protocol) use Kasa Cloud so they still work on a separate IoT SSID. **SMART.KASAPLUG** Matter plugs (KP125M / KM125) do not tunnel that protocol through `wap.tplinkcloud.com`; they speak **KLAP on HTTP port 80** at a unicast address using the same TP-Link account credentials. Configure `host = "IP"` on `[[device]]`. Do not UDP-broadcast discover.
+Talk to plugs and strips through authenticated APIs plus local python-kasa when studio can reach the plug. **IOT** (EP25 / HS103 / HS105) use Kasa Cloud across a separate IoT SSID. **SMART.KASAPLUG** (KP125M) does not tunnel XOR through `wap.tplinkcloud.com`; it uses KLAP on HTTP :80. `smart-home scan` discovers IPs with UDP broadcasts and TCP :80 on every local interface /24 plus ASUS guest VLANs `192.168.101.0/24` and `192.168.102.0/24` (override with `scan_cidrs` or `SMART_HOME_SCAN_CIDRS`). Isolated SSIDs with no L3 route still cannot be KLAP'd from studio until a host is on that VLAN or the router allows LAN→guest :80.
 
 Connectors today: **Kasa Cloud + unicast KLAP** (default) and **Home Assistant REST**. Add another backend by implementing the same list / energy / on / off surface.
 
@@ -63,6 +63,7 @@ KLAP uses the same username/password. The CLI talks to python-kasa when that lib
 bash "$smart_home_skill_script" setup --username 'you@example.com' --verify
 bash "$smart_home_skill_script" --json whoami
 bash "$smart_home_skill_script" --json devices
+bash "$smart_home_skill_script" --json scan
 bash "$smart_home_skill_script" --json energy spark0
 bash "$smart_home_skill_script" --json energy emo-win
 bash "$smart_home_skill_script" --json energy emo-4090
@@ -79,12 +80,13 @@ Host map: `spark0` and `spark1` are the same Kasa plug `Sparks` (cycling either 
 
 ## Rules
 
-- Cloud for IOT. Unicast KLAP for SMART.KASAPLUG when `host` is set. Do not scan the LAN, do not send UDP broadcasts.
+- Cloud for IOT when the cloud says online. Local python-kasa for SMART.KASAPLUG and for any plug with a host in `hosts.toml` or `[[device]] host`.
+- `smart-home scan` covers every local /24 plus guest CIDRs `192.168.101.0/24` / `192.168.102.0/24`. Guest AP isolation still blocks those packets from studio LAN until Wi-Fi is on that SSID or the router allows intranet access.
 - Do not put Kasa or HA secrets in the skills repo, tickets, or chat logs. Do not log Matter setup codes.
 - Do not cycle a plug that is feeding this machine unless the operator named that target.
-- Map human aliases in `[[device]]` so agents do not guess deviceIds. SMART plugs need `host = "IP"`.
+- Map human aliases in `[[device]]`. Scan persists IPs so SMART plugs do not need a hand-written host when they are on this LAN.
 - This skill is explicit-invocation. Automation should call the CLI, not invent raw TP-Link HTTP.
 
 ## Studio notes
 
-studio is `192.168.50.0/24`. Some Kasa plugs sit on an isolated IoT SSID (cloud only). KP125M plugs that are on the studio LAN (Media Rack at `.152`) are reachable by unicast KLAP, not by cloud passthrough (`-20571`, `get_connect_cloud_state.status = 0`). There is no Home Assistant listener on studio. `python-kasa` is not installed system-wide; `uvx` is.
+studio ethernet is `192.168.50.0/24`. Live scan finds Media Rack (`192.168.50.152`) on that LAN. Sparks / PC / 4090 / SSDs (KP125M) live on the isolated IoT SSID (ASUS guest `192.168.101/102`). IOT plugs that are cloud-online report watts/`on` via Kasa Cloud; SMART plugs need a unicast host. There is no Home Assistant listener on studio. `python-kasa` is not installed system-wide; `uvx` is.

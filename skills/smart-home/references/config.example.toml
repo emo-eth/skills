@@ -12,6 +12,9 @@ password_env = "SMART_HOME_KASA_PASSWORD"
 # password_keychain = "smart-home.kasa"
 # password_encoding = "plain"  # or "md5"
 # url = "https://wap.tplinkcloud.com"
+# Extra /24s to TCP-probe for KLAP (studio also always scans ASUS guest
+# 192.168.101.0/24 and 192.168.102.0/24). Needed when plugs sit on an isolated SSID.
+# scan_cidrs = ["192.168.101.0/24", "192.168.102.0/24"]
 
 # Optional second backend when a Home Assistant box can see the IoT VLAN.
 # [homeassistant]
@@ -59,3 +62,6 @@ connector = "kasa"
 match = "Media Rack"
 allow_cycle = false
 host = "192.168.50.152"   # KP125M SMART.KASAPLUG via KLAP :80
+
+# `smart-home scan` also writes ~/.config/smart-home/hosts.toml
+# (alias / deviceId / MAC -> IP). Prefer that over duplicating IPs here.
