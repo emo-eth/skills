@@ -13,7 +13,7 @@ VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md, optional)] -> 
 ```
 
 - **VRD** (`vrd.md`): single source of truth for the **what** (desired reality) and the **why** (problem-as-felt, stakes), plus qualitative feel clauses and anti-vibes. Void of implementation.
-- **PRD** (`prd.md`): copies VRD stakes (no second original why); translates the VRD's what into observable product behavior and acceptance criteria; references feel clauses, does not absorb them.
+- **PRD** (`prd.md`): copies and synthesizes VRD stakes (no second competing why); defines target personas, user journeys, high-level functional system requirements (`R1`...), UX/system states, and NFRs; references feel clauses without rewriting them as functional rules; cites `docs/specs/ticket-lifecycle.md` for downstream ticket specifications without inlining raw ticket markdown templates.
 - **Spec** (`spec.md`): technical **how** — architecture, interfaces, state, verification — to satisfy the PRD while preserving the VRD.
 - **Plan** (`plan.md`): optional sequencing when execution complexity needs it. Never ritual.
 - **Ticket Spec**: concrete downstream artifact produced from the Spec/Plan before dispatch to workers. A structured object living directly on the issue/ticket (.herdr-ticket / TICKET.md): Intention, Vibe, Done-when, Map.
@@ -27,7 +27,7 @@ A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices 
 | Artifact | Core Question | What Lives Here | What NEVER Belongs Here |
 |---|---|---|---|
 | **VRD** (`vrd.md`) | *What & Why?* | Problem-as-felt, desired reality, stakes, qualitative feel promises (`V1`...), anti-vibes. | Technical architecture, CLI flags, APIs, execution steps. |
-| **PRD** (`prd.md`) | *What does the product do?* | Observable functional requirements (`R1`...), acceptance criteria, surface expectations, copied stakes. | Technical design, internal schemas, a second original "why", feel restated as functional rules. |
+| **PRD** (`prd.md`) | *What does the product do?* | Observable functional requirements (`R1`...), user journeys, UX states, NFRs, surface expectations, synthesized stakes. | Technical design, internal schemas, raw ticket markdown templates, a competing "why", feel restated as functional rules. |
 | **Spec** (`spec.md`) | *How is it built?* | Technical architecture, data models, state machines, API interfaces, failure modes, traceability matrix. | Product requirement debates, re-litigating what/why, choreographing execution steps. |
 | **Plan** (`plan.md`) *(Optional)* | *In what order?* | Task dependencies, checkpoints, branch/workspace choreography (only when complexity requires it). | Inventing features, product behavior, or technical redesigns. |
 | **Ticket Spec** | *What is this worker doing?* | Self-contained slice: Intention (What/Why), Vibe (Feel/Borders), Done-when (Acceptance), Map (Coordinates). | Vague one-liners, raw chat dumps, re-specifying whole features. |
@@ -98,7 +98,7 @@ Placement:
 - **Sub-feature / scoped PRDs:** Subordinate or sub-feature PRDs can live in scoped locations (e.g. `docs/prds/YYYY-MM-DD-<topic>/prd.md` beside a scoped `vrd.md`), but the overarching project PRD belongs at the project root.
 - If the repository already keeps an established flat PRD convention at root, keep that path.
 
-Copy Problem As Felt and Why As Stakes from the VRD. Translate What Is Desired into observable requirements and acceptance criteria. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements.
+Synthesize Problem As Felt and Why As Stakes from the VRD into cohesive product context. Translate What Is Desired into user journeys, high-level functional system requirements, and UX/system states. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements. Reference `docs/specs/ticket-lifecycle.md` for downstream ticket specifications and execution units instead of embedding raw ticket templates in the PRD.
 Before moving on, use `prd-grill` when that skill is available and the user wants a Socratic expectation check or the contract is high-stakes; otherwise grill inline against the VRD and PRD quality gates. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly. Then ask the user to approve the VRD and PRD, or request amendments. Do not infer approval from silence.
 
 Once the user has approved the contract and explicitly chosen low-touch
