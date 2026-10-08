@@ -11,13 +11,13 @@ Grounded in industry-standard product management frameworks (Silicon Valley Prod
 To eliminate both vague requirements and bloated templates, documents adhere to a strict separation of concerns:
 
 ```text
-VRD (Ambition & Feel) -> PRD (Product Contract) -> Spec (Technical How) -> Ticket Spec (Dispatch Unit)
+VRD (Ambition & Feel) -> PRD (Product Contract) -> Spec (Technical How) [-> Plan (Optional Sequencing)]
 ```
 
-1. **`vrd.md` (Ambition & Feel):** Single source of truth for pure ambition, ideal reality, problem-as-felt, qualitative feel promises (`V1`...), and anti-vibes. Void of technical architecture or ticket mechanics.
-2. **`prd.md` (Product Definition & Functional System Requirements):** Synthesizes VRD stakes into an integrated product narrative. Defines target personas, Jobs-to-be-Done, end-to-end user journeys, prioritized functional requirements (**P0 / P1 / P2**), UX and system state matrices, NFRs, guardrail metrics, and scope boundaries. **Never inlines raw ticket markdown templates or execution schemas.**
-3. **`spec.md` (Technical Architecture):** Defines the technical implementation: system architecture, API contracts, data models, state machines, and requirement traceability matrices.
-4. **Ticket Specs & Execution Units (`references/ticket-spec.md`):** Concrete downstream dispatch units (.herdr-ticket / TICKET.md), execution modes (Slice vs Ratchet), and work slices are governed downstream. The PRD establishes product requirements; it delegates execution slicing to downstream specs and ticket contracts rather than inlining ticket field templates.
+1. **`vrd.md` (Ambition & Feel):** Single source of truth for pure ambition, ideal reality, problem-as-felt, qualitative feel promises (`V1`...), and anti-vibes. Void of technical architecture or implementation mechanics.
+2. **`prd.md` (Product Definition & Functional System Requirements):** Synthesizes VRD stakes into an integrated product narrative. Defines target personas, Jobs-to-be-Done, end-to-end user journeys, prioritized functional requirements (**P0 / P1 / P2**), UX and system state matrices, NFRs, guardrail metrics, and scope boundaries.
+3. **`spec.md` (Technical Architecture):** Defines technical implementation: system architecture, API contracts, data models, state machines, and requirement traceability matrices.
+4. **`plan.md` (Optional Sequencing):** Task dependencies and technical milestones when execution complexity warrants ordering.
 
 ---
 
@@ -237,11 +237,10 @@ Every core surface must define behavior across all fundamental states:
 
 ---
 
-## 11. Downstream Execution & Ticket Slicing
+## 11. Downstream Handoff & Technical Spec Traceability
 
-- **Downstream Handoff**: The PRD defines the complete product contract. Slicing into discrete execution units, ticket specs, and workspace tasks belongs downstream in `spec.md` and `references/ticket-spec.md` (or tracking systems like Linear / GitHub Issues).
-- **Strict Anti-Bloat Rule**: This PRD must not inline or redefine raw ticket markdown schemas (`.herdr-ticket` / `TICKET.md`). Technical architecture belongs in `spec.md`, and execution tickets belong in tracking systems or workspace ticket files.
----
+- **Handoff to Technical Spec**: The PRD defines what the product does and how it behaves. Technical architecture, component boundaries, APIs, data models, and verification strategies are defined in the downstream Technical Spec (`spec.md`).
+- **Execution & Task Breakdown**: Slicing deliverables into tracked tasks and assigning work to workers belongs downstream (via tracker tools or task decomposition skills like `lc-ticketize`), not inside the PRD.
 
 ## 12. Open Questions & Approvals
 
@@ -267,7 +266,7 @@ Before submitting a PRD for human approval, verify every requirement against thi
 2. **Prioritized**: Categorized explicitly as P0, P1, or P2 with clear justification.
 3. **Traceable**: Traced directly to an approved VRD feel clause (`V1`...), problem stake, or user JTBD.
 4. **Disambiguated**: Contains both an **Acceptance** standard and a concrete **Not Acceptable** constraint ruling out bad implementations.
-5. **Decoupled**: Contains zero inlined ticket templates, `.herdr-ticket` markdown, or execution choreographies (leaves execution units to downstream specs/tickets).
+5. **Decoupled**: Focuses strictly on product behavior; contains zero technical architecture (deferred to `spec.md`) and zero task tracking or ticket dispatch stubs.
 6. **State-Complete**: Every required product surface defines its behavior across Empty, Loading, Degraded, Error, and Permission states.
 7. **NFR-Rigorous**: Non-functional requirements (latency, security, freshness) specify concrete thresholds, not vague adjectives.
 
@@ -277,7 +276,7 @@ Before submitting a PRD for human approval, verify every requirement against thi
 
 | Anti-Pattern | Symptom | Remediation |
 |---|---|---|
-| **The Inlined Ticket Dump** | PRD is cluttered with raw ticket markdown schemas, task checkboxes, or sub-agent dispatch stubs. | Delete ticket markdown from the PRD; delegate work units to downstream specs and tickets. |
+| **The Task / Ticket Dump** | PRD is cluttered with developer task lists, sprint checkboxes, or execution stubs. | Keep the PRD focused on product behavior; delegate task breakdown to downstream spec and tracker stages. |
 | **The Hollow Copy-Paste** | North Star & Stakes are a mindless copy of raw VRD bullets without cohesive product synthesis. | Synthesize the Problem As Felt into an executive summary, persona pain points, and JTBD statements. |
 | **Missing User Experience** | Jumps directly from goals to bulleted requirements without walking through how a user actually uses it. | Include Section 3: Before vs After table, Happy Path walkthrough, and Edge/Recovery scenarios. |
 | **Flat Priority Laundry List** | 30 requirements listed with equal weight, making MVP scope impossible to determine. | Group requirements strictly into P0 (Must Have), P1 (Should Have), and P2 (Nice to Have). |
@@ -300,5 +299,5 @@ Before requesting human review or approval, verify:
 - [ ] Non-Functional Requirements establish concrete SLAs for Latency, Security, and Reliability.
 - [ ] Measurement framework identifies a North Star metric, leading/lagging indicators, and guardrails.
 - [ ] Scope boundaries clearly define In-Scope, Out-of-Scope (Non-Goals), and Explicitly Deferred items.
-- [ ] Downstream execution slicing is deferred to Technical Spec / Ticket Spec without inlining ticket schemas.
+- [ ] Technical architecture is deferred to `spec.md`, and task tracking is left to downstream execution stages.
 - [ ] All "Resolve Before Spec" questions are resolved before proceeding to Technical Spec.

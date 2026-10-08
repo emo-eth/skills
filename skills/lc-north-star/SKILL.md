@@ -9,14 +9,13 @@ description: "VRD-first north-star loop. Use when the user wants to word-dump an
 Lead with the VRD: the what and why of the vibe, before requirements or implementation.
 
 ```text
-VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md, optional)] -> Ticket Spec
+VRD (vrd.md) -> PRD (prd.md) -> Spec (spec.md) [-> Plan (plan.md, optional)]
 ```
 
 - **VRD** (`vrd.md`): single source of truth for the **what** (desired reality) and the **why** (problem-as-felt, stakes), plus qualitative feel clauses and anti-vibes. Void of implementation.
-- **PRD** (`prd.md`): copies and synthesizes VRD stakes (no second competing why); defines target personas, user journeys, prioritized functional requirements (`R1`...), UX/system states, and NFRs; references feel clauses without rewriting them as functional rules; delegates execution slicing to downstream specs without inlining raw ticket markdown templates.
+- **PRD** (`prd.md`): copies and synthesizes VRD stakes (no second competing why); defines target personas, user journeys, prioritized functional requirements (`R1`...), UX/system states, and NFRs; references feel clauses without rewriting them as functional rules.
 - **Spec** (`spec.md`): technical **how** — architecture, interfaces, state, verification — to satisfy the PRD while preserving the VRD.
 - **Plan** (`plan.md`): optional sequencing when execution complexity needs it. Never ritual.
-- **Ticket Spec**: concrete downstream artifact produced from the Spec/Plan before dispatch to workers. A structured object living directly on the issue/ticket (.herdr-ticket / TICKET.md): Intention, Vibe, Done-when, Map.
 
 A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices at the current stage. Do not re-interview approved upstream what/why.
 
@@ -27,10 +26,9 @@ A settled VRD makes PRD and spec questions obvious. Ask only unresolved choices 
 | Artifact | Core Question | What Lives Here | What NEVER Belongs Here |
 |---|---|---|---|
 | **VRD** (`vrd.md`) | *What & Why?* | Problem-as-felt, desired reality, stakes, qualitative feel promises (`V1`...), anti-vibes. | Technical architecture, CLI flags, APIs, execution steps. |
-| **PRD** (`prd.md`) | *What does the product do?* | Observable functional requirements (`R1`...), user journeys, UX states, NFRs, surface expectations, synthesized stakes. | Technical design, internal schemas, raw ticket markdown templates, a competing "why", feel restated as functional rules. |
+| **PRD** (`prd.md`) | *What does the product do?* | Observable functional requirements (`R1`...), user journeys, UX states, NFRs, surface expectations, synthesized stakes. | Technical design, internal schemas, task tracking checkboxes, a competing "why", feel restated as functional rules. |
 | **Spec** (`spec.md`) | *How is it built?* | Technical architecture, data models, state machines, API interfaces, failure modes, traceability matrix. | Product requirement debates, re-litigating what/why, choreographing execution steps. |
 | **Plan** (`plan.md`) *(Optional)* | *In what order?* | Task dependencies, checkpoints, branch/workspace choreography (only when complexity requires it). | Inventing features, product behavior, or technical redesigns. |
-| **Ticket Spec** | *What is this worker doing?* | Self-contained slice: Intention (What/Why), Vibe (Feel/Borders), Done-when (Acceptance), Map (Coordinates). | Vague one-liners, raw chat dumps, re-specifying whole features. |
 ## Artifact Rules
 
 - Do not force files or later stages for exploratory VRD work.
@@ -53,7 +51,6 @@ Read local context first. Ask one compact batch of currently blocking questions 
 | PRD | Unresolved observable behaviors, scope, success signals, acceptance | Why it matters, feel restated as a new why, implementation |
 | Spec | Unresolved technical how that still satisfies PRD+VRD | Product what/why already in the VRD/PRD |
 | Plan | Sequencing only, and only if a plan is warranted | Product or design questions |
-| Ticket Spec | Concrete boundaries, acceptance criteria mapping, workspace/worktree topology | Redefining product what/why or re-architecting spec |
 
 If missing upstream would change this stage, capture that upstream minimum first. If it is approved, treat it as given.
 
@@ -98,7 +95,7 @@ Placement:
 - **Sub-feature / scoped PRDs:** Subordinate or sub-feature PRDs can live in scoped locations (e.g. `docs/prds/YYYY-MM-DD-<topic>/prd.md` beside a scoped `vrd.md`), but the overarching project PRD belongs at the project root.
 - If the repository already keeps an established flat PRD convention at root, keep that path.
 
-Synthesize Problem As Felt and Why As Stakes from the VRD into cohesive product context. Translate What Is Desired into user journeys, prioritized functional requirements, UX/system states, and NFRs. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements. Delegate execution slicing and ticket specifications to downstream stages instead of embedding raw ticket templates in the PRD.
+Synthesize Problem As Felt and Why As Stakes from the VRD into cohesive product context. Translate What Is Desired into user journeys, prioritized functional requirements, UX/system states, and NFRs. Cite feel IDs for traceability; do not rewrite feel clauses as PRD functional requirements.
 Before moving on, use `prd-grill` when that skill is available and the user wants a Socratic expectation check or the contract is high-stakes; otherwise grill inline against the VRD and PRD quality gates. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly. Then ask the user to approve the VRD and PRD, or request amendments. Do not infer approval from silence.
 
 Once the user has approved the contract and explicitly chosen low-touch
@@ -125,26 +122,7 @@ Skip this stage when the spec is executable as-is. Write `plan.md` only when ord
 
 Completion criterion when a plan is written: every spec implementation need has a task or a deliberate non-code check, and no task implements behavior outside the VRD/PRD/spec without calling it out as a proposed amendment.
 
-### 6. Produce The Ticket Spec (Before Dispatch)
-
-Before dispatching work to a worker or spawning an executing workspace, produce the concrete **Ticket Spec**. Use the Ticket Spec reference: [references/ticket-spec.md](references/ticket-spec.md).
-
-- **Intention:** The concrete **what** and **why** for this slice. Must state what problem is being solved and why now, traced directly to the VRD's What and Why-as-Stakes and the PRD.
-- **Vibe:** Qualitative feel promises, stakes, and boundaries (traced to VRD feel IDs and anti-vibes). What must never happen during execution.
-- **Done-when:** Observable, verifiable criteria for product acceptance (traced to PRD/Spec).
-- **Map:** Explicit topology: workspace label, git worktree path, branch, and where related contracts live.
-
-Rules:
-- A ticket spec is not a title stub, not a session dump, and not a copy-pasted second PRD.
-- The ticket spec must inherit its what/why directly from the VRD. A ticket spec with missing or ungrounded what/why fails the quality gate.
-- **Specification Sufficiency Gate ("Underspecified Gate"):** Run an evaluation gate before prompting any worker. Classify into:
-  - `SPECIFIED`: All four canonical sections present, non-tautological, observable proof surface named -> pull work and prompt worker automatically without asking permission.
-  - `UNDERSPECIFIED`: Structural flaw or missing section -> auto-repair from upstream VRD/PRD if possible, or ask a targeted nuance question before dispatch.
-  - `NEEDS_HUMAN_NUANCE`: Core intent missing or hollow stub -> halt dispatch and ask operator.
-- **Four Ticket Spec Anti-Vibes:** Forbid *The Hollow Ticket* (placeholder stubs), *Prescriptive Vibe* (specifying code mechanics, CLI flags, or file surgery instead of user experience), *Tautological Done-When* (unobservable criteria like "when finished"), and *The Unmapped Orphan* (missing Map, HTTPS links, or proof commands).
-Completion criterion: every dispatched task has a valid Ticket Spec evaluated as `SPECIFIED`.
-
-### 7. Grill Downstream Artifacts & Finish Gate
+### 6. Audit Technical Artifacts & Finish Gate
 
 After a spec, plan, or implementation claims to satisfy the contract, use `contract-audit` when that skill is available; otherwise audit inline against the VRD and PRD. Pass the VRD path (`vrd.md` or legacy `vibe.md`) and PRD path explicitly so discovery does not depend on a `vibe.md` filename. Use `prd-grill` only when grilling the human on whether the VRD and PRD themselves match expectations.
 
@@ -153,7 +131,7 @@ After a spec, plan, or implementation claims to satisfy the contract, use `contr
 - **Two Mandatory Answers for Any Merge Presentation:** Every presentation of a PR to the operator for merge authorization must explicitly answer:
   1. **What does this PR actually do?** (Exact behavioral changes, modified routes/components, and customer-visible differences).
   2. **How do we know it actually works?** (Concrete observable proof: executed test commands, live verification in controlled environments, or reproduction evidence).
-- **Strict Prohibition on Hollow Merge Pressure:** Never ask for or push a merge if the ticket spec is hollow/underspecified, if the PR is titled or marked `(do not merge)` or `WIP`, or if concrete validation evidence is missing.
+- **Strict Prohibition on Hollow Merge Pressure:** Never ask for or push a merge if the PR is titled or marked `(do not merge)` or `WIP`, or if concrete validation evidence is missing.
 
 Completion criterion: no open P0/P1/P2 VRD/PRD contract violations remain, technical and observable outcome proof is verified, the Two Mandatory Answers are answered, and the operator explicitly approves the merge call.
 
@@ -174,12 +152,8 @@ Before finalizing any artifact, check:
 - **No re-interview:** approved VRD what/why is not asked again at PRD, spec, or plan.
 - **No ritual plan:** a plan exists only because sequencing is needed or the user asked.
 - **Root PRD visibility:** the primary or whole-project PRD lives at the project root (`./prd.md`) alongside the root vibe/VRD, not buried in nested dated directories.
-- **Ticket Spec structure:** every dispatched ticket has a valid Ticket Spec with Intention, Vibe, Done-when, and Map before workers are prompted.
-- **Ticket Spec What/Why Anchor:** Intention and Vibe must inherit directly from the VRD's What and Why-as-Stakes; no unanchored or context-free dispatch.
-- **Ticket Spec Sufficiency Gate:** no worker is dispatched with an underspecified ticket (evaluated for the 4 anti-vibes; must be `SPECIFIED`).
-- **No unanchored dispatch:** workers are dispatched only with an approved Ticket Spec referencing verified worktree and contract paths.
 - **Two Mandatory Merge Answers:** every PR presented for merge authorization explicitly answers what it does and proves how it actually works.
-- **No Hollow Merge Pressure:** never push or ask for a merge if the ticket spec is hollow/underspecified, if the PR is marked `(do not merge)` or `WIP`, or if concrete validation evidence is missing.
+- **No Hollow Merge Pressure:** never push or ask for a merge if the PR is marked `(do not merge)` or `WIP`, or if concrete validation evidence is missing.
 - **No bug reports in VRD:** runtime operational failures do not edit the VRD; trace through PRD -> Spec -> Implementation.
 Before finalizing an exploratory north-star or VRD pass, check:
 
