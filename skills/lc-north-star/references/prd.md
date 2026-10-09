@@ -1,23 +1,20 @@
-# Canonical Industry Standard PRD Reference
+# PRD Reference
 
-The **PRD (Product Requirements Document)** is the authoritative contract for product behavior. It defines **what** problem is being solved, **who** it is for, **why now**, the **end-to-end user experience**, **prioritized system capabilities**, **state and edge behaviors**, **non-functional requirements (NFRs)**, and **measurable success metrics**.
-
-Grounded in industry-standard product management frameworks (Silicon Valley Product Group / Marty Cagan, Reforge, Lenny's PM Framework, Amazon PR-FAQ, and Stripe/Linear product specs), this specification establishes a rigorous, professional standard for software and agentic products.
-
----
-
-## The Decoupled Multi-Tier Architecture
-
-To eliminate both vague requirements and bloated templates, documents adhere to a strict separation of concerns:
+The PRD is downstream of the VRD and active constraints. It translates the
+desired world into observable product behavior, current release scope,
+requirements, and success criteria. It does not originate a second why or
+choose internal architecture. Chosen technology is recorded in
+`decisions.md` after the PRD.
 
 ```text
-VRD (Ambition & Feel) -> PRD (Product Contract) -> Spec (Technical How) [-> Plan (Optional Sequencing)]
+vrd.md -> constraints.md -> prd.md -> decisions.md -> spec.md
 ```
 
-1. **`vrd.md` (Ambition & Feel):** Single source of truth for pure ambition, ideal reality, problem-as-felt, qualitative feel promises (`V1`...), and anti-vibes. Void of technical architecture or implementation mechanics.
-2. **`prd.md` (Product Definition & Functional System Requirements):** Synthesizes VRD stakes into an integrated product narrative. Defines target personas, Jobs-to-be-Done, end-to-end user journeys, prioritized functional requirements (**P0 / P1 / P2**), UX and system state matrices, NFRs, guardrail metrics, and scope boundaries.
-3. **`spec.md` (Technical Architecture):** Defines technical implementation: system architecture, API contracts, data models, state machines, and requirement traceability matrices.
-4. **`plan.md` (Optional Sequencing):** Task dependencies and technical milestones when execution complexity warrants ordering.
+The sections below are a rigorous menu, not a demand for ceremony. A small
+product may need only users, journeys, requirements, scope, success, and
+approval. Keep the PRD focused on product behavior; technical choices belong
+in `decisions.md` and `spec.md`, while plans and tickets remain downstream
+execution adapters.
 
 ---
 

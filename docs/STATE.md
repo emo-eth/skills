@@ -5,6 +5,11 @@
 This repository publishes personal skills and fourteen executable plugin packages. Wall-clock is the largest runtime package: native Pi and OMP adapters enforce time boundaries around sessions, assignments, and host actions. Codex and Claude remain portable discovery targets, not enforcement hosts.
 
 ## Where we are
+The published `lc-north-star` skill now uses the five-document VDD chain:
+`vrd.md -> constraints.md -> prd.md -> decisions.md -> spec.md`. Plans,
+tickets, and issues remain execution adapters after the spec. The skill's
+references contain the minimum templates; `emo-eth/vdd` contains the fuller
+authoring framework.
 
 The home fleet, sync, SSH, and local-inference contract is a draft skill at `skills/system-vibe/SKILL.md`. It is not `docs/vibe.md` (that is repo philosophy). Until the user approves it, treat it as a draft.
 

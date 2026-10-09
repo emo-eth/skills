@@ -1,10 +1,16 @@
 # Spec And Plan Reference
 
-The spec is the technical how. It sits downstream of the product contract: VRD first, then the PRD derived from it. It can add architecture, interfaces, state, and verification, but it cannot change the contract silently.
+The spec is the technical how. It sits downstream of the five-document
+contract:
 
-The plan is optional execution sequencing. Write it only when ordering, checkpoints, or parallel workstreams actually matter, or when the user asks. A straightforward spec goes to implementation without a plan.
+```text
+vrd.md -> constraints.md -> prd.md -> decisions.md -> spec.md
+```
 
-Ask only unresolved technical or sequencing questions. Do not re-interview approved VRD what/why or PRD behavior.
+It can add architecture, interfaces, state, and verification, but it cannot
+change the contract silently. Plans are optional execution sequencing after
+the spec; tickets, issues, and other trackers are adapters for particular
+execution environments.
 
 ## Spec Contract
 

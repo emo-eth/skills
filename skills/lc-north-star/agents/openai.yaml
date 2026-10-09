@@ -1,6 +1,6 @@
 interface:
   display_name: "North Star"
-  short_description: "Shape VRD (what/why/feel) into PRD and spec"
-  default_prompt: "Use $lc-north-star to capture the VRD (what is desired and why) first, then PRD and spec only as needed. Plan is optional."
+  short_description: "Shape VRD, constraints, PRD, decisions, and spec"
+  default_prompt: "Use $lc-north-star to shape the five-document VDD contract: VRD, constraints, PRD, decisions, and spec. Use a plan, ticket, or issue only as an optional execution adapter after the spec."
 policy:
   allow_implicit_invocation: false
