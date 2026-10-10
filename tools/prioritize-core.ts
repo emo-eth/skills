@@ -679,3 +679,90 @@ export function applyAnswer(
     );
   }
 }
+
+export function wordWrap(
+  text: string,
+  width = Math.max(60, process.stdout.columns ? process.stdout.columns - 2 : 80),
+): string {
+  const targetWidth = Math.max(60, width);
+  const lines = text.split("\n");
+  const wrapped: string[] = [];
+
+  for (const line of lines) {
+    if (line.length <= targetWidth) {
+      wrapped.push(line);
+      continue;
+    }
+
+    const words = line.split(/(\s+)/);
+    let currentLine = "";
+
+    for (let i = 0; i < words.length; i += 2) {
+      const word = words[i];
+      const space = words[i + 1] ?? "";
+      if (!word) {
+        if (space) currentLine += space;
+        continue;
+      }
+
+      if (currentLine.length === 0) {
+        currentLine = word;
+      } else if (currentLine.length + 1 + word.length <= targetWidth) {
+        currentLine += " " + word;
+      } else {
+        wrapped.push(currentLine);
+        currentLine = word;
+      }
+    }
+    if (currentLine.length > 0) {
+      wrapped.push(currentLine);
+    }
+  }
+
+  return wrapped.join("\n");
+}
+
+export function truncateAtWord(text: string, maxLength = 1200): string {
+  if (text.length <= maxLength) return text;
+  const slice = text.slice(0, maxLength);
+  const lastSpace = slice.lastIndexOf(" ");
+  if (lastSpace > 0) {
+    return slice.slice(0, lastSpace).trimEnd() + "...";
+  }
+  return slice + "...";
+}
+
+export function extractSection(markdown: string, headingPattern: RegExp): string | undefined {
+  const match = headingPattern.exec(markdown);
+  if (!match) return undefined;
+  const startIndex = match.index + match[0].length;
+  const rest = markdown.slice(startIndex);
+  const nextHeading = rest.search(/\n#{1,3}\s+/);
+  const body = nextHeading !== -1 ? rest.slice(0, nextHeading) : rest;
+  const trimmed = body.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export interface TriageSections {
+  problem?: string;
+  completed?: string;
+  fallback?: string;
+}
+
+export function extractTriageSections(markdown: string, fallbackLimit = 1200): TriageSections {
+  if (!markdown || !markdown.trim()) {
+    return { fallback: "No description provided." };
+  }
+
+  const problemPattern = /^#{1,4}\s+(?:\d+\.\s+)?What problem are you trying to solve\??[ \t]*(?:\n)?/im;
+  const completedPattern = /^#{1,4}\s+(?:\d+\.\s+)?What does completed look like\??[ \t]*(?:\n)?/im;
+
+  const problem = extractSection(markdown, problemPattern);
+  const completed = extractSection(markdown, completedPattern);
+
+  if (problem || completed) {
+    return { problem, completed };
+  }
+
+  return { fallback: truncateAtWord(markdown.trim(), fallbackLimit) };
+}

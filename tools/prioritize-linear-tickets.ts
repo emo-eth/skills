@@ -16,11 +16,13 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_INITIAL_ELO,
   findTopKOrNextComparison,
+  extractTriageSections,
   nextQuestion,
   pairKey,
   readCachedComparison,
   recordBinAnswer,
   recordComparisonAnswer,
+  wordWrap,
   type BinName,
   type ComparisonCache,
   type ComparisonResult,
@@ -429,13 +431,17 @@ function normalizeChoice(value: string): ComparisonResult | "pause" | undefined 
   return undefined;
 }
 
-function normalizeBinChoice(value: string): BinName | "pause" | undefined {
+export type BinChoiceAction = BinName | "pause" | "details" | "open";
+
+export function normalizeBinChoice(value: string): BinChoiceAction | undefined {
   const answer = value.trim().toLowerCase();
   if (["1", "n", "now"].includes(answer)) return "now";
   if (["2", "x", "next"].includes(answer)) return "next";
   if (["3", "l", "later"].includes(answer)) return "later";
   if (["4", "v", "never"].includes(answer)) return "never";
   if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
+  if (["d", "details", "detail"].includes(answer)) return "details";
+  if (["o", "open", "url"].includes(answer)) return "open";
   return undefined;
 }
 
@@ -447,12 +453,12 @@ async function chooseComparison(): Promise<ComparisonResult | "pause"> {
   return result as ComparisonResult | "pause";
 }
 
-async function chooseBin(): Promise<BinName | "pause"> {
+async function chooseBin(): Promise<BinChoiceAction> {
   const result = await rawChoice(
-    "Bin: [1] Now  [2] Next  [3] Later  [4] Never  [Q] Pause: ",
+    "Bin: [1] Now  [2] Next  [3] Later  [4] Never  [D] Details  [O] URL  [Q] Pause: ",
     normalizeBinChoice,
   );
-  return result as BinName | "pause";
+  return result as BinChoiceAction;
 }
 
 class AnswerProvider {
@@ -488,7 +494,7 @@ class AnswerProvider {
     return chooseComparison();
   }
 
-  async nextBin(): Promise<BinName | "pause"> {
+  async nextBin(): Promise<BinChoiceAction> {
     if (this.fromFile) {
       if (this.index >= this.answers.length) {
         return "pause";
@@ -509,8 +515,10 @@ function renderHierarchicalBinCard(
   index: number,
   total: number,
   record?: TicketRecord,
+  options?: { showDetails?: boolean; notice?: string },
 ): void {
   clearScreen();
+  const width = Math.max(60, (process.stdout.columns ?? 80) - 2);
   console.log(
     `${BOLD}Hierarchical Triage${RESET}  (${formatProgress(index, total)})\n`,
   );
@@ -518,20 +526,53 @@ function renderHierarchicalBinCard(
   if (ticket.state) {
     console.log(`State: ${ticket.state}`);
   }
+  if (ticket.priority !== undefined) {
+    const p = Number(ticket.priority);
+    const label = PRIORITY_LABELS[p] ?? (p === 0 ? "None" : p);
+    console.log(`Priority: ${label}`);
+  }
   if (record?.bin) {
     console.log(
       `Current Bin: ${record.bin.toUpperCase()} (Elo: ${record.elo}, reviewed: ${record.last_reviewed_at})`,
     );
   }
+
   const desc = ticketField(ticket, "description");
-  if (desc) {
-    console.log(`\n${compact(desc, 300)}`);
+  if (options?.showDetails && desc) {
+    console.log(`\n${BOLD}Full Description:${RESET}`);
+    console.log(wordWrap(desc, width));
+  } else if (desc) {
+    const { problem, completed, fallback } = extractTriageSections(desc);
+    if (problem || completed) {
+      if (problem) {
+        console.log(`\n${BOLD}## What problem are you trying to solve?${RESET}`);
+        console.log(wordWrap(problem, width));
+      }
+      if (completed) {
+        console.log(`\n${BOLD}## What does completed look like?${RESET}`);
+        console.log(wordWrap(completed, width));
+      }
+    } else if (fallback) {
+      console.log(`\n${BOLD}Description:${RESET}`);
+      console.log(wordWrap(fallback, width));
+    }
   }
+
+  if (options?.notice) {
+    console.log(`\n${BOLD}${options.notice}${RESET}`);
+  }
+
   console.log("\n----------------------------------------");
   console.log("  [1] Now    (immediate top actionable work)");
   console.log("  [2] Next   (queued up next)");
   console.log("  [3] Later  (parked backlog)");
   console.log("  [4] Never  (won't do)");
+  console.log(
+    options?.showDetails
+      ? "  [D] Toggle summary view (showing full description)"
+      : "  [D] Toggle full description",
+  );
+  console.log("  [O] Print ticket URL");
   console.log("  [Q] Pause and save\n");
 }
 function renderPair(
@@ -1397,17 +1438,41 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
 
     if (step.kind === "bin") {
       const idx = tickets.indexOf(step.ticket) + 1;
-      renderHierarchicalBinCard(step.ticket, idx, tickets.length, state.tickets[step.ticket.id]);
-      const choice = await answerProvider.nextBin();
-      if (choice === "pause") {
+      let showDetails = false;
+      let notice: string | undefined = undefined;
+      while (true) {
+        renderHierarchicalBinCard(
+          step.ticket,
+          idx,
+          tickets.length,
+          state.tickets[step.ticket.id],
+          { showDetails, notice },
+        );
+        notice = undefined;
+        const choice = await answerProvider.nextBin();
+        if (choice === "details") {
+          showDetails = !showDetails;
+          continue;
+        }
+        if (choice === "open") {
+          const url =
+            typeof step.ticket.url === "string" && step.ticket.url.length > 0
+              ? step.ticket.url
+              : `https://linear.app/issue/${step.ticket.id}`;
+          notice = `Ticket URL: ${url}`;
+          continue;
+        }
+        if (choice === "pause") {
+          await writeState(stateFile, "", top, state.comparisons, state.tickets);
+          console.log("Paused. Progress saved.");
+          return;
+        }
+        recordBinAnswer(state, step.ticket.id, choice);
+        decided += 1;
         await writeState(stateFile, "", top, state.comparisons, state.tickets);
-        console.log("Paused. Progress saved.");
-        return;
+        break;
       }
-      recordBinAnswer(state, step.ticket.id, choice);
-      decided += 1;
-      await writeState(stateFile, "", top, state.comparisons, state.tickets);
-      console.log(`Binned ${step.ticket.id} -> ${choice}`);
+      continue;
     } else if (step.kind === "compare") {
       renderPair(
         step.left,

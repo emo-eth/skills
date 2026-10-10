@@ -8,6 +8,7 @@ import {
   BIN_INITIAL_ELO,
   calculateEloUpdate,
   createInitialState,
+  extractTriageSections,
   findTopKOrNextComparison,
   isHighConfidenceSettled,
   isTicketStale,
@@ -16,6 +17,8 @@ import {
   readCachedComparison,
   recordBinAnswer,
   recordComparisonAnswer,
+  truncateAtWord,
+  wordWrap,
   type BinName,
   type ComparisonCache,
   type ComparisonResult,
@@ -359,4 +362,104 @@ test("stale ticket resurfaces for bin question unless high-confidence settled", 
   assert.equal(step2.done, false);
   if (step2.done) return;
   assert.equal(step2.kind, "compare");
+});
+
+test("wordWrap never splits a word and wraps to width boundary", () => {
+  const sample = "The quick brown fox jumps over the lazy dog repeatedly until the sentence exceeds sixty characters in length.";
+  const wrapped = wordWrap(sample, 60);
+  const lines = wrapped.split("\n");
+
+  for (const line of lines) {
+    assert.ok(line.length <= 60, `Line exceeds width: "${line}" (${line.length} > 60)`);
+  }
+
+  // Original words are all present intact in order
+  const originalWords = sample.split(/\s+/);
+  const wrappedWords = wrapped.split(/\s+/);
+  assert.deepEqual(wrappedWords, originalWords);
+
+  // Minimum width floor is 60: width 20 clamps to 60
+  const clamped = wordWrap(sample, 20);
+  assert.equal(clamped, wrapped);
+
+  // Individual words longer than width are preserved intact without hyphenation
+  const longWord = "supercalifragilisticexpialidocious_unbroken_token_that_is_very_long_indeed";
+  const withLong = `Prefix ${longWord} suffix`;
+  const wrappedLong = wordWrap(withLong, 60);
+  assert.ok(wrappedLong.includes(longWord), "Long word must not be split");
+
+  // Preserves existing newlines
+  const multiLine = "Line one is here.\n\nLine two after empty line.";
+  const wrappedMulti = wordWrap(multiLine, 60);
+  assert.ok(wrappedMulti.includes("\n\n"), "Paragraph breaks preserved");
+});
+
+test("extractTriageSections extracts What problem are you trying to solve and What does completed look like from 7-question body", () => {
+  const body = `## What problem are you trying to solve?
+Current test coverage relies on synthetic component mocks rather than exercising real browser sessions against production database records.
+
+## Why is it important?
+Mocks conceal authentication and cookie synchronization race conditions.
+
+## What does it feel like in use?
+Logging in on a mobile browser immediately restores the user session.
+
+## What does completed look like?
+A headless Playwright browser loads an authenticated session, queries the API, and receives an HTTP 200 containing genuine user shortlists.
+
+## Validation steps for reviewers
+Run npx playwright test tests/e2e/test.spec.ts
+`;
+
+  const sections = extractTriageSections(body);
+  assert.ok(sections.problem, "Problem section should be extracted");
+  assert.ok(sections.completed, "Completed section should be extracted");
+  assert.equal(
+    sections.problem,
+    "Current test coverage relies on synthetic component mocks rather than exercising real browser sessions against production database records.",
+  );
+  assert.equal(
+    sections.completed,
+    "A headless Playwright browser loads an authenticated session, queries the API, and receives an HTTP 200 containing genuine user shortlists.",
+  );
+  assert.equal(sections.fallback, undefined);
+
+  // Heading variations: numbered headings and missing question marks
+  const variantBody = `## 1. What problem are you trying to solve
+Latency spikes on cold restart.
+
+## 4. What does completed look like?
+Cold starts finish under 200ms.
+`;
+  const variantSections = extractTriageSections(variantBody);
+  assert.equal(variantSections.problem, "Latency spikes on cold restart.");
+  assert.equal(variantSections.completed, "Cold starts finish under 200ms.");
+});
+
+test("extractTriageSections fallback path when headings are absent never cuts mid-word", () => {
+  // Short description without headings returns verbatim
+  const shortText = "Simple task with no 7-question spec headings.";
+  const shortSections = extractTriageSections(shortText);
+  assert.equal(shortSections.problem, undefined);
+  assert.equal(shortSections.completed, undefined);
+  assert.equal(shortSections.fallback, shortText);
+
+  // Long description without headings truncates at word boundary before 1200 chars
+  const longBody = Array.from({ length: 300 }, (_, i) => `token${i + 1}`).join(" ");
+  assert.ok(longBody.length > 1200, "Must be longer than 1200 chars");
+
+  const longSections = extractTriageSections(longBody);
+  assert.equal(longSections.problem, undefined);
+  assert.equal(longSections.completed, undefined);
+  assert.ok(longSections.fallback, "Fallback text must be returned");
+  assert.ok(longSections.fallback.endsWith("..."), "Fallback must end with ellipsis");
+
+  const withoutEllipsis = longSections.fallback.slice(0, -3);
+  const lastWord = withoutEllipsis.split(/\s+/).pop();
+  assert.ok(lastWord?.startsWith("token"), "Last word must be a complete token, never cut mid-word");
+  assert.ok(
+    longBody.includes(lastWord!),
+    `Truncated word "${lastWord}" must match an exact whole token in source`,
+  );
+  assert.ok(longSections.fallback.length <= 1205, "Fallback length must respect bound");
 });

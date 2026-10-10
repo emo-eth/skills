@@ -14,6 +14,7 @@ import {
 } from "./linear-client.ts";
 import {
   formatProgress,
+  normalizeBinChoice,
   normalizeTriageChoice,
 } from "./prioritize-linear-tickets.ts";
 
@@ -1506,4 +1507,28 @@ test("prioritize-linear-tickets CLI --do-next with --answers drives non-interact
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("normalizeBinChoice supports 1-4 bins, q pause, d details toggle, and o url print", () => {
+  assert.equal(normalizeBinChoice("1"), "now");
+  assert.equal(normalizeBinChoice("n"), "now");
+  assert.equal(normalizeBinChoice("now"), "now");
+  assert.equal(normalizeBinChoice("2"), "next");
+  assert.equal(normalizeBinChoice("x"), "next");
+  assert.equal(normalizeBinChoice("next"), "next");
+  assert.equal(normalizeBinChoice("3"), "later");
+  assert.equal(normalizeBinChoice("l"), "later");
+  assert.equal(normalizeBinChoice("later"), "later");
+  assert.equal(normalizeBinChoice("4"), "never");
+  assert.equal(normalizeBinChoice("v"), "never");
+  assert.equal(normalizeBinChoice("never"), "never");
+  assert.equal(normalizeBinChoice("q"), "pause");
+  assert.equal(normalizeBinChoice("quit"), "pause");
+  assert.equal(normalizeBinChoice("pause"), "pause");
+  assert.equal(normalizeBinChoice("d"), "details");
+  assert.equal(normalizeBinChoice("details"), "details");
+  assert.equal(normalizeBinChoice("o"), "open");
+  assert.equal(normalizeBinChoice("open"), "open");
+  assert.equal(normalizeBinChoice("url"), "open");
+  assert.equal(normalizeBinChoice("unknown"), undefined);
 });
