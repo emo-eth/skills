@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "linear-capture",
+  "version": "0.1.0",
+  "description": "Capture issues directly from terminal sessions with 7-question VDD specs, optional interview, and Linear posting.",
+  "author": {
+    "name": "emo-eth",
+    "url": "https://github.com/emo-eth"
+  },
+  "repository": "https://github.com/emo-eth/skills",
+  "keywords": ["linear", "capture", "pi", "omp", "vdd"]
+}
