@@ -24,9 +24,15 @@ import {
   recordBinAnswer,
   recordComparisonAnswer,
   wordWrap,
+  computeWorstCaseComparisons,
+  clusterTicketsForConsolidation,
+  renderClusterCard,
+  generateConsolidationMarkdown,
   type BinName,
   type ComparisonCache,
   type ComparisonResult,
+  type ConsolidationCluster,
+  type ConsolidationDecision,
   type PrioritizeEngineState,
   type PrioritizeState,
   type Ticket,
@@ -140,6 +146,7 @@ type ReviewState = {
   tickets?: Record<string, TicketRecord>;
   applying?: ApplyingCheckpoint;
   updatedAt: string;
+  consolidation_resolved?: string[][];
 };
 
 function errorCode(error: unknown): string | undefined {
@@ -152,7 +159,7 @@ function errorCode(error: unknown): string | undefined {
 function parseArguments(args: string[]): Arguments {
   const options: Arguments = {
     input: undefined,
-    top: 10,
+    top: 3,
     topExplicit: false,
     state: DEFAULT_STATE_FILE,
     output: undefined,
@@ -187,11 +194,11 @@ function parseArguments(args: string[]): Arguments {
       if (options.input === undefined) throw new Error("--input needs a path or '-' for stdin");
       continue;
     }
-    if (arg === "--top" || arg === "-k") {
+    if (arg === "--top" || arg === "-k" || arg === "--top-k") {
       const value = args[++index];
       const parsed = Number(value);
       if (value === undefined || !Number.isInteger(parsed) || parsed < 1) {
-        throw new Error("--top needs a positive integer");
+        throw new Error("--top-k needs a positive integer");
       }
       options.top = parsed;
       options.topExplicit = true;
@@ -389,7 +396,7 @@ async function writeState(
   comparisons: ComparisonCache,
   ticketsOrApplying?: Record<string, TicketRecord> | ApplyingCheckpoint,
   applying?: ApplyingCheckpoint,
-  extra?: { completed?: boolean; ranked?: string[] },
+  extra?: { completed?: boolean; ranked?: string[]; consolidation_resolved?: string[][] },
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
@@ -414,6 +421,7 @@ async function writeState(
     tickets,
     applying: checkpoint,
     updatedAt: new Date().toISOString(),
+    consolidation_resolved: extra?.consolidation_resolved,
   };
   await writeFile(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   await rename(temporaryFile, stateFile);
@@ -423,16 +431,20 @@ async function removeState(stateFile: string): Promise<void> {
   await rm(stateFile, { force: true });
 }
 
-function normalizeChoice(value: string): ComparisonResult | "pause" | undefined {
+export type ComparisonAction = ComparisonResult | "pause" | "undo" | "next_pool";
+
+function normalizeChoice(value: string): ComparisonAction | undefined {
   const answer = value.trim().toLowerCase();
   if (["l", "left", "[d", "[b", "1"].includes(answer)) return "left";
   if (["r", "right", "[c", "[f", "2"].includes(answer)) return "right";
   if (["t", "tie", "equal", "3"].includes(answer)) return "tie";
   if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
+  if (["u", "undo"].includes(answer)) return "undo";
+  if (["n", "next"].includes(answer)) return "next_pool";
   return undefined;
 }
 
-export type BinChoiceAction = BinName | "pause" | "details" | "open";
+export type BinChoiceAction = BinName | "pause" | "details" | "open" | "back";
 
 export function normalizeBinChoice(value: string): BinChoiceAction | undefined {
   const answer = value.trim().toLowerCase();
@@ -441,6 +453,7 @@ export function normalizeBinChoice(value: string): BinChoiceAction | undefined {
   if (["3", "l", "later"].includes(answer)) return "later";
   if (["4", "v", "never"].includes(answer)) return "never";
   if (["5", "r", "reassess"].includes(answer)) return "reassess";
+  if (["b", "back", "undo"].includes(answer)) return "back";
   if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
   if (["d", "details", "detail"].includes(answer)) return "details";
   if (["o", "open", "url"].includes(answer)) return "open";
@@ -503,14 +516,124 @@ export async function recordReassessDecision(
   }
 }
 
-async function chooseComparison(): Promise<ComparisonResult | "pause"> {
-  const result = await rawChoice(
-    "Which is more important? [L/R/T/q]: ",
-    normalizeChoice,
-  );
-  return result as ComparisonResult | "pause";
+export const DEFAULT_CONSOLIDATION_MD_PATH =
+  "/Users/emo/.herdr/worktrees/scratch/standup/.command-center/creatordex-duplicates.md";
+
+export async function removeReassessDecision(
+  ticketId: string,
+  approvalsPath = DEFAULT_APPROVALS_PATH,
+): Promise<void> {
+  try {
+    const raw = await readFile(approvalsPath, "utf8");
+    const approvals = JSON.parse(raw);
+    if (Array.isArray(approvals.repair_decisions)) {
+      const initialLen = approvals.repair_decisions.length;
+      approvals.repair_decisions = approvals.repair_decisions.filter(
+        (r: { ticket?: string }) => r.ticket !== ticketId,
+      );
+      if (approvals.repair_decisions.length !== initialLen) {
+        await mkdir(dirname(approvalsPath), { recursive: true });
+        const tempFile = `${approvalsPath}.${process.pid}.tmp`;
+        await writeFile(tempFile, `${JSON.stringify(approvals, null, 2)}\n`, "utf8");
+        await rename(tempFile, approvalsPath);
+      }
+    }
+  } catch (err) {
+    console.error(`Warning: Failed to remove ${ticketId} from repair_decisions:`, err);
+  }
 }
 
+export async function recordConsolidationDecision(
+  cluster: string[],
+  decision: "merge" | "split" | "keep" | "later",
+  canonical?: string,
+  note?: string,
+  approvalsPath = DEFAULT_APPROVALS_PATH,
+): Promise<void> {
+  try {
+    let approvals: {
+      consolidation?: ConsolidationDecision[];
+      [key: string]: unknown;
+    } = {};
+    try {
+      const raw = await readFile(approvalsPath, "utf8");
+      approvals = JSON.parse(raw);
+    } catch {
+      approvals = {};
+    }
+    if (!Array.isArray(approvals.consolidation)) {
+      approvals.consolidation = [];
+    }
+    const row: ConsolidationDecision = {
+      cluster,
+      decision,
+      ...(canonical ? { canonical } : {}),
+      ...(note ? { note } : {}),
+      at: new Date().toISOString(),
+      source: "prioritize-tui",
+    };
+    const clusterKey = [...cluster].sort().join(",");
+    const existingIndex = approvals.consolidation.findIndex(
+      (c) => [...(c.cluster || [])].sort().join(",") === clusterKey,
+    );
+    if (existingIndex >= 0) {
+      approvals.consolidation[existingIndex] = row;
+    } else {
+      approvals.consolidation.push(row);
+    }
+    await mkdir(dirname(approvalsPath), { recursive: true });
+    const tempFile = `${approvalsPath}.${process.pid}.tmp`;
+    await writeFile(tempFile, `${JSON.stringify(approvals, null, 2)}\n`, "utf8");
+    await rename(tempFile, approvalsPath);
+  } catch (err) {
+    console.error("Warning: Failed to update approvals.json consolidation:", err);
+  }
+}
+
+export type ConsolidationChoice =
+  | { action: "merge"; canonicalIndex: number }
+  | { action: "split"; note?: string }
+  | { action: "keep" }
+  | { action: "later" };
+
+export function parseConsolidationChoice(
+  raw: string,
+  clusterSize: number,
+): ConsolidationChoice | undefined {
+  const line = raw.trim();
+  const lower = line.toLowerCase();
+  if (lower.startsWith("m") || lower.startsWith("merge")) {
+    const parts = line.split(/\s+/);
+    let idx = 1;
+    if (parts.length > 1) {
+      const parsed = parseInt(parts[1], 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= clusterSize) {
+        idx = parsed;
+      }
+    }
+    return { action: "merge", canonicalIndex: idx };
+  }
+  if (lower.startsWith("s") || lower.startsWith("split")) {
+    const parts = line.split(/\s+/);
+    const note = parts.length > 1 ? parts.slice(1).join(" ") : undefined;
+    return { action: "split", note };
+  }
+  if (lower.startsWith("k") || lower.startsWith("keep")) {
+    return { action: "keep" };
+  }
+  if (lower.startsWith("l") || lower.startsWith("later")) {
+    return { action: "later" };
+  }
+  return undefined;
+}
+
+async function chooseComparison(): Promise<ComparisonAction> {
+  const result = await rawChoice(
+    "Which is more important? [L/R/T/u/n/q]: ",
+    normalizeChoice,
+  );
+  return result as ComparisonAction;
+}
 async function chooseBin(): Promise<BinChoiceAction> {
   const result = await rawChoice(
     "Bin: [1] Now  [2] Next  [3] Later  [4] Never  [5] Reassess  [D] Details  [O] URL  [Q] Pause: ",
@@ -551,7 +674,7 @@ class AnswerProvider {
     }
     return undefined;
   }
-  async nextComparison(): Promise<ComparisonResult | "pause"> {
+  async nextComparison(): Promise<ComparisonAction> {
     if (this.fromFile) {
       if (this.index >= this.answers.length) {
         return "pause";
@@ -564,6 +687,36 @@ class AnswerProvider {
       return choice;
     }
     return chooseComparison();
+  }
+
+  async nextConsolidation(clusterSize: number): Promise<ConsolidationChoice> {
+    if (this.fromFile) {
+      if (this.index >= this.answers.length) {
+        return { action: "later" };
+      }
+      const raw = this.answers[this.index++];
+      const choice = parseConsolidationChoice(raw, clusterSize);
+      if (!choice) return { action: "later" };
+      return choice;
+    }
+    while (true) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const raw = await rl.question(
+        "Choice: [M]erge into <n>   [S]plit differently (free text)   [K]eep all distinct   [L]ater: ",
+      );
+      rl.close();
+      const choice = parseConsolidationChoice(raw, clusterSize);
+      if (choice) {
+        if (choice.action === "split" && !choice.note) {
+          const rl2 = createInterface({ input: process.stdin, output: process.stdout });
+          const note = await rl2.question("Enter split note: ");
+          rl2.close();
+          choice.note = note.trim();
+        }
+        return choice;
+      }
+      console.log("Invalid option. Please enter M <n>, S <note>, K, or L.");
+    }
   }
 
   async nextBin(): Promise<BinChoiceAction> {
@@ -640,6 +793,7 @@ function renderHierarchicalBinCard(
   console.log("  [3] Later     (parked backlog)");
   console.log("  [4] Never     (won't do)");
   console.log("  [5] Reassess  (unclear or needs edits — send back for spec repair)");
+  console.log("  [B] Back      (undo previous answer)");
   console.log(
     options?.showDetails
       ? "  [D] Toggle summary view (showing full description)"
@@ -648,27 +802,31 @@ function renderHierarchicalBinCard(
   console.log("  [O] Print ticket URL");
   console.log("  [Q] Pause and save\n");
 }
-
 function renderPair(
   left: Ticket,
   right: Ticket,
   decided: number,
-  ticketsTotal: number,
+  poolTotal: number,
   top: number,
   maxComparisons: number,
   candidateIndex?: number,
+  poolName?: string,
+  options?: { showUndo?: boolean },
 ): void {
   clearScreen();
   const line = "-".repeat(72);
   const remaining = Math.max(0, maxComparisons - decided);
-  const percent = candidateIndex !== undefined && ticketsTotal > 0
-    ? Math.round((candidateIndex / ticketsTotal) * 100)
+  const percent = candidateIndex !== undefined && poolTotal > 0
+    ? Math.round((candidateIndex / poolTotal) * 100)
     : 0;
   const progress = candidateIndex !== undefined
-    ? `[Ticket ${candidateIndex} of ${ticketsTotal} (${percent}%)]  |  `
+    ? `[Ticket ${candidateIndex} of ${poolTotal} (${percent}%)]  |  `
     : "";
+  const poolDesc = poolName
+    ? `${poolTotal} tickets in ${poolName}, worst case ~${remaining} comparisons`
+    : `TOP ${top} of ${poolTotal} tickets  |  ${decided} compared, ~${remaining} left (worst-case)`;
   console.log(
-    `TOP-K  |  ${progress}${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  TOP ${top} of ${ticketsTotal} tickets  |  ${decided} compared, ~${remaining} left (worst-case)`,
+    `TOP-K  |  ${progress}${paint("L", BOLD)} LEFT vs ${paint("R", BOLD)} RIGHT  |  ${poolDesc}  |  ${decided} compared`,
   );
   console.log(line);
   console.log(`${paint("LEFT (L) - candidate", BOLD)}`);
@@ -683,7 +841,13 @@ function renderPair(
   const rightDescription = compact(stripRankComment(ticketField(right, "description")));
   if (rightDescription) console.log(`${paint("DESCRIPTION", BOLD)}: ${rightDescription}`);
   console.log(line);
-  console.log("[L] Left  [R] Right  [T] Tie  [Q] Pause/Quit");
+  if (options?.showUndo) {
+    console.log(
+      `[L] Left  [R] Right  [T] Tie  [U] Undo last comparison  [N] Include Next bin  [Q] Pause/Quit\n`,
+    );
+  } else {
+    console.log("[L] Left  [R] Right  [T] Tie  [Q] Pause/Quit\n");
+  }
 }
 
 function renderFinal(
@@ -1396,6 +1560,7 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
     tickets: saved?.tickets ?? {},
     comparisons: saved?.comparisons ?? {},
     updatedAt: saved?.updatedAt ?? new Date().toISOString(),
+    consolidation_resolved: saved?.consolidation_resolved ?? [],
   };
 
   for (const t of tickets) {
@@ -1425,6 +1590,94 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
     }
   }
 
+  // Print last 5 answered tickets
+  const answeredTickets = Object.entries(state.tickets)
+    .filter(([_, t]) => t.bin !== undefined)
+    .sort((a, b) => (b[1].last_reviewed_at || "").localeCompare(a[1].last_reviewed_at || ""))
+    .slice(0, 5);
+
+  if (answeredTickets.length > 0) {
+    console.log(`\n${BOLD}Last ${answeredTickets.length} answered tickets:${RESET}`);
+    answeredTickets.forEach(([id, rec], i) => {
+      const tk = tickets.find((t) => t.id === id);
+      console.log(`  ${i + 1}. [${id}] ${tk?.title ?? id} (bin: ${rec.bin})`);
+    });
+    console.log(`Tip: Press [B] during binning to undo and change a previous answer.\n`);
+  }
+
+  // Consolidation candidate triage
+  const clusters = clusterTicketsForConsolidation(tickets, 0.6);
+  try {
+    const md = generateConsolidationMarkdown(clusters);
+    await mkdir(dirname(DEFAULT_CONSOLIDATION_MD_PATH), { recursive: true });
+    await writeFile(DEFAULT_CONSOLIDATION_MD_PATH, md, "utf8");
+  } catch (err) {
+    console.error("Warning: Failed to write creatordex-duplicates.md:", err);
+  }
+
+  const resolvedClusterKeys = new Set(
+    (state.consolidation_resolved || []).map((c) => [...c].sort().join(",")),
+  );
+  const activeClusters = clusters.filter((c) => {
+    const key = c.tickets.map((t) => t.id).sort().join(",");
+    return !resolvedClusterKeys.has(key);
+  });
+
+  const excludedTicketIds = new Set<string>();
+
+  if (activeClusters.length > 0 && !answerProvider.isFromFile()) {
+    console.log(
+      `\n${BOLD}Found ${activeClusters.length} candidate consolidation cluster(s) with token overlap >= 0.6.${RESET}\n`,
+    );
+    for (let cIdx = 0; cIdx < activeClusters.length; cIdx++) {
+      const cluster = activeClusters[cIdx];
+      console.log(renderClusterCard(cluster.tickets, cIdx, activeClusters.length));
+
+      const choice = await answerProvider.nextConsolidation(cluster.tickets.length);
+      const clusterKeys = cluster.tickets.map((t) => t.id);
+
+      if (choice.action === "merge") {
+        const canonicalIdx = Math.max(
+          0,
+          Math.min(cluster.tickets.length - 1, choice.canonicalIndex - 1),
+        );
+        const canonical = cluster.tickets[canonicalIdx].id;
+        await recordConsolidationDecision(clusterKeys, "merge", canonical);
+        if (!state.consolidation_resolved) state.consolidation_resolved = [];
+        state.consolidation_resolved.push(clusterKeys);
+        await writeState(stateFile, "", args.top, state.comparisons, state.tickets, undefined, {
+          consolidation_resolved: state.consolidation_resolved,
+        });
+        for (const t of cluster.tickets) {
+          if (t.id !== canonical) excludedTicketIds.add(t.id);
+        }
+        console.log(`Merged cluster into canonical ${canonical}. Other tickets excluded from ranking.\n`);
+      } else if (choice.action === "split") {
+        await recordConsolidationDecision(clusterKeys, "split", undefined, choice.note);
+        if (!state.consolidation_resolved) state.consolidation_resolved = [];
+        state.consolidation_resolved.push(clusterKeys);
+        await writeState(stateFile, "", args.top, state.comparisons, state.tickets, undefined, {
+          consolidation_resolved: state.consolidation_resolved,
+        });
+        console.log(`Recorded split note for cluster.\n`);
+      } else if (choice.action === "keep") {
+        await recordConsolidationDecision(clusterKeys, "keep");
+        if (!state.consolidation_resolved) state.consolidation_resolved = [];
+        state.consolidation_resolved.push(clusterKeys);
+        await writeState(stateFile, "", args.top, state.comparisons, state.tickets, undefined, {
+          consolidation_resolved: state.consolidation_resolved,
+        });
+        console.log(`Marked cluster as distinct/keep.\n`);
+      } else if (choice.action === "later") {
+        await recordConsolidationDecision(clusterKeys, "later");
+        for (const t of cluster.tickets) {
+          excludedTicketIds.add(t.id);
+        }
+        console.log(`Deferred cluster for later. Excluded from pairwise ranking this session.\n`);
+      }
+    }
+  }
+
   const top = args.top;
   const engineState: PrioritizeEngineState = {
     tickets,
@@ -1433,14 +1686,18 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
       top,
       doNext: args.doNext,
       staleDays: args.staleDays,
-      includeNext: true,
+      includeNext: false,
     },
   };
 
   const modeLabel = args.doNext ? "--do-next" : "--hierarchical";
   console.log(`Prioritizing ${tickets.length} tickets (${modeLabel}, top ${top})...`);
   let decided = 0;
-
+  const binHistory: string[] = Object.entries(state.tickets)
+    .filter(([_, t]) => t.bin !== undefined)
+    .sort((a, b) => (a[1].last_reviewed_at || "").localeCompare(b[1].last_reviewed_at || ""))
+    .map(([id]) => id);
+  const comparisonHistory: string[] = [];
   while (true) {
     const step = nextQuestion(engineState);
     if (step.done) {
@@ -1556,9 +1813,29 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           continue;
         }
         if (choice === "pause") {
-          await writeState(stateFile, "", top, state.comparisons, state.tickets);
+          await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+            consolidation_resolved: state.consolidation_resolved,
+          });
           console.log("Paused. Progress saved.");
           return;
+        }
+        if (choice === "back") {
+          if (binHistory.length === 0) {
+            notice = "No previous ticket to undo.";
+            continue;
+          }
+          const prevId = binHistory.pop()!;
+          if (state.tickets[prevId]?.bin === "reassess") {
+            await removeReassessDecision(prevId);
+          }
+          delete state.tickets[prevId].bin;
+          delete state.tickets[prevId].reassess_reason;
+          decided = Math.max(0, decided - 1);
+          await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+            consolidation_resolved: state.consolidation_resolved,
+          });
+          notice = `Undid bin for [${prevId}]. Re-displaying for review.`;
+          break;
         }
         if (choice === "reassess") {
           let reason: string | undefined = undefined;
@@ -1577,35 +1854,80 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           }
           recordBinAnswer(state, step.ticket.id, "reassess", undefined, reason);
           await recordReassessDecision(step.ticket.id, reason);
+          binHistory.push(step.ticket.id);
           decided += 1;
-          await writeState(stateFile, "", top, state.comparisons, state.tickets);
+          await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+            consolidation_resolved: state.consolidation_resolved,
+          });
           console.log(`Marked ${step.ticket.id} for reassessment`);
           break;
         }
         recordBinAnswer(state, step.ticket.id, choice);
+        binHistory.push(step.ticket.id);
         decided += 1;
-        await writeState(stateFile, "", top, state.comparisons, state.tickets);
+        await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+          consolidation_resolved: state.consolidation_resolved,
+        });
         break;
       }
       continue;
     } else if (step.kind === "compare") {
+      const nowPool = tickets.filter(
+        (t) => state.tickets[t.id]?.bin === "now" && !excludedTicketIds.has(t.id),
+      );
+      const poolTotal = engineState.options.includeNext
+        ? tickets.filter(
+            (t) =>
+              (state.tickets[t.id]?.bin === "now" || state.tickets[t.id]?.bin === "next") &&
+              !excludedTicketIds.has(t.id),
+          ).length
+        : nowPool.length;
+      const poolName = engineState.options.includeNext ? "Now + Next" : "Now";
+      const worstCase = computeWorstCaseComparisons(poolTotal, top);
       renderPair(
         step.left,
         step.right,
         decided,
-        tickets.length,
+        poolTotal,
         top,
-        tickets.length * top,
+        worstCase,
+        undefined,
+        poolName,
+        { showUndo: true },
       );
       const choice = await answerProvider.nextComparison();
       if (choice === "pause") {
-        await writeState(stateFile, "", top, state.comparisons, state.tickets);
+        await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+          consolidation_resolved: state.consolidation_resolved,
+        });
         console.log("Paused. Progress saved.");
         return;
       }
+      if (choice === "undo") {
+        if (comparisonHistory.length === 0) {
+          console.log("No previous comparison to undo.");
+          continue;
+        }
+        const lastKey = comparisonHistory.pop()!;
+        delete state.comparisons[lastKey];
+        decided = Math.max(0, decided - 1);
+        await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+          consolidation_resolved: state.consolidation_resolved,
+        });
+        console.log(`Undid last comparison (${lastKey}).`);
+        continue;
+      }
+      if (choice === "next_pool") {
+        engineState.options.includeNext = true;
+        console.log("Included Next bin in pairwise ranking pool.");
+        continue;
+      }
       recordComparisonAnswer(state, step.left.id, step.right.id, choice);
+      comparisonHistory.push(step.key);
       decided += 1;
-      await writeState(stateFile, "", top, state.comparisons, state.tickets);
+      await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
+        consolidation_resolved: state.consolidation_resolved,
+      });
       console.log(`${step.left.id} vs ${step.right.id}: ${choice}`);
     }
   }

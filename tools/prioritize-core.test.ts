@@ -19,6 +19,12 @@ import {
   recordComparisonAnswer,
   truncateAtWord,
   wordWrap,
+  computeWorstCaseComparisons,
+  clusterTicketsForConsolidation,
+  generateConsolidationMarkdown,
+  extractDeliverables,
+  extractFiles,
+  computeTokenOverlap,
   type BinName,
   type ComparisonCache,
   type ComparisonResult,
@@ -512,4 +518,134 @@ test("reassess tickets are excluded from pairwise comparisons and ranking", () =
   assert.ok(rankedIds.includes("A") || rankedIds.includes("B"));
   assert.ok(!rankedIds.includes("C"), "Reassess ticket C must never appear in ranked list");
   assert.ok(!rankedIds.includes("D"), "Never ticket D must never appear in ranked list");
+});
+
+test("Part A: 67 tickets, 12 in now, k=3 -> worst case <= 24 and zero comparisons involve a non-now ticket", () => {
+  const tickets: Ticket[] = Array.from({ length: 67 }, (_, i) => ({
+    id: `EMO-${i + 1}`,
+    title: `Ticket ${i + 1}`,
+  }));
+
+  const state = createInitialState();
+  // 12 in now
+  for (let i = 0; i < 12; i++) {
+    recordBinAnswer(state, tickets[i].id, "now");
+  }
+  // 18 in next
+  for (let i = 12; i < 30; i++) {
+    recordBinAnswer(state, tickets[i].id, "next");
+  }
+  // 20 in reassess
+  for (let i = 30; i < 50; i++) {
+    recordBinAnswer(state, tickets[i].id, "reassess");
+  }
+  // 16 in later
+  for (let i = 50; i < 66; i++) {
+    recordBinAnswer(state, tickets[i].id, "later");
+  }
+  // 1 in never
+  recordBinAnswer(state, tickets[66].id, "never");
+
+  // Worst case for pool of 12 with k=3
+  const worstCase = computeWorstCaseComparisons(12, 3);
+  assert.ok(worstCase <= 24, `Worst case ${worstCase} must be <= 24`);
+  assert.equal(worstCase, 24);
+
+  let comparisonCount = 0;
+  let nonNowComparisons = 0;
+
+  while (true) {
+    const step = nextQuestion({
+      tickets,
+      state,
+      options: { top: 3, includeNext: false },
+    });
+    if (step.done) {
+      assert.equal(step.ranked.length, 3);
+      for (const t of step.ranked) {
+        assert.equal(state.tickets[t.id]?.bin, "now", "All ranked tickets must be from Now bin");
+      }
+      break;
+    }
+    assert.equal(step.kind, "compare");
+    if (step.kind === "compare") {
+      comparisonCount++;
+      const leftBin = state.tickets[step.left.id]?.bin;
+      const rightBin = state.tickets[step.right.id]?.bin;
+      if (leftBin !== "now" || rightBin !== "now") {
+        nonNowComparisons++;
+      }
+      recordComparisonAnswer(state, step.left.id, step.right.id, "left");
+    }
+  }
+
+  assert.equal(nonNowComparisons, 0, "Zero comparisons should involve a non-now ticket");
+  assert.ok(comparisonCount <= worstCase, `Comparisons (${comparisonCount}) must be <= worstCase (${worstCase})`);
+});
+
+test("Part A: comparisons already implied by Elo gaps > 200 are skipped", () => {
+  const tickets: Ticket[] = [
+    ticket("A", "Ticket A"),
+    ticket("B", "Ticket B"),
+    ticket("C", "Ticket C"),
+  ];
+  const state = createInitialState();
+  recordBinAnswer(state, "A", "now");
+  recordBinAnswer(state, "B", "now");
+  recordBinAnswer(state, "C", "now");
+
+  // Give A high Elo, B medium Elo, C low Elo with > 200 gaps
+  state.tickets["A"].elo = 1800;
+  state.tickets["B"].elo = 1500;
+  state.tickets["C"].elo = 1200;
+
+  // nextQuestion with top 2 should automatically resolve without asking human comparisons
+  const step = nextQuestion({
+    tickets,
+    state,
+    options: { top: 2, highConfidenceEloGap: 200 },
+  });
+
+  assert.equal(step.done, true);
+  if (step.done) {
+    assert.equal(step.ranked.length, 2);
+    assert.equal(step.ranked[0].id, "A");
+    assert.equal(step.ranked[1].id, "B");
+  }
+});
+
+test("Part C: clusterTicketsForConsolidation detects overlap >= 0.6 and extracts evidence", () => {
+  const tickets: Ticket[] = [
+    {
+      id: "EMO-101",
+      title: "Creatordex: Profile removal UI and ownership verification",
+      description:
+        "## What problem are you trying to solve?\nCreators requesting removal encounter an insecure flow with scraped contact emails rather than verified proof.\n\n## Deliverables\n* Removal UI in `src/app/remove/form.tsx`\n* API endpoint in `src/api/verify.ts`\n* PR: https://github.com/creatordex/repo/pull/500",
+    },
+    {
+      id: "EMO-102",
+      title: "Creatordex: Profile removal UI and ownership verification API routes",
+      description:
+        "## What problem are you trying to solve?\nCreators requesting removal encounter an insecure flow with scraped contact emails rather than verified proof.\n\n## Deliverables\n* Removal UI in `src/app/remove/form.tsx`\n* API endpoint in `src/api/verify.ts`\n* PR: https://github.com/creatordex/repo/pull/500",
+    },
+    {
+      id: "EMO-103",
+      title: "Completely unrelated payment billing invoice generation",
+      description: "## What problem are you trying to solve?\nPayment invoices fail to generate for Stripe customers.",
+    },
+  ];
+
+  const clusters = clusterTicketsForConsolidation(tickets, 0.6);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].tickets.length, 2);
+  assert.equal(clusters[0].tickets[0].id, "EMO-101");
+  assert.equal(clusters[0].tickets[1].id, "EMO-102");
+  assert.ok(clusters[0].sharedFiles.includes("src/app/remove/form.tsx"));
+  assert.ok(clusters[0].sharedFiles.includes("src/api/verify.ts"));
+
+  const md = generateConsolidationMarkdown(clusters);
+  assert.match(md, /Candidate Consolidation Clusters/);
+  assert.match(md, /EMO-101/);
+  assert.match(md, /EMO-102/);
+  assert.match(md, /src\/app\/remove\/form\.tsx/);
 });

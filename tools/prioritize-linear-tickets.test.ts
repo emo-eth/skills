@@ -17,6 +17,9 @@ import {
   normalizeBinChoice,
   normalizeTriageChoice,
   recordReassessDecision,
+  removeReassessDecision,
+  recordConsolidationDecision,
+  parseConsolidationChoice,
 } from "./prioritize-linear-tickets.ts";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
@@ -1574,4 +1577,115 @@ test("recordReassessDecision writes row to approvals.json and is idempotent per 
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("normalizeBinChoice supports b back and undo", () => {
+  assert.equal(normalizeBinChoice("b"), "back");
+  assert.equal(normalizeBinChoice("back"), "back");
+  assert.equal(normalizeBinChoice("undo"), "back");
+});
+
+test("removeReassessDecision removes row from approvals.json", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "approvals-remove-test-"));
+  const approvalsPath = join(tempDir, "approvals.json");
+
+  try {
+    const initial = {
+      repair_decisions: [
+        {
+          ticket: "EMO-KEEP",
+          instruction: "keep this",
+          at: "2026-10-09T00:00:00Z",
+          source: "worker",
+        },
+        {
+          ticket: "EMO-REMOVE",
+          instruction: "remove this",
+          at: "2026-10-09T00:00:00Z",
+          source: "prioritize-tui",
+        },
+      ],
+    };
+    await writeFile(approvalsPath, JSON.stringify(initial, null, 2), "utf8");
+
+    await removeReassessDecision("EMO-REMOVE", approvalsPath);
+    const after = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(after.repair_decisions.length, 1);
+    assert.equal(after.repair_decisions[0].ticket, "EMO-KEEP");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("recordConsolidationDecision persists merge, split, keep, later under consolidation[] in approvals.json", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "approvals-consolidation-test-"));
+  const approvalsPath = join(tempDir, "approvals.json");
+
+  try {
+    // 1. Merge decision
+    await recordConsolidationDecision(
+      ["EMO-1", "EMO-2"],
+      "merge",
+      "EMO-1",
+      undefined,
+      approvalsPath,
+    );
+    let data = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.ok(Array.isArray(data.consolidation));
+    assert.equal(data.consolidation.length, 1);
+    assert.equal(data.consolidation[0].decision, "merge");
+    assert.equal(data.consolidation[0].canonical, "EMO-1");
+    assert.deepEqual(data.consolidation[0].cluster, ["EMO-1", "EMO-2"]);
+
+    // 2. Split decision
+    await recordConsolidationDecision(
+      ["EMO-3", "EMO-4"],
+      "split",
+      undefined,
+      "Separate mobile from desktop routes",
+      approvalsPath,
+    );
+    data = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(data.consolidation.length, 2);
+    const splitRow = data.consolidation.find((c: { decision: string }) => c.decision === "split");
+    assert.ok(splitRow);
+    assert.equal(splitRow.note, "Separate mobile from desktop routes");
+
+    // 3. Keep decision
+    await recordConsolidationDecision(
+      ["EMO-5", "EMO-6"],
+      "keep",
+      undefined,
+      undefined,
+      approvalsPath,
+    );
+    data = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(data.consolidation.length, 3);
+
+    // 4. Later decision
+    await recordConsolidationDecision(
+      ["EMO-7", "EMO-8"],
+      "later",
+      undefined,
+      undefined,
+      approvalsPath,
+    );
+    data = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(data.consolidation.length, 4);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("parseConsolidationChoice parses M <n>, S <note>, K, and L", () => {
+  assert.deepEqual(parseConsolidationChoice("m 2", 3), { action: "merge", canonicalIndex: 2 });
+  assert.deepEqual(parseConsolidationChoice("merge", 3), { action: "merge", canonicalIndex: 1 });
+  assert.deepEqual(parseConsolidationChoice("s split by platform", 3), {
+    action: "split",
+    note: "split by platform",
+  });
+  assert.deepEqual(parseConsolidationChoice("k", 3), { action: "keep" });
+  assert.deepEqual(parseConsolidationChoice("keep", 3), { action: "keep" });
+  assert.deepEqual(parseConsolidationChoice("l", 3), { action: "later" });
+  assert.deepEqual(parseConsolidationChoice("later", 3), { action: "later" });
 });

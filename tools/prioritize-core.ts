@@ -133,34 +133,29 @@ export function findTopKOrNextComparison(
   let comparisonCount = 0;
 
   for (const candidate of tickets) {
-    // Probe from the worst (bottom) of the frontier upward. Most candidates
-    // lose to the lowest-ranked selection, so a single comparison rejects
-    // them; only a candidate that actually makes the top-k walks further up.
-    let insertAt = selected.length; // candidate belongs after selected[insertAt - 1]
-    let offset = selected.length - 1;
-    while (offset >= 0) {
-      const outcome = readCachedComparison(cache, candidate, selected[offset]);
+    let low = 0;
+    let high = selected.length;
+
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      const outcome = readCachedComparison(cache, candidate, selected[mid]);
       if (outcome === undefined) {
-        const key = pairKey(candidate.id, selected[offset].id);
+        const key = pairKey(candidate.id, selected[mid].id);
         return {
           complete: false,
-          comparison: { left: candidate, right: selected[offset], key },
+          comparison: { left: candidate, right: selected[mid], key },
         };
       }
       comparisonCount += 1;
       if (outcome === "left") {
-        // Candidate is more important -> it may sit at or above this slot.
-        insertAt = offset;
-        offset -= 1;
+        high = mid;
       } else {
-        // "right" or "tie": candidate goes after this slot (ties insert after).
-        insertAt = offset + 1;
-        break;
+        low = mid + 1;
       }
     }
-    selected.splice(insertAt, 0, candidate);
+    selected.splice(low, 0, candidate);
     if (selected.length > k) {
-      selected.length = k; // drop the worst tail; selected stays best -> worst
+      selected.length = k;
     }
   }
 
@@ -182,27 +177,26 @@ export function rankOrNextComparison(
   let comparisonCount = 0;
 
   for (const candidate of tickets) {
-    let insertAt = selected.length;
-    let offset = selected.length - 1;
-    while (offset >= 0) {
-      const outcome = readCachedComparison(cache, candidate, selected[offset]);
+    let low = 0;
+    let high = selected.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      const outcome = readCachedComparison(cache, candidate, selected[mid]);
       if (outcome === undefined) {
-        const key = pairKey(candidate.id, selected[offset].id);
+        const key = pairKey(candidate.id, selected[mid].id);
         return {
           complete: false,
-          comparison: { left: candidate, right: selected[offset], key },
+          comparison: { left: candidate, right: selected[mid], key },
         };
       }
       comparisonCount += 1;
       if (outcome === "left") {
-        insertAt = offset;
-        offset -= 1;
+        high = mid;
       } else {
-        insertAt = offset + 1;
-        break;
+        low = mid + 1;
       }
     }
-    selected.splice(insertAt, 0, candidate);
+    selected.splice(low, 0, candidate);
     if (selected.length > targetK) {
       selected.length = targetK;
     }
@@ -247,6 +241,14 @@ export interface PrioritizeState {
   top?: number;
   applying?: unknown;
   updatedAt?: string;
+  consolidation_resolved?: string[][];
+}
+
+export function computeWorstCaseComparisons(poolSize: number, k: number): number {
+  if (poolSize <= 1 || k <= 0) return 0;
+  const effectiveK = Math.min(k, poolSize);
+  const ceilLog2K = Math.max(1, Math.ceil(Math.log2(effectiveK)));
+  return poolSize * ceilLog2K;
 }
 
 export function createInitialState(): PrioritizeState {
@@ -551,10 +553,12 @@ export function nextQuestion(
       if (candidatePool.length === 0) candidatePool = tickets;
     }
 
+    const rankIndex = new Map(tickets.map((t, idx) => [t.id, idx]));
     candidatePool = [...candidatePool].sort((a, b) => {
       const eloA = state.tickets[a.id]?.elo ?? DEFAULT_INITIAL_ELO;
       const eloB = state.tickets[b.id]?.elo ?? DEFAULT_INITIAL_ELO;
-      return eloB - eloA;
+      if (Math.abs(eloA - eloB) >= 200) return eloB - eloA;
+      return (rankIndex.get(a.id) ?? 0) - (rankIndex.get(b.id) ?? 0);
     });
 
     const k = Math.min(top, candidatePool.length);
@@ -585,13 +589,11 @@ export function nextQuestion(
 
     const leftRec = state.tickets[result.comparison.left.id];
     const rightRec = state.tickets[result.comparison.right.id];
-    const eloGapThreshold = options.highConfidenceEloGap ?? 400;
+    const eloGapThreshold = options.highConfidenceEloGap ?? 200;
     if (
       leftRec &&
       rightRec &&
-      isHighConfidenceSettled(leftRec, minComparisons) &&
-      isHighConfidenceSettled(rightRec, minComparisons) &&
-      Math.abs(leftRec.elo - rightRec.elo) >= eloGapThreshold
+      Math.abs(leftRec.elo - rightRec.elo) > eloGapThreshold
     ) {
       const outcome: ComparisonResult = leftRec.elo >= rightRec.elo ? "left" : "right";
       recordComparisonAnswer(
@@ -641,10 +643,12 @@ export function nextQuestion(
     pool = [...pool, ...nextTickets];
   }
 
+  const rankIndex = new Map(tickets.map((t, idx) => [t.id, idx]));
   pool = [...pool].sort((a, b) => {
     const eloA = state.tickets[a.id]?.elo ?? DEFAULT_INITIAL_ELO;
     const eloB = state.tickets[b.id]?.elo ?? DEFAULT_INITIAL_ELO;
-    return eloB - eloA;
+    if (Math.abs(eloA - eloB) >= 200) return eloB - eloA;
+    return (rankIndex.get(a.id) ?? 0) - (rankIndex.get(b.id) ?? 0);
   });
 
   const k = Math.min(top, pool.length);
@@ -671,6 +675,25 @@ export function nextQuestion(
       bins: groupTicketsByBin(tickets, state),
       state,
     };
+  }
+
+  const leftRec = state.tickets[result.comparison.left.id];
+  const rightRec = state.tickets[result.comparison.right.id];
+  const eloGapThreshold = options.highConfidenceEloGap ?? 200;
+  const leftElo = leftRec?.elo ?? DEFAULT_INITIAL_ELO;
+  const rightElo = rightRec?.elo ?? DEFAULT_INITIAL_ELO;
+  const eloGap = leftElo - rightElo;
+
+  if (Math.abs(eloGap) > eloGapThreshold) {
+    const outcome: ComparisonResult = eloGap > 0 ? "left" : "right";
+    recordComparisonAnswer(
+      state,
+      result.comparison.left.id,
+      result.comparison.right.id,
+      outcome,
+      nowMs,
+    );
+    return nextQuestion(engine);
   }
 
   return {
@@ -788,4 +811,274 @@ export function extractTriageSections(markdown: string, fallbackLimit = 1200): T
   }
 
   return { fallback: truncateAtWord(markdown.trim(), fallbackLimit) };
+}
+
+export function extractDeliverables(markdown: string): string[] {
+  const pattern = /^#{1,4}\s+(?:\d+\.\s+)?Deliverables\??[ \t]*(?:\n)?/im;
+  const section = extractSection(markdown, pattern);
+  if (!section) return [];
+  const lines = section.split("\n");
+  const bullets: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("* ") || trimmed.startsWith("- ") || trimmed.startsWith("• ")) {
+      bullets.push(trimmed.slice(2).trim());
+    } else if (/^\d+\.\s+/.test(trimmed)) {
+      bullets.push(trimmed.replace(/^\d+\.\s+/, "").trim());
+    }
+  }
+  return bullets;
+}
+
+export function extractFiles(markdown: string): string[] {
+  const matches = markdown.match(/`([^`\s]+\.[a-zA-Z0-9]+)`/g);
+  if (!matches) return [];
+  return [...new Set(matches.map((m) => m.slice(1, -1)))];
+}
+
+export function extractPrLink(markdown: string): string {
+  const match = markdown.match(/https:\/\/github\.com\/[\w-]+\/[\w-]+\/pull\/\d+/);
+  return match ? match[0] : "None";
+}
+
+export function extractWorker(ticket: Ticket): string {
+  if (ticket.assignee) return ticket.assignee;
+  const desc = typeof ticket.description === "string" ? ticket.description : "";
+  const match = desc.match(/Worker:\s*([^\n\r]+)/i) || desc.match(/Workspace:\s*([^\n\r]+)/i);
+  return match ? match[1].trim() : "Unassigned";
+}
+
+export const CLUSTER_STOP_WORDS: Record<string, true> = {
+  the: true, a: true, an: true, and: true, or: true, but: true, in: true, on: true, at: true, to: true, for: true, of: true, with: true,
+  by: true, from: true, up: true, about: true, into: true, over: true, after: true, is: true, are: true, was: true, were: true,
+  be: true, been: true, being: true, have: true, has: true, had: true, do: true, does: true, did: true, what: true, problem: true,
+  trying: true, solve: true, creatordex: true,
+};
+
+export function extractTicketTokens(ticket: Ticket): Set<string> {
+  const desc = typeof ticket.description === "string" ? ticket.description : "";
+  const { problem, fallback } = extractTriageSections(desc);
+  const probText = (problem || fallback || "").slice(0, 300);
+  const text = `${ticket.title} ${probText}`.toLowerCase();
+  const words = text
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !CLUSTER_STOP_WORDS[w]);
+  return new Set(words);
+}
+
+export function computeTokenOverlap(setA: Set<string>, setB: Set<string>): number {
+  let inter = 0;
+  for (const item of setA) {
+    if (setB.has(item)) inter++;
+  }
+  const union = setA.size + setB.size - inter;
+  if (union === 0) return 0;
+  return inter / union;
+}
+
+export interface ConsolidationDecision {
+  cluster: string[];
+  decision: "merge" | "split" | "keep" | "later";
+  canonical?: string;
+  note?: string;
+  at: string;
+  source: string;
+}
+
+export interface ConsolidationCluster {
+  id: number;
+  tickets: Ticket[];
+  sharedTokens: string[];
+  sharedFiles: string[];
+  similarity: number;
+}
+
+export function clusterTicketsForConsolidation(
+  tickets: Ticket[],
+  threshold = 0.6,
+): ConsolidationCluster[] {
+  const tokenSets = tickets.map((t) => extractTicketTokens(t));
+  const adj: number[][] = Array.from({ length: tickets.length }, () => []);
+
+  for (let i = 0; i < tickets.length; i++) {
+    for (let j = i + 1; j < tickets.length; j++) {
+      if (computeTokenOverlap(tokenSets[i], tokenSets[j]) >= threshold) {
+        adj[i].push(j);
+        adj[j].push(i);
+      }
+    }
+  }
+
+  const visited = new Set<number>();
+  const clusters: ConsolidationCluster[] = [];
+
+  for (let i = 0; i < tickets.length; i++) {
+    if (visited.has(i)) continue;
+    const component: number[] = [];
+    const queue = [i];
+    visited.add(i);
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      component.push(curr);
+      for (const neighbor of adj[curr]) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    if (component.length >= 2) {
+      const clusterTickets = component.map((idx) => tickets[idx]);
+      const compSets = component.map((idx) => tokenSets[idx]);
+      const sharedTokens: string[] = [];
+      if (compSets.length > 0) {
+        for (const token of compSets[0]) {
+          if (compSets.every((s) => s.has(token))) {
+            sharedTokens.push(token);
+          }
+        }
+      }
+
+      const allFiles = clusterTickets.map((t) =>
+        new Set(extractFiles(typeof t.description === "string" ? t.description : "")),
+      );
+      const sharedFiles: string[] = [];
+      if (allFiles.length > 0) {
+        for (const f of allFiles[0]) {
+          if (allFiles.slice(1).some((s) => s.has(f))) {
+            sharedFiles.push(f);
+          }
+        }
+      }
+
+      clusters.push({
+        id: clusters.length + 1,
+        tickets: clusterTickets,
+        sharedTokens,
+        sharedFiles,
+        similarity: threshold,
+      });
+    }
+  }
+
+  return clusters;
+}
+
+export function renderClusterCard(
+  cluster: Ticket[],
+  clusterIndex: number,
+  totalClusters: number,
+): string {
+  const lines: string[] = [];
+  const sep = "=".repeat(78);
+  const thinSep = "-".repeat(78);
+  lines.push(sep);
+  lines.push(`CANDIDATE CONSOLIDATION CLUSTER [${clusterIndex + 1} of ${totalClusters}] (${cluster.length} tickets)`);
+  lines.push(sep);
+
+  const allFiles = cluster.map((t) =>
+    new Set(extractFiles(typeof t.description === "string" ? t.description : "")),
+  );
+  const sharedFiles: string[] = [];
+  if (allFiles.length > 0) {
+    for (const f of allFiles[0]) {
+      if (allFiles.slice(1).some((s) => s.has(f))) sharedFiles.push(f);
+    }
+  }
+
+  const delivSets = cluster.map((t) => {
+    const delivs = extractDeliverables(typeof t.description === "string" ? t.description : "");
+    const words = delivs
+      .join(" ")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 3 && !CLUSTER_STOP_WORDS[w]);
+    return new Set(words);
+  });
+  const sharedDeliv: string[] = [];
+  if (delivSets.length > 0) {
+    for (const w of delivSets[0]) {
+      if (delivSets.slice(1).some((s) => s.has(w))) sharedDeliv.push(w);
+    }
+  }
+
+  lines.push(`COMPUTED OVERLAP:`);
+  lines.push(`  Shared Deliverable Terms : ${sharedDeliv.length > 0 ? sharedDeliv.slice(0, 10).join(", ") : "None"}`);
+  lines.push(`  Shared Files from PRs    : ${sharedFiles.length > 0 ? sharedFiles.join(", ") : "None"}`);
+  lines.push(thinSep);
+
+  cluster.forEach((t, idx) => {
+    const desc = typeof t.description === "string" ? t.description : "";
+    const { problem, fallback } = extractTriageSections(desc);
+    const deliverables = extractDeliverables(desc);
+    const pr = extractPrLink(desc);
+    const worker = extractWorker(t);
+
+    lines.push(`[${idx + 1}] ${t.id}: ${t.title}`);
+    lines.push(`    State: ${t.state ?? "Unknown"}  |  Worker: ${worker}  |  PR: ${pr}`);
+    lines.push(`    Problem:`);
+    const probText = (problem || fallback || "No problem statement").trim();
+    probText.split("\n").forEach((pLine) => {
+      lines.push(`      ${pLine}`);
+    });
+    if (deliverables.length > 0) {
+      lines.push(`    Deliverables:`);
+      deliverables.forEach((d) => {
+        lines.push(`      * ${d}`);
+      });
+    }
+    lines.push("");
+  });
+
+  lines.push(thinSep);
+  lines.push(`[M]erge into <n>   [S]plit differently (free text)   [K]eep all distinct   [L]ater`);
+  lines.push(sep);
+  return lines.join("\n");
+}
+
+export function generateConsolidationMarkdown(clusters: ConsolidationCluster[]): string {
+  const lines: string[] = [
+    "# Creatordex Candidate Consolidation Clusters",
+    "",
+    `Generated at: ${new Date().toISOString()}`,
+    `Total Clusters: ${clusters.length}`,
+    "",
+    "Review these candidate clusters for potential consolidation (Merge, Split, Keep distinct, or Later).",
+    "",
+  ];
+
+  for (const cluster of clusters) {
+    lines.push(`## Cluster ${cluster.id} (${cluster.tickets.length} tickets)`);
+    lines.push(`- **Shared Terms**: ${cluster.sharedTokens.join(", ") || "None"}`);
+    lines.push(`- **Shared Files**: ${cluster.sharedFiles.join(", ") || "None"}`);
+    lines.push("");
+    for (const t of cluster.tickets) {
+      const desc = typeof t.description === "string" ? t.description : "";
+      const { problem, fallback } = extractTriageSections(desc);
+      const deliverables = extractDeliverables(desc);
+      const pr = extractPrLink(desc);
+      const worker = extractWorker(t);
+
+      lines.push(`### [${t.id}] ${t.title}`);
+      lines.push(`- **State**: ${t.state ?? "Unknown"}`);
+      lines.push(`- **Worker**: ${worker}`);
+      lines.push(`- **PR**: ${pr}`);
+      lines.push(`- **Problem**: ${problem || fallback || "None"}`);
+      if (deliverables.length > 0) {
+        lines.push(`- **Deliverables**:`);
+        for (const d of deliverables) {
+          lines.push(`  - ${d}`);
+        }
+      }
+      lines.push("");
+    }
+    lines.push("---");
+    lines.push("");
+  }
+
+  return lines.join("\n");
 }
