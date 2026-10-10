@@ -16,6 +16,7 @@ import {
   formatProgress,
   normalizeBinChoice,
   normalizeTriageChoice,
+  recordReassessDecision,
 } from "./prioritize-linear-tickets.ts";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
@@ -1522,7 +1523,9 @@ test("normalizeBinChoice supports 1-4 bins, q pause, d details toggle, and o url
   assert.equal(normalizeBinChoice("4"), "never");
   assert.equal(normalizeBinChoice("v"), "never");
   assert.equal(normalizeBinChoice("never"), "never");
-  assert.equal(normalizeBinChoice("q"), "pause");
+  assert.equal(normalizeBinChoice("5"), "reassess");
+  assert.equal(normalizeBinChoice("r"), "reassess");
+  assert.equal(normalizeBinChoice("reassess"), "reassess");
   assert.equal(normalizeBinChoice("quit"), "pause");
   assert.equal(normalizeBinChoice("pause"), "pause");
   assert.equal(normalizeBinChoice("d"), "details");
@@ -1531,4 +1534,44 @@ test("normalizeBinChoice supports 1-4 bins, q pause, d details toggle, and o url
   assert.equal(normalizeBinChoice("open"), "open");
   assert.equal(normalizeBinChoice("url"), "open");
   assert.equal(normalizeBinChoice("unknown"), undefined);
+});
+
+test("recordReassessDecision writes row to approvals.json and is idempotent per ticket", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "approvals-test-"));
+  const approvalsPath = join(tempDir, "approvals.json");
+
+  try {
+    // Seed initial approvals file
+    const initial = {
+      repair_decisions: [
+        {
+          ticket: "EMO-EXISTING",
+          instruction: "existing repair",
+          at: "2026-10-09T00:00:00Z",
+          source: "worker",
+        },
+      ],
+    };
+    await writeFile(approvalsPath, JSON.stringify(initial, null, 2), "utf8");
+
+    // 1. Add reassess decision for EMO-100 with reason
+    await recordReassessDecision("EMO-100", "44px touch targets ambiguous", approvalsPath);
+    const afterFirst = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(afterFirst.repair_decisions.length, 2);
+    const firstRow = afterFirst.repair_decisions.find((r: { ticket: string }) => r.ticket === "EMO-100");
+    assert.ok(firstRow);
+    assert.equal(firstRow.instruction, "operator: unclear or needs edits via ranker - 44px touch targets ambiguous");
+    assert.equal(firstRow.source, "prioritize-tui");
+
+    // 2. Call again for EMO-100 with updated reason -> must be idempotent (no duplicate row)
+    await recordReassessDecision("EMO-100", "clarified spec required", approvalsPath);
+    const afterSecond = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(afterSecond.repair_decisions.length, 2, "Must not create duplicate row for same ticket");
+    const updatedRow = afterSecond.repair_decisions.find((r: { ticket: string }) => r.ticket === "EMO-100");
+    assert.ok(updatedRow);
+    assert.equal(updatedRow.instruction, "operator: unclear or needs edits via ranker - clarified spec required");
+    assert.equal(updatedRow.source, "prioritize-tui");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });

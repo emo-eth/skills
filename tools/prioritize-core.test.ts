@@ -463,3 +463,53 @@ test("extractTriageSections fallback path when headings are absent never cuts mi
   );
   assert.ok(longSections.fallback.length <= 1205, "Fallback length must respect bound");
 });
+
+test("recordBinAnswer persists reassess bin, reason, and initial Elo rating", () => {
+  const state = createInitialState();
+  recordBinAnswer(state, "EMO-1", "reassess", undefined, "Unclear touch targets spec");
+
+  assert.equal(state.tickets["EMO-1"].bin, "reassess");
+  assert.equal(state.tickets["EMO-1"].reassess_reason, "Unclear touch targets spec");
+  assert.equal(state.tickets["EMO-1"].elo, 800);
+  assert.equal(state.tickets["EMO-1"].comparisons, 0);
+});
+
+test("reassess tickets are excluded from pairwise comparisons and ranking", () => {
+  const state = createInitialState();
+  const tickets = [
+    ticket("A", "High Priority"),
+    ticket("B", "Normal Priority"),
+    ticket("C", "Ambiguous Ticket"),
+    ticket("D", "Unwanted"),
+  ];
+
+  recordBinAnswer(state, "A", "now");
+  recordBinAnswer(state, "B", "now");
+  recordBinAnswer(state, "C", "reassess", undefined, "Ambiguous requirements");
+  recordBinAnswer(state, "D", "never");
+
+  // nextQuestion should ask pairwise comparison only between A and B
+  const step = nextQuestion({ tickets, state });
+  assert.equal(step.done, false);
+  if (step.done) return;
+  assert.equal(step.kind, "compare");
+  assert.ok(
+    (step.left.id === "A" && step.right.id === "B") ||
+      (step.left.id === "B" && step.right.id === "A"),
+    "Only A and B should be compared",
+  );
+  assert.notEqual(step.left.id, "C");
+  assert.notEqual(step.right.id, "C");
+
+  // Record answer between A and B
+  recordComparisonAnswer(state, step.left.id, step.right.id, "left");
+
+  // Next step should finalize ranking
+  const finalStep = nextQuestion({ tickets, state, options: { top: 2 } });
+  assert.equal(finalStep.done, true);
+  if (!finalStep.done) return;
+  const rankedIds = finalStep.ranked.map((t) => t.id);
+  assert.ok(rankedIds.includes("A") || rankedIds.includes("B"));
+  assert.ok(!rankedIds.includes("C"), "Reassess ticket C must never appear in ranked list");
+  assert.ok(!rankedIds.includes("D"), "Never ticket D must never appear in ranked list");
+});

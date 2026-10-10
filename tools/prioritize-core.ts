@@ -211,15 +211,22 @@ export function rankOrNextComparison(
   return { complete: true, ranked: selected, comparisonCount };
 }
 
-export type BinName = "now" | "next" | "later" | "never";
+export type BinName = "now" | "next" | "later" | "never" | "reassess";
 
-export const BIN_NAMES: readonly BinName[] = ["now", "next", "later", "never"] as const;
+export const BIN_NAMES: readonly BinName[] = [
+  "now",
+  "next",
+  "later",
+  "never",
+  "reassess",
+] as const;
 
 export const BIN_INITIAL_ELO: Record<BinName, number> = {
   now: 1600,
   next: 1400,
   later: 1200,
   never: 1000,
+  reassess: 800,
 };
 
 export const DEFAULT_INITIAL_ELO = 1500;
@@ -229,6 +236,7 @@ export interface TicketRecord {
   last_reviewed_at: string;
   comparisons: number;
   bin?: BinName;
+  reassess_reason?: string;
 }
 
 export interface PrioritizeState {
@@ -279,12 +287,20 @@ export function recordBinAnswer(
   ticketId: string,
   bin: BinName,
   now: string | Date | number = new Date().toISOString(),
+  reason?: string,
 ): void {
   const isoTime = typeof now === "string" ? now : new Date(now).toISOString();
   const existing = state.tickets[ticketId];
   if (existing) {
     existing.bin = bin;
     existing.last_reviewed_at = isoTime;
+    if (bin === "reassess") {
+      if (reason && reason.trim()) {
+        existing.reassess_reason = reason.trim();
+      }
+    } else {
+      delete existing.reassess_reason;
+    }
     if (existing.comparisons === 0) {
       existing.elo = BIN_INITIAL_ELO[bin];
     }
@@ -294,6 +310,9 @@ export function recordBinAnswer(
       last_reviewed_at: isoTime,
       comparisons: 0,
       bin,
+      ...(bin === "reassess" && reason && reason.trim()
+        ? { reassess_reason: reason.trim() }
+        : {}),
     };
   }
   state.updatedAt = isoTime;
@@ -373,6 +392,7 @@ export function groupTicketsByBin(
     next: [],
     later: [],
     never: [],
+    reassess: [],
   };
   for (const t of tickets) {
     const bin = state.tickets[t.id]?.bin;
@@ -484,8 +504,8 @@ export function nextQuestion(
           ticket,
           currentBin: rec?.bin,
           isStale: true,
-          options: ["now", "next", "later", "never"],
-          prompt: `Review recency expired (${staleDays}d). Bin ${ticket.id}: "${ticket.title}" into [1] Now, [2] Next, [3] Later, [4] Never`,
+          options: ["now", "next", "later", "never", "reassess"],
+          prompt: `Review recency expired (${staleDays}d). Bin ${ticket.id}: "${ticket.title}" into [1] Now, [2] Next, [3] Later, [4] Never, [5] Reassess`,
         };
       }
     }
@@ -514,8 +534,8 @@ export function nextQuestion(
           ticket: candidate,
           currentBin: rec?.bin,
           isStale: isTicketStale(rec, staleDays, nowMs),
-          options: ["now", "next", "later", "never"],
-          prompt: `Do-Next needs top ${top}. Bin candidate ${candidate.id}: "${candidate.title}" into [1] Now, [2] Next, [3] Later, [4] Never`,
+          options: ["now", "next", "later", "never", "reassess"],
+          prompt: `Do-Next needs top ${top}. Bin candidate ${candidate.id}: "${candidate.title}" into [1] Now, [2] Next, [3] Later, [4] Never, [5] Reassess`,
         };
       }
     }
@@ -523,7 +543,10 @@ export function nextQuestion(
     let candidatePool = nowTickets;
     if (candidatePool.length === 0) {
       candidatePool = tickets.filter(
-        (t) => state.tickets[t.id]?.bin !== "never" && state.tickets[t.id]?.bin !== "later",
+        (t) =>
+          state.tickets[t.id]?.bin !== "never" &&
+          state.tickets[t.id]?.bin !== "later" &&
+          state.tickets[t.id]?.bin !== "reassess",
       );
       if (candidatePool.length === 0) candidatePool = tickets;
     }
@@ -606,8 +629,8 @@ export function nextQuestion(
         ticket,
         currentBin: rec?.bin,
         isStale: rec?.bin !== undefined,
-        options: ["now", "next", "later", "never"],
-        prompt: `Bin ${ticket.id}: "${ticket.title}" into [1] Now, [2] Next, [3] Later, [4] Never`,
+        options: ["now", "next", "later", "never", "reassess"],
+        prompt: `Bin ${ticket.id}: "${ticket.title}" into [1] Now, [2] Next, [3] Later, [4] Never, [5] Reassess`,
       };
     }
   }

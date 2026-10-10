@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_INITIAL_ELO,
@@ -439,10 +440,67 @@ export function normalizeBinChoice(value: string): BinChoiceAction | undefined {
   if (["2", "x", "next"].includes(answer)) return "next";
   if (["3", "l", "later"].includes(answer)) return "later";
   if (["4", "v", "never"].includes(answer)) return "never";
+  if (["5", "r", "reassess"].includes(answer)) return "reassess";
   if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
   if (["d", "details", "detail"].includes(answer)) return "details";
   if (["o", "open", "url"].includes(answer)) return "open";
   return undefined;
+}
+
+export const DEFAULT_APPROVALS_PATH =
+  "/Users/emo/.herdr/worktrees/scratch/standup/.command-center/approvals.json";
+
+export async function recordReassessDecision(
+  ticketId: string,
+  reason?: string,
+  approvalsPath = DEFAULT_APPROVALS_PATH,
+): Promise<void> {
+  try {
+    let approvals: {
+      repair_decisions?: Array<{
+        ticket: string;
+        instruction: string;
+        at: string;
+        source: string;
+      }>;
+    } = {};
+    try {
+      const raw = await readFile(approvalsPath, "utf8");
+      approvals = JSON.parse(raw);
+    } catch {
+      approvals = { repair_decisions: [] };
+    }
+    if (!Array.isArray(approvals.repair_decisions)) {
+      approvals.repair_decisions = [];
+    }
+    const cleanReason = reason ? reason.trim() : "";
+    const instruction = cleanReason
+      ? `operator: unclear or needs edits via ranker - ${cleanReason}`
+      : "operator: unclear or needs edits via ranker";
+    const existingIndex = approvals.repair_decisions.findIndex(
+      (r) => r.ticket === ticketId,
+    );
+    const row = {
+      ticket: ticketId,
+      instruction,
+      at: new Date().toISOString(),
+      source: "prioritize-tui",
+    };
+    if (existingIndex >= 0) {
+      approvals.repair_decisions[existingIndex] = {
+        ...approvals.repair_decisions[existingIndex],
+        ...row,
+      };
+    } else {
+      approvals.repair_decisions.push(row);
+    }
+    await mkdir(dirname(approvalsPath), { recursive: true });
+    const tempFile = `${approvalsPath}.${process.pid}.tmp`;
+    await writeFile(tempFile, `${JSON.stringify(approvals, null, 2)}\n`, "utf8");
+    await rename(tempFile, approvalsPath);
+  } catch (err) {
+    console.error(`Warning: Failed to update approvals.json for ${ticketId}:`, err);
+  }
 }
 
 async function chooseComparison(): Promise<ComparisonResult | "pause"> {
@@ -455,7 +513,7 @@ async function chooseComparison(): Promise<ComparisonResult | "pause"> {
 
 async function chooseBin(): Promise<BinChoiceAction> {
   const result = await rawChoice(
-    "Bin: [1] Now  [2] Next  [3] Later  [4] Never  [D] Details  [O] URL  [Q] Pause: ",
+    "Bin: [1] Now  [2] Next  [3] Later  [4] Never  [5] Reassess  [D] Details  [O] URL  [Q] Pause: ",
     normalizeBinChoice,
   );
   return result as BinChoiceAction;
@@ -479,6 +537,20 @@ class AnswerProvider {
     }
   }
 
+  isFromFile(): boolean {
+    return this.fromFile;
+  }
+
+  consumePendingReason(): string | undefined {
+    if (this.fromFile && this.index < this.answers.length) {
+      const next = this.answers[this.index];
+      if (next.startsWith("reason:")) {
+        this.index++;
+        return next.slice(7).trim();
+      }
+    }
+    return undefined;
+  }
   async nextComparison(): Promise<ComparisonResult | "pause"> {
     if (this.fromFile) {
       if (this.index >= this.answers.length) {
@@ -563,10 +635,11 @@ function renderHierarchicalBinCard(
   }
 
   console.log("\n----------------------------------------");
-  console.log("  [1] Now    (immediate top actionable work)");
-  console.log("  [2] Next   (queued up next)");
-  console.log("  [3] Later  (parked backlog)");
-  console.log("  [4] Never  (won't do)");
+  console.log("  [1] Now       (immediate top actionable work)");
+  console.log("  [2] Next      (queued up next)");
+  console.log("  [3] Later     (parked backlog)");
+  console.log("  [4] Never     (won't do)");
+  console.log("  [5] Reassess  (unclear or needs edits — send back for spec repair)");
   console.log(
     options?.showDetails
       ? "  [D] Toggle summary view (showing full description)"
@@ -575,6 +648,7 @@ function renderHierarchicalBinCard(
   console.log("  [O] Print ticket URL");
   console.log("  [Q] Pause and save\n");
 }
+
 function renderPair(
   left: Ticket,
   right: Ticket,
@@ -1377,6 +1451,25 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
         const eloStr = rec ? ` (Elo: ${rec.elo}, bin: ${rec.bin ?? "unbinned"})` : "";
         console.log(`  ${i + 1}. [${t.id}] ${t.title}${eloStr}`);
       }
+
+      const reassessTickets = tickets.filter(
+        (t) => state.tickets[t.id]?.bin === "reassess",
+      );
+      if (reassessTickets.length > 0) {
+        console.log(
+          `\n${BOLD}Reassess Set (unclear / needs edits — sent for spec repair):${RESET}\n`,
+        );
+        for (const t of reassessTickets) {
+          const rec = state.tickets[t.id];
+          const reasonStr = rec?.reassess_reason ? ` (${rec.reassess_reason})` : "";
+          const url =
+            typeof t.url === "string" && t.url.length > 0
+              ? t.url
+              : `https://linear.app/issue/${t.id}`;
+          console.log(`  - [${t.id}] ${t.title}${reasonStr}`);
+          console.log(`    URL: ${url}`);
+        }
+      }
       console.log(`\nTotal decisions made: ${decided}`);
 
       if (args.output) {
@@ -1466,6 +1559,28 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           await writeState(stateFile, "", top, state.comparisons, state.tickets);
           console.log("Paused. Progress saved.");
           return;
+        }
+        if (choice === "reassess") {
+          let reason: string | undefined = undefined;
+          if (answerProvider.isFromFile()) {
+            reason = answerProvider.consumePendingReason();
+          } else {
+            const rl = createInterface({
+              input: process.stdin,
+              output: process.stdout,
+            });
+            reason = await rl.question(
+              "Reason for reassessment (optional, Enter to skip): ",
+            );
+            rl.close();
+            reason = reason.trim() || undefined;
+          }
+          recordBinAnswer(state, step.ticket.id, "reassess", undefined, reason);
+          await recordReassessDecision(step.ticket.id, reason);
+          decided += 1;
+          await writeState(stateFile, "", top, state.comparisons, state.tickets);
+          console.log(`Marked ${step.ticket.id} for reassessment`);
+          break;
         }
         recordBinAnswer(state, step.ticket.id, choice);
         decided += 1;
