@@ -8,16 +8,26 @@
 // algorithm lives in prioritize-core.ts (shared, dependency-free).
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_INITIAL_ELO,
   findTopKOrNextComparison,
+  nextQuestion,
   pairKey,
   readCachedComparison,
+  recordBinAnswer,
+  recordComparisonAnswer,
+  type BinName,
   type ComparisonCache,
   type ComparisonResult,
+  type PrioritizeEngineState,
+  type PrioritizeState,
   type Ticket,
+  type TicketRecord,
 } from "./prioritize-core.ts";
 import {
   fetchAssignedNotCompleted,
@@ -40,10 +50,18 @@ import {
 } from "./linear-ranks.ts";
 import { clearScreen, confirmExact, paint, rawChoice } from "./prompt.ts";
 
-const STATE_VERSION = 2;
+const STATE_VERSION = 3;
 const BOLD = "\u001b[1m";
+const RESET = "\u001b[0m";
+const DEFAULT_STATE_FILE = join(homedir(), ".command-center", "prioritize-state.json");
 
-const DEFAULT_STATE_FILE = ".prioritize-state.json";
+export function resolveStateFile(raw?: string): string {
+  if (!raw) return DEFAULT_STATE_FILE;
+  if (raw.startsWith("~/")) {
+    return join(homedir(), raw.slice(2));
+  }
+  return raw;
+}
 const DEFAULT_OUTPUT_FILE = "top-k.json";
 const PRIORITY_LABELS: Record<number, string> = {
   1: "Urgent",
@@ -55,6 +73,7 @@ const PRIORITY_LABELS: Record<number, string> = {
 type Arguments = {
   input: string | undefined;
   top: number;
+  topExplicit: boolean;
   state: string;
   output: string | undefined;
   priorityTarget: number;
@@ -66,6 +85,11 @@ type Arguments = {
   dryRun: boolean;
   reset: boolean;
   help: boolean;
+  doNext: boolean;
+  answers: string | undefined;
+  staleDays: number;
+  apply: boolean;
+  hierarchical: boolean;
 };
 
 // Ordered most -> least important. Index doubles as the binary-search range.
@@ -103,10 +127,12 @@ type ApplyingCheckpoint = {
 
 type ReviewState = {
   version: number;
-  mode: "top-k";
-  snapshot: string;
+  schema_version?: number;
+  mode?: "top-k" | "do-next" | "hierarchical";
+  snapshot?: string;
   top: number;
   comparisons: ComparisonCache;
+  tickets?: Record<string, TicketRecord>;
   applying?: ApplyingCheckpoint;
   updatedAt: string;
 };
@@ -122,6 +148,7 @@ function parseArguments(args: string[]): Arguments {
   const options: Arguments = {
     input: undefined,
     top: 10,
+    topExplicit: false,
     state: DEFAULT_STATE_FILE,
     output: undefined,
     priorityTarget: 2,
@@ -133,6 +160,11 @@ function parseArguments(args: string[]): Arguments {
     dryRun: false,
     reset: false,
     help: false,
+    doNext: false,
+    answers: undefined,
+    staleDays: 14,
+    apply: false,
+    hierarchical: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -157,11 +189,13 @@ function parseArguments(args: string[]): Arguments {
         throw new Error("--top needs a positive integer");
       }
       options.top = parsed;
+      options.topExplicit = true;
       continue;
     }
     if (arg === "--state") {
-      options.state = args[++index];
-      if (!options.state) throw new Error("--state needs a path");
+      const val = args[++index];
+      if (!val) throw new Error("--state needs a path");
+      options.state = resolveStateFile(val);
       continue;
     }
     if (arg === "--output" || arg === "-o") {
@@ -203,7 +237,34 @@ function parseArguments(args: string[]): Arguments {
       options.dryRun = true;
       continue;
     }
+    if (arg === "--do-next") {
+      options.doNext = true;
+      continue;
+    }
+    if (arg === "--answers") {
+      const val = args[++index];
+      if (!val) throw new Error("--answers needs a path");
+      options.answers = resolveStateFile(val);
+      continue;
+    }
+    if (arg === "--stale-days") {
+      const val = Number(args[++index]);
+      if (Number.isNaN(val) || val < 1) throw new Error("--stale-days needs a positive number");
+      options.staleDays = val;
+      continue;
+    }
+    if (arg === "--apply") {
+      options.apply = true;
+      continue;
+    }
+    if (arg === "--hierarchical") {
+      options.hierarchical = true;
+      continue;
+    }
     throw new Error(`Unknown option: ${arg}`);
+  }
+  if (options.doNext && !options.topExplicit) {
+    options.top = 3;
   }
   return options;
 }
@@ -238,6 +299,11 @@ Options:
       --rebin               like --bin, but include tickets that already have a
                             priority so you can bucket the whole set again
       --dry-run             rank and show the plan but do NOT write to Linear
+      --do-next             fast path: produce the top 1-3 from Now in the fewest questions
+      --answers <path>      read answers non-interactively from a fixture file
+      --stale-days <n>      resurface tickets not reviewed in n days for binning (default 14)
+      --apply               write changes to Linear (default dry run without write)
+      --hierarchical        run hierarchical binning pass (Now/Next/Later/Never) then rank Now
   -i, --input <path|->      instead of Linear, rank a local JSON file ('-' = stdin)
   -o, --output <path>       also write the resulting top-k JSON here
       --state <path>        resume/persist state file (default ${DEFAULT_STATE_FILE})
@@ -296,10 +362,6 @@ async function readState(stateFile: string): Promise<ReviewState | undefined> {
     const content = await readFile(stateFile, "utf8");
     const state = JSON.parse(content) as ReviewState;
     if (
-      state.version !== STATE_VERSION ||
-      state.mode !== "top-k" ||
-      typeof state.snapshot !== "string" ||
-      typeof state.top !== "number" ||
       !state.comparisons ||
       typeof state.comparisons !== "object"
     ) {
@@ -307,6 +369,7 @@ async function readState(stateFile: string): Promise<ReviewState | undefined> {
         `the state file has an unsupported format; run again with --reset to discard ${stateFile}`,
       );
     }
+    state.tickets ??= {};
     return state;
   } catch (error: unknown) {
     if (errorCode(error) === "ENOENT") return undefined;
@@ -319,17 +382,29 @@ async function writeState(
   snapshot: string,
   top: number,
   comparisons: ComparisonCache,
+  ticketsOrApplying?: Record<string, TicketRecord> | ApplyingCheckpoint,
   applying?: ApplyingCheckpoint,
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
+  let tickets: Record<string, TicketRecord> = {};
+  let checkpoint: ApplyingCheckpoint | undefined = applying;
+  if (ticketsOrApplying) {
+    if ("source" in ticketsOrApplying && ticketsOrApplying.source === "linear") {
+      checkpoint = ticketsOrApplying;
+    } else {
+      tickets = ticketsOrApplying;
+    }
+  }
   const state: ReviewState = {
     version: STATE_VERSION,
+    schema_version: 3,
     mode: "top-k",
     snapshot,
     top,
     comparisons,
-    applying,
+    tickets,
+    applying: checkpoint,
     updatedAt: new Date().toISOString(),
   };
   await writeFile(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
@@ -342,9 +417,19 @@ async function removeState(stateFile: string): Promise<void> {
 
 function normalizeChoice(value: string): ComparisonResult | "pause" | undefined {
   const answer = value.trim().toLowerCase();
-  if (["l", "left", "[d", "[b"].includes(answer)) return "left";
-  if (["r", "right", "[c", "[f"].includes(answer)) return "right";
-  if (["t", "tie", "equal"].includes(answer)) return "tie";
+  if (["l", "left", "[d", "[b", "1"].includes(answer)) return "left";
+  if (["r", "right", "[c", "[f", "2"].includes(answer)) return "right";
+  if (["t", "tie", "equal", "3"].includes(answer)) return "tie";
+  if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
+  return undefined;
+}
+
+function normalizeBinChoice(value: string): BinName | "pause" | undefined {
+  const answer = value.trim().toLowerCase();
+  if (["1", "n", "now"].includes(answer)) return "now";
+  if (["2", "x", "next"].includes(answer)) return "next";
+  if (["3", "l", "later"].includes(answer)) return "later";
+  if (["4", "v", "never"].includes(answer)) return "never";
   if (["q", "quit", "pause", "ctrl-c"].includes(answer)) return "pause";
   return undefined;
 }
@@ -357,6 +442,93 @@ async function chooseComparison(): Promise<ComparisonResult | "pause"> {
   return result as ComparisonResult | "pause";
 }
 
+async function chooseBin(): Promise<BinName | "pause"> {
+  const result = await rawChoice(
+    "Bin: [1] Now  [2] Next  [3] Later  [4] Never  [Q] Pause: ",
+    normalizeBinChoice,
+  );
+  return result as BinName | "pause";
+}
+
+class AnswerProvider {
+  private answers: string[] = [];
+  private index = 0;
+  private readonly fromFile: boolean;
+
+  constructor(answersFile?: string) {
+    if (answersFile) {
+      this.fromFile = true;
+      const content = readFileSync(answersFile, "utf8");
+      this.answers = content
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith("#"));
+    } else {
+      this.fromFile = false;
+    }
+  }
+
+  async nextComparison(): Promise<ComparisonResult | "pause"> {
+    if (this.fromFile) {
+      if (this.index >= this.answers.length) {
+        return "pause";
+      }
+      const raw = this.answers[this.index++];
+      const choice = normalizeChoice(raw);
+      if (choice === undefined) {
+        throw new Error(`Invalid comparison answer in fixture file: "${raw}"`);
+      }
+      return choice;
+    }
+    return chooseComparison();
+  }
+
+  async nextBin(): Promise<BinName | "pause"> {
+    if (this.fromFile) {
+      if (this.index >= this.answers.length) {
+        return "pause";
+      }
+      const raw = this.answers[this.index++];
+      const choice = normalizeBinChoice(raw);
+      if (choice === undefined) {
+        throw new Error(`Invalid bin answer in fixture file: "${raw}"`);
+      }
+      return choice;
+    }
+    return chooseBin();
+  }
+}
+
+function renderHierarchicalBinCard(
+  ticket: Ticket,
+  index: number,
+  total: number,
+  record?: TicketRecord,
+): void {
+  clearScreen();
+  console.log(
+    `${BOLD}Hierarchical Triage${RESET}  (${formatProgress(index, total)})\n`,
+  );
+  console.log(`${BOLD}${ticket.id}${RESET}  ${ticket.title}`);
+  if (ticket.state) {
+    console.log(`State: ${ticket.state}`);
+  }
+  if (record?.bin) {
+    console.log(
+      `Current Bin: ${record.bin.toUpperCase()} (Elo: ${record.elo}, reviewed: ${record.last_reviewed_at})`,
+    );
+  }
+  const desc = ticketField(ticket, "description");
+  if (desc) {
+    console.log(`\n${compact(desc, 300)}`);
+  }
+  console.log("\n----------------------------------------");
+  console.log("  [1] Now    (immediate top actionable work)");
+  console.log("  [2] Next   (queued up next)");
+  console.log("  [3] Later  (parked backlog)");
+  console.log("  [4] Never  (won't do)");
+  console.log("  [Q] Pause and save\n");
+}
 function renderPair(
   left: Ticket,
   right: Ticket,
@@ -1083,6 +1255,164 @@ async function runBin(args: Arguments): Promise<void> {
   );
 }
 
+async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
+  const stateFile = args.state;
+  const usingLinear = args.input === undefined;
+  const answerProvider = new AnswerProvider(args.answers);
+
+  let tickets = usingLinear
+    ? (args.projects.length > 0
+        ? await fetchProjectsIssues({ projects: args.projects, team: args.team })
+        : await fetchAssignedNotCompleted({ team: args.team }))
+    : await loadTickets(args.input);
+
+  if (args.reset) {
+    await removeState(stateFile);
+  }
+
+  const saved = await readState(stateFile);
+  const state: PrioritizeState = {
+    schema_version: 3,
+    tickets: saved?.tickets ?? {},
+    comparisons: saved?.comparisons ?? {},
+    updatedAt: saved?.updatedAt ?? new Date().toISOString(),
+  };
+
+  for (const t of tickets) {
+    if (!state.tickets[t.id]) {
+      let initialElo = DEFAULT_INITIAL_ELO;
+      let initialBin: BinName | undefined = undefined;
+      const p = Number(t.priority);
+      if (p === 1) {
+        initialElo = 1600;
+        initialBin = "now";
+      } else if (p === 2) {
+        initialElo = 1500;
+        initialBin = "next";
+      } else if (p === 3) {
+        initialElo = 1300;
+        initialBin = "later";
+      } else if (p === 4) {
+        initialElo = 1100;
+        initialBin = "later";
+      }
+      state.tickets[t.id] = {
+        elo: initialElo,
+        last_reviewed_at: new Date().toISOString(),
+        comparisons: 0,
+        ...(initialBin ? { bin: initialBin } : {}),
+      };
+    }
+  }
+
+  const top = args.top;
+  const engineState: PrioritizeEngineState = {
+    tickets,
+    state,
+    options: {
+      top,
+      doNext: args.doNext,
+      staleDays: args.staleDays,
+      includeNext: true,
+    },
+  };
+
+  const modeLabel = args.doNext ? "--do-next" : "--hierarchical";
+  console.log(`Prioritizing ${tickets.length} tickets (${modeLabel}, top ${top})...`);
+  let decided = 0;
+
+  while (true) {
+    const step = nextQuestion(engineState);
+    if (step.done) {
+      console.log(`\n${BOLD}Top ${step.ranked.length} Ranked Tickets:${RESET}\n`);
+      for (let i = 0; i < step.ranked.length; i++) {
+        const t = step.ranked[i];
+        const rec = state.tickets[t.id];
+        const eloStr = rec ? ` (Elo: ${rec.elo}, bin: ${rec.bin ?? "unbinned"})` : "";
+        console.log(`  ${i + 1}. [${t.id}] ${t.title}${eloStr}`);
+      }
+      console.log(`\nTotal decisions made: ${decided}`);
+
+      if (args.output) {
+        const payload = {
+          top,
+          mode: args.doNext ? "do-next" : "hierarchical",
+          selected: step.ranked.map((t, idx) => ({
+            rank: idx + 1,
+            id: t.id,
+            title: t.title,
+            elo: state.tickets[t.id]?.elo,
+            bin: state.tickets[t.id]?.bin,
+          })),
+          decisions: decided,
+          source: usingLinear ? "linear" : args.input,
+        };
+        await writeFile(args.output, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+        console.log(`Wrote ${args.output}`);
+      }
+
+      if (usingLinear && args.apply && !args.dryRun) {
+        console.log("\nApplying priorities to Linear...");
+        const ranks = assignRankWeights(step.ranked, tickets);
+        const storage = await resolveRankStorage();
+        const applying: ApplyingCheckpoint = {
+          source: "linear",
+          team: args.team,
+          project: args.projects.length === 1 ? args.projects[0] : undefined,
+          projects: args.projects.length > 0 ? args.projects : undefined,
+          ranks,
+          rankSlot: storage.kind,
+          rankFieldId: storage.kind === "field" ? storage.field.id : undefined,
+          rankFieldName: storage.kind === "field" ? storage.field.name : undefined,
+        };
+        await writeState(stateFile, "", top, state.comparisons, state.tickets, applying);
+        await applyCheckpoint(stateFile, applying, tickets, (app) =>
+          writeState(stateFile, "", top, state.comparisons, state.tickets, app),
+        );
+      } else {
+        if (!args.apply) {
+          console.log("\nNo --apply flag: Linear issues were not modified.");
+        }
+      }
+      return;
+    }
+
+    if (step.kind === "bin") {
+      const idx = tickets.indexOf(step.ticket) + 1;
+      renderHierarchicalBinCard(step.ticket, idx, tickets.length, state.tickets[step.ticket.id]);
+      const choice = await answerProvider.nextBin();
+      if (choice === "pause") {
+        await writeState(stateFile, "", top, state.comparisons, state.tickets);
+        console.log("Paused. Progress saved.");
+        return;
+      }
+      recordBinAnswer(state, step.ticket.id, choice);
+      decided += 1;
+      await writeState(stateFile, "", top, state.comparisons, state.tickets);
+      console.log(`Binned ${step.ticket.id} -> ${choice}`);
+    } else if (step.kind === "compare") {
+      renderPair(
+        step.left,
+        step.right,
+        decided,
+        tickets.length,
+        top,
+        tickets.length * top,
+      );
+      const choice = await answerProvider.nextComparison();
+      if (choice === "pause") {
+        await writeState(stateFile, "", top, state.comparisons, state.tickets);
+        console.log("Paused. Progress saved.");
+        return;
+      }
+      recordComparisonAnswer(state, step.left.id, step.right.id, choice);
+      decided += 1;
+      await writeState(stateFile, "", top, state.comparisons, state.tickets);
+      console.log(`${step.left.id} vs ${step.right.id}: ${choice}`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
   if (args.help) {
@@ -1091,6 +1421,10 @@ async function main(): Promise<void> {
   }
   if (args.bin) {
     await runBin(args);
+    return;
+  }
+  if (args.doNext || args.hierarchical) {
+    await runHierarchicalOrDoNext(args);
     return;
   }
 

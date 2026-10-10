@@ -1413,3 +1413,97 @@ test("prioritize-linear-tickets CLI --bin --dry-run keeps terminal actions pendi
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("prioritize-linear-tickets CLI --do-next with --answers drives non-interactively without touching Linear", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "Task 1", priority: 1, project: creatordex },
+      { id: "EMO-2", title: "Task 2", priority: 2, project: creatordex },
+      { id: "EMO-3", title: "Task 3", priority: 3, project: creatordex },
+      { id: "EMO-4", title: "Task 4", priority: 4, project: creatordex },
+      { id: "EMO-5", title: "Task 5", priority: 0, project: creatordex },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const answersFile = join(root, "answers.txt");
+    const outputFile = join(root, "output.json");
+
+    // Answers: EMO-1 is already priority 1 (seeded Now). EMO-2 is priority 2 (seeded Next).
+    // If candidate binning is asked: 1 (Now) for EMO-2, 1 (Now) for EMO-3.
+    // Then pairwise comparisons: left (l), left (l).
+    await writeFile(answersFile, "1\n1\nl\nl\nl\n", "utf8");
+
+    const result = await runCli(
+      [
+        "--do-next",
+        "--project",
+        "Creatordex",
+        "--state",
+        stateFile,
+        "--answers",
+        answersFile,
+        "--output",
+        outputFile,
+      ],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+      },
+    );
+
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /Top 3 Ranked Tickets/);
+    assert.match(result.stdout, /No --apply flag: Linear issues were not modified/);
+
+    // Verify Linear was NOT touched
+    const calls = await readLog(root);
+    assert.equal(calls.length, 0, `Expected 0 Linear mutations, got: ${JSON.stringify(calls)}`);
+
+    // Verify output.json
+    const output = JSON.parse(await readFile(outputFile, "utf8")) as {
+      top: number;
+      mode: string;
+      selected: Array<{ rank: number; id: string; title: string }>;
+    };
+    assert.equal(output.top, 3);
+    assert.equal(output.mode, "do-next");
+    assert.equal(output.selected.length, 3);
+
+    // Verify state.json contains ticket records with elo, last_reviewed_at, comparisons, bin
+    const state = JSON.parse(await readFile(stateFile, "utf8")) as {
+      schema_version: number;
+      tickets: Record<string, { elo: number; last_reviewed_at: string; comparisons: number; bin?: string }>;
+      comparisons: Record<string, string>;
+    };
+    assert.equal(state.schema_version, 3);
+    assert.ok(state.tickets["EMO-1"]);
+    assert.equal(typeof state.tickets["EMO-1"].elo, "number");
+    assert.ok(state.tickets["EMO-1"].last_reviewed_at);
+
+    // Run again with empty answers: should immediately succeed with zero decisions because state is cached
+    const emptyAnswers = join(root, "empty-answers.txt");
+    await writeFile(emptyAnswers, "", "utf8");
+    const rerun = await runCli(
+      [
+        "--do-next",
+        "--project",
+        "Creatordex",
+        "--state",
+        stateFile,
+        "--answers",
+        emptyAnswers,
+      ],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+      },
+    );
+    assert.equal(rerun.code, 0, `stdout: ${rerun.stdout} stderr: ${rerun.stderr}`);
+    assert.match(rerun.stdout, /Total decisions made: 0/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
