@@ -128,6 +128,8 @@ type ApplyingCheckpoint = {
 type ReviewState = {
   version: number;
   schema_version?: number;
+  completed?: boolean;
+  ranked?: string[];
   mode?: "top-k" | "do-next" | "hierarchical";
   snapshot?: string;
   top: number;
@@ -384,21 +386,24 @@ async function writeState(
   comparisons: ComparisonCache,
   ticketsOrApplying?: Record<string, TicketRecord> | ApplyingCheckpoint,
   applying?: ApplyingCheckpoint,
+  extra?: { completed?: boolean; ranked?: string[] },
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
   let tickets: Record<string, TicketRecord> = {};
   let checkpoint: ApplyingCheckpoint | undefined = applying;
   if (ticketsOrApplying) {
-    if ("source" in ticketsOrApplying && ticketsOrApplying.source === "linear") {
-      checkpoint = ticketsOrApplying;
+    if ("source" in ticketsOrApplying && (ticketsOrApplying as ApplyingCheckpoint).source === "linear") {
+      checkpoint = ticketsOrApplying as ApplyingCheckpoint;
     } else {
-      tickets = ticketsOrApplying;
+      tickets = ticketsOrApplying as Record<string, TicketRecord>;
     }
   }
   const state: ReviewState = {
     version: STATE_VERSION,
     schema_version: 3,
+    completed: extra?.completed,
+    ranked: extra?.ranked,
     mode: "top-k",
     snapshot,
     top,
@@ -1351,6 +1356,19 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
         console.log(`Wrote ${args.output}`);
       }
 
+      await writeState(
+        stateFile,
+        "",
+        top,
+        state.comparisons,
+        state.tickets,
+        undefined,
+        {
+          completed: true,
+          ranked: step.ranked.map((t) => t.id),
+        },
+      );
+
       if (usingLinear && args.apply && !args.dryRun) {
         console.log("\nApplying priorities to Linear...");
         const ranks = assignRankWeights(step.ranked, tickets);
@@ -1423,7 +1441,7 @@ async function main(): Promise<void> {
     await runBin(args);
     return;
   }
-  if (args.doNext || args.hierarchical) {
+  if (args.doNext || args.hierarchical || !args.topExplicit) {
     await runHierarchicalOrDoNext(args);
     return;
   }
