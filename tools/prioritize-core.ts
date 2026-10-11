@@ -878,11 +878,14 @@ export function computeTokenOverlap(setA: Set<string>, setB: Set<string>): numbe
 }
 
 export interface ConsolidationDecision {
-  cluster: string[];
+  tickets: string[];
+  cluster?: string[];
   decision: "merge" | "split" | "keep" | "later";
+  evidence?: string | Record<string, unknown>;
   canonical?: string;
   note?: string;
-  at: string;
+  decided_at: string;
+  at?: string;
   source: string;
 }
 
