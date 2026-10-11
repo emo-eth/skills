@@ -20,11 +20,8 @@ import {
   truncateAtWord,
   wordWrap,
   computeWorstCaseComparisons,
-  clusterTicketsForConsolidation,
-  generateConsolidationMarkdown,
   extractDeliverables,
   extractFiles,
-  computeTokenOverlap,
   type BinName,
   type ComparisonCache,
   type ComparisonResult,
@@ -612,40 +609,4 @@ test("Part A: comparisons already implied by Elo gaps > 200 are skipped", () => 
     assert.equal(step.ranked[0].id, "A");
     assert.equal(step.ranked[1].id, "B");
   }
-});
-
-test("Part C: clusterTicketsForConsolidation detects overlap >= 0.6 and extracts evidence", () => {
-  const tickets: Ticket[] = [
-    {
-      id: "EMO-101",
-      title: "Creatordex: Profile removal UI and ownership verification",
-      description:
-        "## What problem are you trying to solve?\nCreators requesting removal encounter an insecure flow with scraped contact emails rather than verified proof.\n\n## Deliverables\n* Removal UI in `src/app/remove/form.tsx`\n* API endpoint in `src/api/verify.ts`\n* PR: https://github.com/creatordex/repo/pull/500",
-    },
-    {
-      id: "EMO-102",
-      title: "Creatordex: Profile removal UI and ownership verification API routes",
-      description:
-        "## What problem are you trying to solve?\nCreators requesting removal encounter an insecure flow with scraped contact emails rather than verified proof.\n\n## Deliverables\n* Removal UI in `src/app/remove/form.tsx`\n* API endpoint in `src/api/verify.ts`\n* PR: https://github.com/creatordex/repo/pull/500",
-    },
-    {
-      id: "EMO-103",
-      title: "Completely unrelated payment billing invoice generation",
-      description: "## What problem are you trying to solve?\nPayment invoices fail to generate for Stripe customers.",
-    },
-  ];
-
-  const clusters = clusterTicketsForConsolidation(tickets, 0.6);
-  assert.equal(clusters.length, 1);
-  assert.equal(clusters[0].tickets.length, 2);
-  assert.equal(clusters[0].tickets[0].id, "EMO-101");
-  assert.equal(clusters[0].tickets[1].id, "EMO-102");
-  assert.ok(clusters[0].sharedFiles.includes("src/app/remove/form.tsx"));
-  assert.ok(clusters[0].sharedFiles.includes("src/api/verify.ts"));
-
-  const md = generateConsolidationMarkdown(clusters);
-  assert.match(md, /Candidate Consolidation Clusters/);
-  assert.match(md, /EMO-101/);
-  assert.match(md, /EMO-102/);
-  assert.match(md, /src\/app\/remove\/form\.tsx/);
 });

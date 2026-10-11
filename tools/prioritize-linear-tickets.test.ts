@@ -18,8 +18,6 @@ import {
   normalizeTriageChoice,
   recordReassessDecision,
   removeReassessDecision,
-  recordConsolidationDecision,
-  parseConsolidationChoice,
 } from "./prioritize-linear-tickets.ts";
 import {
   computeWorstCaseComparisons,
@@ -1621,87 +1619,6 @@ test("removeReassessDecision removes row from approvals.json", async () => {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
-
-test("recordConsolidationDecision persists merge, split, keep, later under consolidation[] in approvals.json", async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), "approvals-consolidation-test-"));
-  const approvalsPath = join(tempDir, "approvals.json");
-
-  try {
-    // 1. Merge decision with evidence
-    await recordConsolidationDecision(
-      ["EMO-1", "EMO-2"],
-      "merge",
-      "EMO-1",
-      undefined,
-      { approvalsPath, evidence: "Shared terms: profile, removal; Similarity: 0.85" },
-    );
-    let data = JSON.parse(await readFile(approvalsPath, "utf8"));
-    assert.ok(Array.isArray(data.consolidation));
-    assert.equal(data.consolidation.length, 1);
-    assert.equal(data.consolidation[0].decision, "merge");
-    assert.equal(data.consolidation[0].canonical, "EMO-1");
-    assert.deepEqual(data.consolidation[0].tickets, ["EMO-1", "EMO-2"]);
-    assert.deepEqual(data.consolidation[0].cluster, ["EMO-1", "EMO-2"]);
-    assert.equal(data.consolidation[0].evidence, "Shared terms: profile, removal; Similarity: 0.85");
-    assert.ok(typeof data.consolidation[0].decided_at === "string");
-
-    // 2. Split decision
-    await recordConsolidationDecision(
-      ["EMO-3", "EMO-4"],
-      "split",
-      undefined,
-      "Separate mobile from desktop routes",
-      approvalsPath,
-    );
-    data = JSON.parse(await readFile(approvalsPath, "utf8"));
-    assert.equal(data.consolidation.length, 2);
-    const splitRow = data.consolidation.find((c: { decision: string }) => c.decision === "split");
-    assert.ok(splitRow);
-    assert.equal(splitRow.note, "Separate mobile from desktop routes");
-    assert.deepEqual(splitRow.tickets, ["EMO-3", "EMO-4"]);
-    assert.ok(typeof splitRow.decided_at === "string");
-
-    // 3. Keep decision
-    await recordConsolidationDecision(
-      ["EMO-5", "EMO-6"],
-      "keep",
-      undefined,
-      undefined,
-      approvalsPath,
-    );
-    data = JSON.parse(await readFile(approvalsPath, "utf8"));
-    assert.equal(data.consolidation.length, 3);
-    assert.deepEqual(data.consolidation[2].tickets, ["EMO-5", "EMO-6"]);
-
-    // 4. Later decision
-    await recordConsolidationDecision(
-      ["EMO-7", "EMO-8"],
-      "later",
-      undefined,
-      undefined,
-      approvalsPath,
-    );
-    data = JSON.parse(await readFile(approvalsPath, "utf8"));
-    assert.equal(data.consolidation.length, 4);
-    assert.deepEqual(data.consolidation[3].tickets, ["EMO-7", "EMO-8"]);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("parseConsolidationChoice parses M <n>, S <note>, K, and L", () => {
-  assert.deepEqual(parseConsolidationChoice("m 2", 3), { action: "merge", canonicalIndex: 2 });
-  assert.deepEqual(parseConsolidationChoice("merge", 3), { action: "merge", canonicalIndex: 1 });
-  assert.deepEqual(parseConsolidationChoice("s split by platform", 3), {
-    action: "split",
-    note: "split by platform",
-  });
-  assert.deepEqual(parseConsolidationChoice("k", 3), { action: "keep" });
-  assert.deepEqual(parseConsolidationChoice("keep", 3), { action: "keep" });
-  assert.deepEqual(parseConsolidationChoice("l", 3), { action: "later" });
-  assert.deepEqual(parseConsolidationChoice("later", 3), { action: "later" });
-});
-
 test("Feature B: pairwise comparison undo reverts comparison and decrements comparisons count", () => {
   const state: PrioritizeState = {
     schema_version: 3,

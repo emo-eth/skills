@@ -25,14 +25,9 @@ import {
   recordComparisonAnswer,
   wordWrap,
   computeWorstCaseComparisons,
-  clusterTicketsForConsolidation,
-  renderClusterCard,
-  generateConsolidationMarkdown,
   type BinName,
   type ComparisonCache,
   type ComparisonResult,
-  type ConsolidationCluster,
-  type ConsolidationDecision,
   type PrioritizeEngineState,
   type PrioritizeState,
   type Ticket,
@@ -146,7 +141,6 @@ type ReviewState = {
   tickets?: Record<string, TicketRecord>;
   applying?: ApplyingCheckpoint;
   updatedAt: string;
-  consolidation_resolved?: string[][];
 };
 
 function errorCode(error: unknown): string | undefined {
@@ -396,7 +390,7 @@ async function writeState(
   comparisons: ComparisonCache,
   ticketsOrApplying?: Record<string, TicketRecord> | ApplyingCheckpoint,
   applying?: ApplyingCheckpoint,
-  extra?: { completed?: boolean; ranked?: string[]; consolidation_resolved?: string[][] },
+  extra?: { completed?: boolean; ranked?: string[] },
 ): Promise<void> {
   await mkdir(dirname(stateFile), { recursive: true });
   const temporaryFile = `${stateFile}.${process.pid}.tmp`;
@@ -421,7 +415,6 @@ async function writeState(
     tickets,
     applying: checkpoint,
     updatedAt: new Date().toISOString(),
-    consolidation_resolved: extra?.consolidation_resolved,
   };
   await writeFile(temporaryFile, `${JSON.stringify(state, null, 2)}\n`, "utf8");
   await rename(temporaryFile, stateFile);
@@ -516,9 +509,6 @@ export async function recordReassessDecision(
   }
 }
 
-export const DEFAULT_CONSOLIDATION_MD_PATH =
-  process.env.CONSOLIDATION_MD_PATH ||
-  "/Users/emo/.herdr/worktrees/scratch/standup/.command-center/creatordex-duplicates.md";
 
 export async function removeReassessDecision(
   ticketId: string,
@@ -544,105 +534,6 @@ export async function removeReassessDecision(
   }
 }
 
-export async function recordConsolidationDecision(
-  cluster: string[],
-  decision: "merge" | "split" | "keep" | "later",
-  canonical?: string,
-  note?: string,
-  approvalsPathOrOptions:
-    | string
-    | { approvalsPath?: string; evidence?: string | Record<string, unknown> } = DEFAULT_APPROVALS_PATH,
-  extraEvidence?: string | Record<string, unknown>,
-): Promise<void> {
-  const approvalsPath =
-    typeof approvalsPathOrOptions === "object"
-      ? approvalsPathOrOptions.approvalsPath ?? DEFAULT_APPROVALS_PATH
-      : approvalsPathOrOptions;
-  const evidence =
-    typeof approvalsPathOrOptions === "object"
-      ? approvalsPathOrOptions.evidence
-      : extraEvidence;
-
-  try {
-    let approvals: {
-      consolidation?: ConsolidationDecision[];
-      [key: string]: unknown;
-    } = {};
-    try {
-      const raw = await readFile(approvalsPath, "utf8");
-      approvals = JSON.parse(raw);
-    } catch {
-      approvals = {};
-    }
-    if (!Array.isArray(approvals.consolidation)) {
-      approvals.consolidation = [];
-    }
-    const nowIso = new Date().toISOString();
-    const row: ConsolidationDecision = {
-      tickets: cluster,
-      cluster,
-      decision,
-      evidence: evidence ?? "",
-      decided_at: nowIso,
-      at: nowIso,
-      ...(canonical ? { canonical } : {}),
-      ...(note ? { note } : {}),
-      source: "prioritize-tui",
-    };
-    const clusterKey = [...cluster].sort().join(",");
-    const existingIndex = approvals.consolidation.findIndex(
-      (c) => [...(c.tickets || c.cluster || [])].sort().join(",") === clusterKey,
-    );
-    if (existingIndex >= 0) {
-      approvals.consolidation[existingIndex] = row;
-    } else {
-      approvals.consolidation.push(row);
-    }
-    await mkdir(dirname(approvalsPath), { recursive: true });
-    const tempFile = `${approvalsPath}.${process.pid}.tmp`;
-    await writeFile(tempFile, `${JSON.stringify(approvals, null, 2)}\n`, "utf8");
-    await rename(tempFile, approvalsPath);
-  } catch (err) {
-    console.error("Warning: Failed to update approvals.json consolidation:", err);
-  }
-}
-
-export type ConsolidationChoice =
-  | { action: "merge"; canonicalIndex: number }
-  | { action: "split"; note?: string }
-  | { action: "keep" }
-  | { action: "later" };
-
-export function parseConsolidationChoice(
-  raw: string,
-  clusterSize: number,
-): ConsolidationChoice | undefined {
-  const line = raw.trim();
-  const lower = line.toLowerCase();
-  if (lower.startsWith("m") || lower.startsWith("merge")) {
-    const parts = line.split(/\s+/);
-    let idx = 1;
-    if (parts.length > 1) {
-      const parsed = parseInt(parts[1], 10);
-      if (!isNaN(parsed) && parsed >= 1 && parsed <= clusterSize) {
-        idx = parsed;
-      }
-    }
-    return { action: "merge", canonicalIndex: idx };
-  }
-  if (lower.startsWith("s") || lower.startsWith("split")) {
-    const parts = line.split(/\s+/);
-    const note = parts.length > 1 ? parts.slice(1).join(" ") : undefined;
-    return { action: "split", note };
-  }
-  if (lower.startsWith("k") || lower.startsWith("keep")) {
-    return { action: "keep" };
-  }
-  if (lower.startsWith("l") || lower.startsWith("later")) {
-    return { action: "later" };
-  }
-  return undefined;
-}
 
 async function chooseComparison(): Promise<ComparisonAction> {
   const result = await rawChoice(
@@ -706,35 +597,6 @@ class AnswerProvider {
     return chooseComparison();
   }
 
-  async nextConsolidation(clusterSize: number): Promise<ConsolidationChoice> {
-    if (this.fromFile) {
-      if (this.index >= this.answers.length) {
-        return { action: "later" };
-      }
-      const raw = this.answers[this.index++];
-      const choice = parseConsolidationChoice(raw, clusterSize);
-      if (!choice) return { action: "later" };
-      return choice;
-    }
-    while (true) {
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const raw = await rl.question(
-        "Choice: [M]erge into <n>   [S]plit differently (free text)   [K]eep all distinct   [L]ater: ",
-      );
-      rl.close();
-      const choice = parseConsolidationChoice(raw, clusterSize);
-      if (choice) {
-        if (choice.action === "split" && !choice.note) {
-          const rl2 = createInterface({ input: process.stdin, output: process.stdout });
-          const note = await rl2.question("Enter split note: ");
-          rl2.close();
-          choice.note = note.trim();
-        }
-        return choice;
-      }
-      console.log("Invalid option. Please enter M <n>, S <note>, K, or L.");
-    }
-  }
 
   async nextBin(): Promise<BinChoiceAction> {
     if (this.fromFile) {
@@ -1588,7 +1450,6 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
     tickets: saved?.tickets ?? {},
     comparisons: saved?.comparisons ?? {},
     updatedAt: saved?.updatedAt ?? new Date().toISOString(),
-    consolidation_resolved: saved?.consolidation_resolved ?? [],
   };
 
   for (const t of tickets) {
@@ -1633,101 +1494,8 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
     console.log(`Tip: Press [B] during binning to undo and change a previous answer.\n`);
   }
 
-  // Consolidation candidate triage
-  const clusters = clusterTicketsForConsolidation(tickets, 0.6);
-  try {
-    const md = generateConsolidationMarkdown(clusters);
-    await mkdir(dirname(DEFAULT_CONSOLIDATION_MD_PATH), { recursive: true });
-    await writeFile(DEFAULT_CONSOLIDATION_MD_PATH, md, "utf8");
-  } catch (err) {
-    console.error("Warning: Failed to write creatordex-duplicates.md:", err);
-  }
-
-  const resolvedClusterKeys = new Set(
-    (state.consolidation_resolved || []).map((c) => [...c].sort().join(",")),
-  );
-  const activeClusters = clusters.filter((c) => {
-    const key = c.tickets.map((t) => t.id).sort().join(",");
-    return !resolvedClusterKeys.has(key);
-  });
-
-  const excludedTicketIds = new Set<string>();
-  try {
-    const rawApprovals = await readFile(DEFAULT_APPROVALS_PATH, "utf8");
-    const app = JSON.parse(rawApprovals);
-    if (Array.isArray(app.consolidation)) {
-      for (const item of app.consolidation) {
-        const tks = item.tickets || item.cluster || [];
-        if (item.decision === "merge" && item.canonical) {
-          for (const id of tks) {
-            if (id !== item.canonical) excludedTicketIds.add(id);
-          }
-        } else if (item.decision === "later") {
-          for (const id of tks) {
-            excludedTicketIds.add(id);
-          }
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-  if (activeClusters.length > 0 && !answerProvider.isFromFile()) {
-    console.log(
-      `\n${BOLD}Found ${activeClusters.length} candidate consolidation cluster(s) with token overlap >= 0.6.${RESET}\n`,
-    );
-    for (let cIdx = 0; cIdx < activeClusters.length; cIdx++) {
-      const cluster = activeClusters[cIdx];
-      console.log(renderClusterCard(cluster.tickets, cIdx, activeClusters.length));
-
-      const choice = await answerProvider.nextConsolidation(cluster.tickets.length);
-      const clusterKeys = cluster.tickets.map((t) => t.id);
-      const evidence = `Shared terms: ${cluster.sharedTokens.slice(0, 10).join(", ")}; Shared files: ${cluster.sharedFiles.join(", ") || "none"}; Similarity: ${cluster.similarity.toFixed(2)}`;
-
-      if (choice.action === "merge") {
-        const canonicalIdx = Math.max(
-          0,
-          Math.min(cluster.tickets.length - 1, choice.canonicalIndex - 1),
-        );
-        const canonical = cluster.tickets[canonicalIdx].id;
-        await recordConsolidationDecision(clusterKeys, "merge", canonical, undefined, { evidence });
-        if (!state.consolidation_resolved) state.consolidation_resolved = [];
-        state.consolidation_resolved.push(clusterKeys);
-        await writeState(stateFile, "", args.top, state.comparisons, state.tickets, undefined, {
-          consolidation_resolved: state.consolidation_resolved,
-        });
-        for (const t of cluster.tickets) {
-          if (t.id !== canonical) excludedTicketIds.add(t.id);
-        }
-        console.log(`Merged cluster into canonical ${canonical}. Other tickets excluded from ranking.\n`);
-      } else if (choice.action === "split") {
-        await recordConsolidationDecision(clusterKeys, "split", undefined, choice.note, { evidence });
-        if (!state.consolidation_resolved) state.consolidation_resolved = [];
-        state.consolidation_resolved.push(clusterKeys);
-        await writeState(stateFile, "", args.top, state.comparisons, state.tickets, undefined, {
-          consolidation_resolved: state.consolidation_resolved,
-        });
-        console.log(`Recorded split note for cluster.\n`);
-      } else if (choice.action === "keep") {
-        await recordConsolidationDecision(clusterKeys, "keep", undefined, undefined, { evidence });
-        if (!state.consolidation_resolved) state.consolidation_resolved = [];
-        state.consolidation_resolved.push(clusterKeys);
-        await writeState(stateFile, "", args.top, state.comparisons, state.tickets, undefined, {
-          consolidation_resolved: state.consolidation_resolved,
-        });
-        console.log(`Marked cluster as distinct/keep.\n`);
-      } else if (choice.action === "later") {
-        await recordConsolidationDecision(clusterKeys, "later", undefined, undefined, { evidence });
-        for (const t of cluster.tickets) {
-          excludedTicketIds.add(t.id);
-        }
-        console.log(`Deferred cluster for later. Excluded from pairwise ranking this session.\n`);
-      }
-    }
-  }
-
   const top = args.top;
-  const activeTickets = tickets.filter((t) => !excludedTicketIds.has(t.id));
+  const activeTickets = tickets;
   const engineState: PrioritizeEngineState = {
     tickets: activeTickets,
     state,
@@ -1869,9 +1637,7 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           continue;
         }
         if (choice === "pause") {
-          await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-            consolidation_resolved: state.consolidation_resolved,
-          });
+          await writeState(stateFile, "", top, state.comparisons, state.tickets);
           console.log("Paused. Progress saved.");
           return;
         }
@@ -1887,9 +1653,7 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           delete state.tickets[prevId].bin;
           delete state.tickets[prevId].reassess_reason;
           decided = Math.max(0, decided - 1);
-          await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-            consolidation_resolved: state.consolidation_resolved,
-          });
+          await writeState(stateFile, "", top, state.comparisons, state.tickets);
           notice = `Undid bin for [${prevId}]. Re-displaying for review.`;
           break;
         }
@@ -1912,30 +1676,25 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           await recordReassessDecision(step.ticket.id, reason);
           binHistory.push(step.ticket.id);
           decided += 1;
-          await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-            consolidation_resolved: state.consolidation_resolved,
-          });
+          await writeState(stateFile, "", top, state.comparisons, state.tickets);
           console.log(`Marked ${step.ticket.id} for reassessment`);
           break;
         }
         recordBinAnswer(state, step.ticket.id, choice);
         binHistory.push(step.ticket.id);
         decided += 1;
-        await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-          consolidation_resolved: state.consolidation_resolved,
-        });
+        await writeState(stateFile, "", top, state.comparisons, state.tickets);
         break;
       }
       continue;
     } else if (step.kind === "compare") {
       const nowPool = tickets.filter(
-        (t) => state.tickets[t.id]?.bin === "now" && !excludedTicketIds.has(t.id),
+        (t) => state.tickets[t.id]?.bin === "now",
       );
       const poolTotal = engineState.options.includeNext
         ? tickets.filter(
             (t) =>
-              (state.tickets[t.id]?.bin === "now" || state.tickets[t.id]?.bin === "next") &&
-              !excludedTicketIds.has(t.id),
+              state.tickets[t.id]?.bin === "now" || state.tickets[t.id]?.bin === "next",
           ).length
         : nowPool.length;
       const poolName = engineState.options.includeNext ? "Now + Next" : "Now";
@@ -1953,9 +1712,7 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
       );
       const choice = await answerProvider.nextComparison();
       if (choice === "pause") {
-        await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-          consolidation_resolved: state.consolidation_resolved,
-        });
+        await writeState(stateFile, "", top, state.comparisons, state.tickets);
         console.log("Paused. Progress saved.");
         return;
       }
@@ -1974,9 +1731,7 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
           state.tickets[idB].comparisons = Math.max(0, (state.tickets[idB].comparisons ?? 1) - 1);
         }
         decided = Math.max(0, decided - 1);
-        await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-          consolidation_resolved: state.consolidation_resolved,
-        });
+        await writeState(stateFile, "", top, state.comparisons, state.tickets);
         console.log(`Undid last comparison (${lastKey}).`);
         continue;
       }
@@ -1988,9 +1743,7 @@ async function runHierarchicalOrDoNext(args: Arguments): Promise<void> {
       recordComparisonAnswer(state, step.left.id, step.right.id, choice);
       comparisonHistory.push(step.key);
       decided += 1;
-      await writeState(stateFile, "", top, state.comparisons, state.tickets, undefined, {
-        consolidation_resolved: state.consolidation_resolved,
-      });
+      await writeState(stateFile, "", top, state.comparisons, state.tickets);
       console.log(`${step.left.id} vs ${step.right.id}: ${choice}`);
     }
   }
