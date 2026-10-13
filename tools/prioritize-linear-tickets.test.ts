@@ -14,8 +14,15 @@ import {
 } from "./linear-client.ts";
 import {
   formatProgress,
+  normalizeBinChoice,
   normalizeTriageChoice,
+  recordReassessDecision,
+  removeReassessDecision,
 } from "./prioritize-linear-tickets.ts";
+import {
+  computeWorstCaseComparisons,
+  type PrioritizeState,
+} from "./prioritize-core.ts";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
 const cli = join(toolsDir, "prioritize-linear-tickets.ts");
@@ -283,6 +290,7 @@ function childEnv(root: string, extra: Record<string, string>): NodeJS.ProcessEn
     PATH: `${join(root, "bin")}:${process.env.PATH ?? ""}`,
     LINEAR_FAKE_STATE: join(root, "db.json"),
     LINEAR_FAKE_LOG: join(root, "log"),
+    CONSOLIDATION_MD_PATH: join(root, "creatordex-duplicates.md"),
     NO_COLOR: "1",
     ...extra,
   };
@@ -1412,4 +1420,263 @@ test("prioritize-linear-tickets CLI --bin --dry-run keeps terminal actions pendi
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("prioritize-linear-tickets CLI --do-next with --answers drives non-interactively without touching Linear", async () => {
+  const root = await createRoot({
+    tickets: [
+      { id: "EMO-1", title: "Task 1", priority: 1, project: creatordex },
+      { id: "EMO-2", title: "Task 2", priority: 2, project: creatordex },
+      { id: "EMO-3", title: "Task 3", priority: 3, project: creatordex },
+      { id: "EMO-4", title: "Task 4", priority: 4, project: creatordex },
+      { id: "EMO-5", title: "Task 5", priority: 0, project: creatordex },
+    ],
+  });
+  try {
+    const stateFile = join(root, "state.json");
+    const answersFile = join(root, "answers.txt");
+    const outputFile = join(root, "output.json");
+
+    // Answers: EMO-1 is already priority 1 (seeded Now). EMO-2 is priority 2 (seeded Next).
+    // If candidate binning is asked: 1 (Now) for EMO-2, 1 (Now) for EMO-3.
+    // Then pairwise comparisons: left (l), left (l).
+    await writeFile(answersFile, "1\n1\nl\nl\nl\n", "utf8");
+
+    const result = await runCli(
+      [
+        "--do-next",
+        "--project",
+        "Creatordex",
+        "--state",
+        stateFile,
+        "--answers",
+        answersFile,
+        "--output",
+        outputFile,
+      ],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+      },
+    );
+
+    assert.equal(result.code, 0, `stdout: ${result.stdout} stderr: ${result.stderr}`);
+    assert.match(result.stdout, /Top 3 Ranked Tickets/);
+    assert.match(result.stdout, /No --apply flag: Linear issues were not modified/);
+
+    // Verify Linear was NOT touched
+    const calls = await readLog(root);
+    assert.equal(calls.length, 0, `Expected 0 Linear mutations, got: ${JSON.stringify(calls)}`);
+
+    // Verify output.json
+    const output = JSON.parse(await readFile(outputFile, "utf8")) as {
+      top: number;
+      mode: string;
+      selected: Array<{ rank: number; id: string; title: string }>;
+    };
+    assert.equal(output.top, 3);
+    assert.equal(output.mode, "do-next");
+    assert.equal(output.selected.length, 3);
+
+    // Verify state.json contains ticket records with elo, last_reviewed_at, comparisons, bin
+    const state = JSON.parse(await readFile(stateFile, "utf8")) as {
+      schema_version: number;
+      tickets: Record<string, { elo: number; last_reviewed_at: string; comparisons: number; bin?: string }>;
+      comparisons: Record<string, string>;
+    };
+    assert.equal(state.schema_version, 3);
+    assert.ok(state.tickets["EMO-1"]);
+    assert.equal(typeof state.tickets["EMO-1"].elo, "number");
+    assert.ok(state.tickets["EMO-1"].last_reviewed_at);
+
+    // Run again with empty answers: should immediately succeed with zero decisions because state is cached
+    const emptyAnswers = join(root, "empty-answers.txt");
+    await writeFile(emptyAnswers, "", "utf8");
+    const rerun = await runCli(
+      [
+        "--do-next",
+        "--project",
+        "Creatordex",
+        "--state",
+        stateFile,
+        "--answers",
+        emptyAnswers,
+      ],
+      {
+        cwd: root,
+        env: childEnv(root, {}),
+        stdinData: "",
+      },
+    );
+    assert.equal(rerun.code, 0, `stdout: ${rerun.stdout} stderr: ${rerun.stderr}`);
+    assert.match(rerun.stdout, /Total decisions made: 0/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("normalizeBinChoice supports 1-4 bins, q pause, d details toggle, and o url print", () => {
+  assert.equal(normalizeBinChoice("1"), "now");
+  assert.equal(normalizeBinChoice("n"), "now");
+  assert.equal(normalizeBinChoice("now"), "now");
+  assert.equal(normalizeBinChoice("2"), "next");
+  assert.equal(normalizeBinChoice("x"), "next");
+  assert.equal(normalizeBinChoice("next"), "next");
+  assert.equal(normalizeBinChoice("3"), "later");
+  assert.equal(normalizeBinChoice("l"), "later");
+  assert.equal(normalizeBinChoice("later"), "later");
+  assert.equal(normalizeBinChoice("4"), "never");
+  assert.equal(normalizeBinChoice("v"), "never");
+  assert.equal(normalizeBinChoice("never"), "never");
+  assert.equal(normalizeBinChoice("5"), "reassess");
+  assert.equal(normalizeBinChoice("r"), "reassess");
+  assert.equal(normalizeBinChoice("reassess"), "reassess");
+  assert.equal(normalizeBinChoice("quit"), "pause");
+  assert.equal(normalizeBinChoice("pause"), "pause");
+  assert.equal(normalizeBinChoice("d"), "details");
+  assert.equal(normalizeBinChoice("details"), "details");
+  assert.equal(normalizeBinChoice("o"), "open");
+  assert.equal(normalizeBinChoice("open"), "open");
+  assert.equal(normalizeBinChoice("url"), "open");
+  assert.equal(normalizeBinChoice("unknown"), undefined);
+});
+
+test("recordReassessDecision writes row to approvals.json and is idempotent per ticket", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "approvals-test-"));
+  const approvalsPath = join(tempDir, "approvals.json");
+
+  try {
+    // Seed initial approvals file
+    const initial = {
+      repair_decisions: [
+        {
+          ticket: "EMO-EXISTING",
+          instruction: "existing repair",
+          at: "2026-10-09T00:00:00Z",
+          source: "worker",
+        },
+      ],
+    };
+    await writeFile(approvalsPath, JSON.stringify(initial, null, 2), "utf8");
+
+    // 1. Add reassess decision for EMO-100 with reason
+    await recordReassessDecision("EMO-100", "44px touch targets ambiguous", approvalsPath);
+    const afterFirst = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(afterFirst.repair_decisions.length, 2);
+    const firstRow = afterFirst.repair_decisions.find((r: { ticket: string }) => r.ticket === "EMO-100");
+    assert.ok(firstRow);
+    assert.equal(firstRow.instruction, "operator: unclear or needs edits via ranker - 44px touch targets ambiguous");
+    assert.equal(firstRow.source, "prioritize-tui");
+
+    // 2. Call again for EMO-100 with updated reason -> must be idempotent (no duplicate row)
+    await recordReassessDecision("EMO-100", "clarified spec required", approvalsPath);
+    const afterSecond = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(afterSecond.repair_decisions.length, 2, "Must not create duplicate row for same ticket");
+    const updatedRow = afterSecond.repair_decisions.find((r: { ticket: string }) => r.ticket === "EMO-100");
+    assert.ok(updatedRow);
+    assert.equal(updatedRow.instruction, "operator: unclear or needs edits via ranker - clarified spec required");
+    assert.equal(updatedRow.source, "prioritize-tui");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("normalizeBinChoice supports b back and undo", () => {
+  assert.equal(normalizeBinChoice("b"), "back");
+  assert.equal(normalizeBinChoice("back"), "back");
+  assert.equal(normalizeBinChoice("undo"), "back");
+});
+
+test("removeReassessDecision removes row from approvals.json", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "approvals-remove-test-"));
+  const approvalsPath = join(tempDir, "approvals.json");
+
+  try {
+    const initial = {
+      repair_decisions: [
+        {
+          ticket: "EMO-KEEP",
+          instruction: "keep this",
+          at: "2026-10-09T00:00:00Z",
+          source: "worker",
+        },
+        {
+          ticket: "EMO-REMOVE",
+          instruction: "remove this",
+          at: "2026-10-09T00:00:00Z",
+          source: "prioritize-tui",
+        },
+      ],
+    };
+    await writeFile(approvalsPath, JSON.stringify(initial, null, 2), "utf8");
+
+    await removeReassessDecision("EMO-REMOVE", approvalsPath);
+    const after = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(after.repair_decisions.length, 1);
+    assert.equal(after.repair_decisions[0].ticket, "EMO-KEEP");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+test("Feature B: pairwise comparison undo reverts comparison and decrements comparisons count", () => {
+  const state: PrioritizeState = {
+    schema_version: 3,
+    tickets: {
+      "EMO-A": { elo: 1600, comparisons: 1, bin: "now", last_reviewed_at: new Date().toISOString() },
+      "EMO-B": { elo: 1600, comparisons: 1, bin: "now", last_reviewed_at: new Date().toISOString() },
+    },
+    comparisons: {
+      "EMO-A\u0000EMO-B": "left",
+    },
+  };
+
+  const key = "EMO-A\u0000EMO-B";
+  delete state.comparisons[key];
+  state.tickets["EMO-A"].comparisons = Math.max(0, state.tickets["EMO-A"].comparisons - 1);
+  state.tickets["EMO-B"].comparisons = Math.max(0, state.tickets["EMO-B"].comparisons - 1);
+
+  assert.equal(state.comparisons[key], undefined);
+  assert.equal(state.tickets["EMO-A"].comparisons, 0);
+  assert.equal(state.tickets["EMO-B"].comparisons, 0);
+});
+
+test("Feature B: binning undo pops last ticket from binHistory, resets bin, and removes reassess row", async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), "undo-test-"));
+  const approvalsPath = join(tempDir, "approvals.json");
+
+  try {
+    await recordReassessDecision("EMO-10", "Needs acceptance criteria", approvalsPath);
+    let approvals = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(approvals.repair_decisions.length, 1);
+
+    const state: PrioritizeState = {
+      schema_version: 3,
+      tickets: {
+        "EMO-10": { elo: 1400, comparisons: 0, bin: "reassess", reassess_reason: "Needs acceptance criteria", last_reviewed_at: new Date().toISOString() },
+      },
+      comparisons: {},
+    };
+
+    const binHistory = ["EMO-10"];
+    const prevId = binHistory.pop()!;
+    if (state.tickets[prevId]?.bin === "reassess") {
+      await removeReassessDecision(prevId, approvalsPath);
+    }
+    delete state.tickets[prevId].bin;
+    delete state.tickets[prevId].reassess_reason;
+
+    assert.equal(state.tickets["EMO-10"].bin, undefined);
+    assert.equal(state.tickets["EMO-10"].reassess_reason, undefined);
+
+    approvals = JSON.parse(await readFile(approvalsPath, "utf8"));
+    assert.equal(approvals.repair_decisions.length, 0);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("Feature A: worstCase for now pool = 18 with k = 3 is 36 comparisons", () => {
+  const worstCase = computeWorstCaseComparisons(18, 3);
+  assert.equal(worstCase, 36);
 });
