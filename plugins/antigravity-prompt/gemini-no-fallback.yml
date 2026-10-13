@@ -1,4 +1,0 @@
-retry:
-  fallbackChains:
-    google-antigravity/gemini-3.7-flash: []
-    google-antigravity/gemini-3.8-flash: []
