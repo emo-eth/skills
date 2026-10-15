@@ -104,7 +104,7 @@ The cross-runtime advisor profiles package (`plugins/advisor-profiles/`) provide
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
 The router runtime now lives in `~/dev/agent-plugins/plugins/local-model-router/`.
-The Studio launch service uses that source and a chezmoi-managed config. Each Spark
+The Studio launch service and direct Bun CLI commands use that source; chezmoi owns the service config. Each Spark
 admits four requests for `ornith`; overflow waits at most 30 seconds before HTTP
 429. Health probes check loaded model IDs. Stream completion, errors, and client
 cancellation release each slot exactly once, after upstream cancellation settles.

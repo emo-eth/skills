@@ -33,21 +33,21 @@ Sparks. Missing or malformed explicit config files stop startup.
 
 Start the router daemon:
 ```sh
-local-model-router start --config "$HOME/.config/local-model-router/config.json" --port 8080 --host 0.0.0.0
+bun "$HOME/dev/agent-plugins/plugins/local-model-router/src/cli.ts" start --config "$HOME/.config/local-model-router/config.json" --port 8080 --host 0.0.0.0
 ```
 
 Inspect fleet status:
 ```sh
-local-model-router status
+bun "$HOME/dev/agent-plugins/plugins/local-model-router/src/cli.ts" status
 # or JSON format
-local-model-router status --json
+bun "$HOME/dev/agent-plugins/plugins/local-model-router/src/cli.ts" status --json
 ```
 
 Inspect Pi-grain inference telemetry:
 ```sh
-local-model-router stats --limit 20
+bun "$HOME/dev/agent-plugins/plugins/local-model-router/src/cli.ts" stats --limit 20
 # filter by session
-local-model-router stats --session <session-id>
+bun "$HOME/dev/agent-plugins/plugins/local-model-router/src/cli.ts" stats --session <session-id>
 ```
 
 ## Tools and Commands
