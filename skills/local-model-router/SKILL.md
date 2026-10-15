@@ -64,12 +64,27 @@ To point OMP to the router, add this provider block in `~/.omp/agent/models.yml`
 providers:
   local-model-router:
     baseUrl: http://studio:8080/v1
-    apiKey: local-fleet-token
     api: openai-completions
-    models:
-      - id: ornith
+    auth: none
+    discovery:
+      type: openai-models-list
+    modelOverrides:
+      ornith:
         name: Ornith 1.5 35B A3B (NVFP4)
+        reasoning: true
+        thinking:
+          mode: effort
+          efforts: [high]
+          defaultLevel: high
+        input: [text]
+        supportsTools: true
         contextWindow: 262144
         maxTokens: 32768
-        reasoning: true
+        compat:
+          maxTokensField: max_tokens
+          supportsStore: false
+          supportsDeveloperRole: false
+          supportsReasoningEffort: false
+          thinkingFormat: qwen-chat-template
+          requiresReasoningContentForToolCalls: true
 ```
