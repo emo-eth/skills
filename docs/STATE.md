@@ -103,6 +103,15 @@ The native command `/tenet` (`plugins/tenet/`) is a Yearn-shaped capture for sta
 The cross-runtime advisor profiles package (`plugins/advisor-profiles/`) provides post-turn reviews across OMP, Pi, and Hermes from shared `WATCHDOG.yml` rosters (`skills/advisor-profiles/SKILL.md`). Advisors support optional `when` trigger conditions (`files`, `paths`, and `message_matches`). Pi and Hermes evaluate `when` before invoking the secondary model, yielding a `skipped` outcome with reason and skipping follow-up when conditions do not match. OMP's native advisor subsystem ignores `when` and still spends on all enabled advisors on every turn.
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
 
+The router runtime now lives in `~/dev/agent-plugins/plugins/local-model-router/`.
+The Studio launch service uses that source and a chezmoi-managed config. Each Spark
+admits four requests for `ornith`; overflow waits at most 30 seconds before HTTP
+429. Health probes check loaded model IDs. Stream completion, errors, and client
+cancellation release each slot exactly once, after upstream cancellation settles.
+Node and Bun tests cover HTTP streaming, tool-ready SSE forwarding, cancellation,
+health checks, and the 30-second deadline. This replaces the earlier immediate-429
+policy for the current Spark request; broader router diagnostics remain as before.
+
 ## Standing constraints
 
 - An active wall-clock limit must be host-enforced; unsupported activation fails closed. [D4]
@@ -144,7 +153,7 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Focus order deployment | Herdr 0.9.0 missing-runtime-dependency repair described above | `plugins/focus-order/herdr-plugin.toml`, `package.json`, `package-lock.json` | clean-package build/start smoke, 113 Node tests, typecheck, live Herdr manager navigation, popup launch and event-hook success | verified-live for named macOS scenarios |
 | Ticket-bound attention | `docs/ticket-bound-attention/vibe.md`, `docs/log/2026-09-18-ticket-bound-implementation-plan.md`, EMO-426 | `plugins/ticket-bound-attention/` | package `npm test` (27/27), `npm run check`; live capture/open/desk/shelve/funeral; `rank` proposed sit/hide/ask without seating | verified-live for named macOS scenarios |
 | Linear ticket ranker | [EMO-456](https://linear.app/emo-eth/issue/EMO-456/ranker-project-filter), [EMO-458](https://linear.app/emo-eth/issue/EMO-458/cross-project-top-k-with-durable-linear-ranks), [EMO-488](https://linear.app/emo-eth/issue/EMO-488/ticket-ranker-tui-on-screen-controls-deletedone-triage-actions-and-x), `docs/log/2026-09-18-cross-project-topk-linear-ranks.md` | `tools/prioritize-linear-tickets.ts`, `tools/linear-ranks.ts`, `tools/linear-client.ts` | 53 Node tests (core + ranks + CLI triage D/C actions, progress counters, and shortcut banners) | source-verified |
-| Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md`, `prd.md`, D42 | `plugins/local-model-router/`, `skills/local-model-router/` | 9 Node/Bun unit tests and live-verification smoke testing exact contracts, fail-fast 429/503, invisibility, and Pi-grain stats | verified-live |
+| Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md`, `prd.md`, D42 | `~/dev/agent-plugins/plugins/local-model-router/`, `skills/local-model-router/` | Node/Bun admission, streaming, cancellation, health, config tests; live Spark and OMP verification recorded with EMO-422 | verified-live for the named checks |
 | Session history | `docs/prds/2026-09-02-session-history/vibe.md`, `prd.md`, D41 | `plugins/session-history/`, `skills/session-history/` | PRD approved 2026-09-15; `npm test` (15 Python, 17 Node, Pi and OMP native runner tests), `npm run check`, live CASS 0.7.1 installed via tap and verified | verified-live |
 | Agent memory | `docs/prds/2026-09-02-agent-memory/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 41 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, unofficial-version/custom-build update protection, restart-only mode, TUI client relaunch, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |

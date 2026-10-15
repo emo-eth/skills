@@ -5,7 +5,7 @@ description: "Operate and inspect the local model inference router across home f
 
 # Local Model Router
 
-Operate and inspect the local model router serving the user's home fleet (`spark0`, `spark1`, `emo-win`, `localhost`).
+Operate and inspect the local model router serving the user's home fleet (`spark0`, `spark1`, `emo-win`).
 
 The router exposes a standard OpenAI-compatible inference API over the tailnet. The model ID is an exact contract (weights, quantization, context window, and generation semantics); placement across physical machines is completely invisible to callers.
 
@@ -13,15 +13,27 @@ The router exposes a standard OpenAI-compatible inference API over the tailnet. 
 
 1. **Exact Model Contract:** Specifying a model ID (e.g. `qwen3.8-27b`, `qwen3.8-next-flash`) guarantees identical model weights, precision, and context capacity on whichever fleet machine serves it.
 2. **Invisible Placement:** Callers never choose or see machine names or internal IPs in requests or responses.
-3. **Fail-Fast Capacity (429):** Saturated backends immediately return HTTP 429 rather than hanging or queueing indefinitely.
-4. **Fail-Fast Unavailability (503):** Models not loaded on any reachable box immediately return HTTP 503.
+3. **Bounded Capacity Wait (429):** Each Spark admits at most four active requests. A request waits up to 30 seconds when all slots are busy, then returns HTTP 429. The router accepts only one generation per request (`n=1`).
+4. **Unavailable Models (503):** Models not loaded on any reachable box return HTTP 503. Startup and five-second health probes check each backend model list. Cancellation holds a slot until the upstream stream has stopped.
 5. **Pi-Grain Operator Diagnostics:** Stage-level metrics (TTFT, decode duration, tokens/sec, prompt/completion tokens, cache hit) and placement provenance are recorded for operators without leaking to callers.
+
+## Source and Service
+
+Author runtime changes in `~/dev/agent-plugins/plugins/local-model-router/`.
+The old `~/dev/skills/plugins/local-model-router/` runtime path was removed.
+Author this skill in `~/dev/skills/skills/local-model-router/SKILL.md`; the
+plugin skill file is its distribution copy.
+
+Studio runs the router with the `com.herdr.local-model-router` launch agent.
+Chezmoi owns its launch-agent template and `~/.config/local-model-router/config.json`.
+The `ornith` model uses the same NVFP4 weights and 262144-token context on both
+Sparks. Missing or malformed explicit config files stop startup.
 
 ## CLI Commands
 
 Start the router daemon:
 ```sh
-local-model-router start --port 8080 --host 0.0.0.0
+local-model-router start --config "$HOME/.config/local-model-router/config.json" --port 8080 --host 0.0.0.0
 ```
 
 Inspect fleet status:
@@ -50,16 +62,14 @@ When the plugin is loaded in Pi or OMP:
 To point OMP to the router, add this provider block in `~/.omp/agent/models.yml`:
 ```yaml
 providers:
-  local-fleet:
-    baseUrl: http://127.0.0.1:8080/v1
+  local-model-router:
+    baseUrl: http://studio:8080/v1
     apiKey: local-fleet-token
     api: openai-completions
     models:
-      - id: qwen3.8-27b
-        name: Qwen 3.8 27B (FP8)
-        contextWindow: 131072
-        reasoning: true
-      - id: qwen3.8-next-flash
-        name: Qwen 3.8 Next Flash (BF16)
+      - id: ornith
+        name: Ornith 1.5 35B A3B (NVFP4)
         contextWindow: 262144
+        maxTokens: 32768
+        reasoning: true
 ```
