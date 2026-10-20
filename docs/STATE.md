@@ -5,6 +5,19 @@
 This repository publishes personal skills and fourteen executable plugin packages. Wall-clock is the largest runtime package: native Pi and OMP adapters enforce time boundaries around sessions, assignments, and host actions. Codex and Claude remain portable discovery targets, not enforcement hosts.
 
 ## Where we are
+`skills/verify-tardigrade-pi/` is a user-invoked verification recipe for the
+Tardigrade Pi package. On macOS with Bun 1.4.2, the full RPC fixture passed on
+package revision `9246fc9` with 159 main checks, 19 reopen checks, and seven
+loopback model requests. The shell-stop fixture passed with seven checks and
+zero model requests; its three recorded processes exited. Evidence remains in
+`~/.local/state/tardigrade-pi-verification/20261020T015529Z-620/` and the sibling
+`20261020T015529Z-619/`. The checkout had unrelated dirty documentation and
+root-work changes; source, binary, and package hashes are in each evidence
+directory. These runs verify local RPC conversation, saved-session reopen, and
+shell stop only. TUI visual parity, clean installation, other platforms, crash
+recovery, and broad plugin coverage remain unverified. The package's existing
+149-row inventory remains the completion authority.
+
 The published `lc-north-star` skill now uses the five-document VDD chain:
 `vrd.md -> constraints.md -> prd.md -> decisions.md -> spec.md`. Plans,
 tickets, and issues remain execution adapters after the spec. The skill's
