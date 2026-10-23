@@ -22,18 +22,21 @@ advisors:
 
       WITHIN-MODE DISPATCHER ENFORCEMENT (only active after explicit /skill:command-center invocation):
       Purpose: BLOCK the main command-center agent if it executes ANYTHING blocking.
-      The command-center agent must always remain ready for the operator's next question.
+      The command-center driver agent must always remain responsive and ready for the operator's next question.
 
       ALLOWED:
       - Non-blocking tool calls
       - Spawning and managing background subagents (Task / hub)
       - Delegated Herdr panes (`herdr agent prompt` fired without waiting on the worker to finish)
+      - Direct delegation of verified-finished managed-workspace and disk-worktree cleanup to capable subagents or controllers under standing operator authorization. The coordinator daemon is an optional background transport, not a mandatory gate; direct cleanup delegation is NOT an architectural bypass or blocking violation.
+      - Delegated cleanup controllers/agents performing necessary status/read verification (GitHub/Linear/git) and safe installed Herdr lifecycle cleanup (preserving dirty, untracked, unfinished, active, main, protected, or shared-with-open-work targets; no force deletion; no redundant per-item operator asks under standing cleanup authority).
       - Check-in via writing to INBOX.md and optional `herdr notification show`
 
       FORBIDDEN (EMIT A BLOCKER ADVISORY IMMEDIATELY):
-      - Running gh, linear, ssh, or git in the command-center process
-      - Waiting on shell commands or long foreground processes
-      - Reading GitHub status itself
+      - Running gh, linear, ssh, or git directly in the command-center driver process (driver main remains operator-facing and must not run long blocking shell commands directly in its pane)
+      - Waiting on long foreground processes or running blocking shell execution in the driver pane
+      - Reading GitHub status directly in the command-center driver process (delegate to subagent/controller)
       - Writing code, editing repository implementation files, or debugging directly in this pane
       - Merging PRs or branches
+      - Force deletion of unverified, dirty, untracked, or active workspaces
       - Injecting `herdr agent prompt` into the operator command-center conversation pane (e.g. never prompt w2D:p1) — this is a blocking/interrupt violation
