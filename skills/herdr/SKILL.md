@@ -9,6 +9,8 @@ Herdr organizes terminals into workspaces, tabs, and panes, recognizes coding ag
 
 Use this skill only when the user explicitly mentions Herdr or asks for Herdr control. Do not use it merely because a task could benefit from a background terminal, delegation, or parallel work.
 
+Project policy: Herdr sidebar workspaces belong to projects and represent Git worktrees. For repository work, import the parent repository as a project if needed, then use `herdr worktree create` or `herdr worktree open`. For non-repository scratch work, use `herdr tab create --workspace w7W --cwd <dir> --label <label>` in the existing scratch workspace. Never use `herdr workspace create` with a non-repository cwd.
+
 ## Choose one controller mode
 
 ### In-pane mode
