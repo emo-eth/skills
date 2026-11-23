@@ -24,6 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import ssl
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Protocol
@@ -179,7 +180,12 @@ class UrlLibTransport:
     ) -> tuple[int, str]:
         req = urllib.request.Request(url, data=body, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            hostname = urllib.parse.urlparse(url).hostname or ""
+            context = ssl.create_default_context()
+            if hostname.endswith("tplinkcloud.com"):
+                ca_bundle = Path(__file__).resolve().parent.parent / "references" / "tplink-ca-chain.pem"
+                context.load_verify_locations(cafile=str(ca_bundle))
+            with urllib.request.urlopen(req, timeout=timeout, context=context) as resp:
                 return resp.status, resp.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             payload = exc.read().decode("utf-8", errors="replace")

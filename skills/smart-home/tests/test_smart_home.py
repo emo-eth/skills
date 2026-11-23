@@ -53,6 +53,39 @@ def passthrough(payload: dict):
     return kasa_ok({"responseData": json.dumps(payload)})
 
 
+class TestUrlLibTransport(unittest.TestCase):
+    def test_tplink_requests_use_default_verification_plus_vendor_ca(self):
+        transport = sh.UrlLibTransport()
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.status = 200
+        response.read.return_value = b"{}"
+        with patch.object(sh.ssl, "create_default_context", return_value=Mock()) as context_factory, patch.object(
+            sh.urllib.request, "urlopen", return_value=response
+        ) as urlopen:
+            self.assertEqual(transport.request("GET", "https://api.tplinkcloud.com/x", {}, None, 5), (200, "{}"))
+        context_factory.assert_called_once_with()
+        context_factory.return_value.load_verify_locations.assert_called_once()
+        ca_path = context_factory.return_value.load_verify_locations.call_args.kwargs["cafile"]
+        self.assertTrue(Path(ca_path).is_file())
+        self.assertTrue(urlopen.call_args.kwargs["context"] is context_factory.return_value)
+
+    def test_non_tplink_requests_keep_system_verification(self):
+        transport = sh.UrlLibTransport()
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.status = 200
+        response.read.return_value = b"{}"
+        with patch.object(sh.ssl, "create_default_context", return_value=Mock()) as context_factory, patch.object(
+            sh.urllib.request, "urlopen", return_value=response
+        ):
+            transport.request("GET", "https://example.com/x", {}, None, 5)
+        context_factory.assert_called_once_with()
+        context_factory.return_value.load_verify_locations.assert_not_called()
+
+
 class TestDecodeKasaAlias(unittest.TestCase):
     def test_decodes_matter_base64_aliases(self):
         self.assertEqual(sh.decode_kasa_alias("U3Bhcmtz"), "Sparks")
