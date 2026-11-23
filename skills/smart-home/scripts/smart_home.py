@@ -8,6 +8,7 @@ import asyncio
 import base64
 import ipaddress
 import getpass
+import hmac
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ import threading
 import time
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass, field
@@ -29,6 +31,12 @@ from urllib.parse import urlencode
 
 DEFAULT_CONFIG = Path.home() / ".config" / "smart-home" / "config.toml"
 KASA_CLOUD_URL = "https://wap.tplinkcloud.com"
+APP_SERVER_REGION_URL = "https://n-wap.i.tplinkcloud.com"
+APP_SERVER_SERVICE_ID = "nbu.iot-app-server.app-v2"
+APP_SERVER_APP = "Kasa_Android_Mix"
+APP_SERVER_VERSION = "3.4.703"
+APP_SERVER_ACCESS_KEY = "e37525375f8845999bcc56d5e6faa76d"
+APP_SERVER_SECRET_KEY = "314bc6700b3140ca80bc655e527cb062"
 CONFIRM_CYCLE = "cycle"
 DEFAULT_OFF_SECONDS = 8.0
 KASA_DEVICE_OFFLINE_CODE = -20571
@@ -1192,6 +1200,7 @@ class PythonKasaBackend:
             raise DeviceOffline(f"KLAP {host} power failed: {exc}") from exc
 
 
+
 class KasaCloudConnector:
     name = "kasa"
 
@@ -1210,6 +1219,8 @@ class KasaCloudConnector:
         self._devices: list[Device] | None = None
         self._scanned = False
         self._scan_lock = threading.Lock()
+        self._app_session: tuple[str, str, str] | None = None
+        self._app_rows: list[dict[str, Any]] | None = None
         self._terminal = self._load_terminal_uuid()
 
     def _local_backend(self) -> LocalKasaBackend:
@@ -1371,6 +1382,164 @@ class KasaCloudConnector:
         if not self._token:
             self.login()
 
+    def _app_signed_post(
+        self, host: str, path: str, payload: dict[str, Any], term: str,
+        token: str | None = None,
+    ) -> dict[str, Any]:
+        text = json.dumps(payload, separators=(",", ":"))
+        content_md5 = base64.b64encode(hashlib.md5(text.encode()).digest()).decode()
+        nonce = str(uuid.uuid4())
+        signature = hmac.new(
+            APP_SERVER_SECRET_KEY.encode(),
+            f"{content_md5}\n9999999999\n{nonce}\n{path}".encode(),
+            hashlib.sha1,
+        ).hexdigest()
+        params = {
+            "appName": APP_SERVER_APP, "appVer": APP_SERVER_VERSION,
+            "netType": "wifi", "termID": term, "ospf": "Android 14",
+            "brand": "TPLINK", "locale": "en_US", "model": "Pixel",
+            "termName": "Pixel", "termMeta": "Pixel",
+        }
+        if token:
+            params["token"] = token
+        url = host.rstrip("/") + path + "?" + urlencode(params)
+        headers = {
+            "Content-Type": "application/json;charset=UTF-8",
+            "Content-MD5": content_md5,
+            "X-Authorization": (
+                f"Timestamp=9999999999, Nonce={nonce}, "
+                f"AccessKey={APP_SERVER_ACCESS_KEY}, Signature={signature}"
+            ),
+        }
+        status, response_text = self.transport.request(
+            "POST", url, headers, text.encode(), self.timeout
+        )
+        return self._app_response(status, response_text)
+
+    @staticmethod
+    def _app_response(status: int, text: str) -> dict[str, Any]:
+        try:
+            data = json.loads(text) if text else {}
+        except json.JSONDecodeError as exc:
+            raise SmartHomeError(f"Kasa app-server returned HTTP {status} non-JSON") from exc
+        if status >= 400:
+            raise SmartHomeError(f"Kasa app-server HTTP {status}")
+        if not isinstance(data, dict):
+            raise SmartHomeError("Kasa app-server returned an invalid response")
+        code = data.get("error_code", 0)
+        if code:
+            if code in KASA_AUTH_ERROR_CODES:
+                raise AuthError(f"Kasa app-server auth failed (error_code {code})")
+            raise SmartHomeError(f"Kasa app-server error_code {code}")
+        return data
+
+    def _app_get(self, host: str, path: str, token: str, term: str) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"ut|{token}",
+            "app-cid": f"app:{APP_SERVER_APP}:{term}",
+            "x-app-name": APP_SERVER_APP, "x-app-version": "3.20.753",
+            "x-term-id": term, "x-ospf": "Android 14", "x-net-type": "wifi",
+            "x-strict": "0", "x-locale": "en_US",
+        }
+        status, text = self.transport.request(
+            "GET", host.rstrip("/") + path, headers, None, self.timeout
+        )
+        return self._app_response(status, text)
+
+    def _app_login(self) -> tuple[str, str, str]:
+        username, password = self._kasa_user_pass()
+        term = str(uuid.uuid4())
+        status = self._app_signed_post(
+            APP_SERVER_REGION_URL, "/api/v2/account/getAccountStatusAndUrl",
+            {"appType": APP_SERVER_APP, "cloudUserName": username}, term,
+        )
+        regional = (status.get("result") or {}).get("appServerUrl") or APP_SERVER_REGION_URL
+        if self.config.kasa_password_encoding == "md5":
+            password = hashlib.md5(password.encode()).hexdigest().upper()
+        elif self.config.kasa_password_encoding != "plain":
+            raise ConfigError("unsupported Kasa password_encoding")
+        login = self._app_signed_post(
+            str(regional), "/api/v2/account/login",
+            {"appType": APP_SERVER_APP, "appVersion": APP_SERVER_VERSION,
+             "cloudPassword": password, "cloudUserName": username, "platform": "Android",
+             "refreshTokenNeeded": True, "supportBindAccount": False,
+             "terminalUUID": term, "terminalName": "Pixel", "terminalMeta": "Pixel"},
+            term,
+        )
+        token = (login.get("result") or {}).get("token")
+        if not token:
+            raise AuthError("Kasa app-server login returned no token")
+        service = self._app_signed_post(
+            str(regional), "/api/v2/common/getAppServiceUrl",
+            {"serviceIds": [APP_SERVER_SERVICE_ID]}, term, str(token),
+        )
+        urls = (service.get("result") or {}).get("serviceUrls") or {}
+        app_host = urls.get(APP_SERVER_SERVICE_ID)
+        if not app_host:
+            raise SmartHomeError("Kasa app-server URL is missing")
+        return str(app_host), str(token), term
+
+
+    def _app_inventory(self) -> list[dict[str, Any]]:
+        if self._app_rows is not None:
+            return self._app_rows
+        if self._app_session is None:
+            self._app_session = self._app_login()
+        host, token, term = self._app_session
+        response = self._app_get(
+            host, "/v2/things?page=0&pageSize=100&includeKasaShareDevices=true&includeMatterDevice=true",
+            token, term,
+        )
+        result = response.get("result") if isinstance(response.get("result"), dict) else response
+        data = result.get("data") if isinstance(result, dict) else None
+        if not isinstance(data, list):
+            raise SmartHomeError("Kasa app-server inventory has no data list")
+        self._app_rows = [item for item in data if isinstance(item, dict)]
+        return self._app_rows
+
+    @staticmethod
+    def _app_shadow_on(response: dict[str, Any], device_id: str) -> tuple[bool | None, int | None]:
+        result = response.get("result")
+        wrapper = result if isinstance(result, dict) else response
+        shadows = wrapper.get("shadows") if isinstance(wrapper, dict) else None
+        if not isinstance(shadows, list):
+            return None, None
+        shadow = next((item for item in shadows if isinstance(item, dict)
+                       and item.get("thingName") == device_id), None)
+        if shadow is None:
+            return None, None
+        state = shadow.get("state")
+        reported = state.get("reported") if isinstance(state, dict) else None
+        on = reported.get("on") if isinstance(reported, dict) else None
+        version = shadow.get("version")
+        return (on if isinstance(on, bool) else None,
+                version if isinstance(version, int) and not isinstance(version, bool) else None)
+
+    def _app_shadow(
+        self, device: Device, inventory: list[dict[str, Any]] | None = None,
+        session: tuple[str, str, str] | None = None,
+    ) -> tuple[bool | None, int | None, tuple[str, str, str]]:
+        rows = self._app_inventory() if inventory is None else inventory
+        item = next((row for row in rows
+                     if (row.get("thingName") or row.get("deviceId")) == device.device_id), None)
+        if item is None or item.get("status") != 1:
+            raise DeviceOffline(f"{device.alias!r} is not online in Kasa app-server inventory")
+        if session is None:
+            if self._app_session is None:
+                self._app_session = self._app_login()
+            auth = self._app_session
+        else:
+            auth = session
+        query = urllib.parse.quote(device.device_id, safe="")
+        host, token, term = auth
+        for path in (f"/v1/things/matter/shadows?thingNames={query}",
+                     f"/v1/things/shadows?thingNames={query}"):
+            response = self._app_get(host, path, token, term)
+            on, version = self._app_shadow_on(response, device.device_id)
+            if on is not None:
+                return on, version, auth
+        return None, None, auth
+
     def list_devices(self) -> list[Device]:
         self._ensure_login()
         if self._devices is not None:
@@ -1379,32 +1548,62 @@ class KasaCloudConnector:
         devices: list[Device] = []
         for item in result.get("deviceList") or []:
             parent = Device(
-                connector=self.name,
-                device_id=str(item.get("deviceId") or ""),
-                alias=decode_kasa_alias(
-                    str(item.get("alias") or item.get("deviceName") or "")
-                ),
-                model=str(item.get("deviceModel") or ""),
-                online=item.get("status") == 1,
-                extras={
-                    "appServerUrl": item.get("appServerUrl"),
-                    "deviceType": item.get("deviceType"),
-                    "deviceMac": item.get("deviceMac"),
-                    "mac": item.get("deviceMac"),
-                },
+                connector=self.name, device_id=str(item.get("deviceId") or ""),
+                alias=decode_kasa_alias(str(item.get("alias") or item.get("deviceName") or "")),
+                model=str(item.get("deviceModel") or ""), online=item.get("status") == 1,
+                extras={"appServerUrl": item.get("appServerUrl"),
+                        "deviceType": item.get("deviceType"),
+                        "deviceMac": item.get("deviceMac"), "mac": item.get("deviceMac")},
             )
             devices.append(parent)
             if parent.online and not is_smart_kasa_device(parent):
                 devices.extend(self._expand_children(parent))
+        app_rows: list[dict[str, Any]] = []
+        need_app = bool(self.config.aliases) and (
+            not devices
+            or any(is_smart_kasa_device(item) and not item.online for item in devices)
+        )
+        if need_app:
+            try:
+                app_rows = self._app_inventory()
+            except SmartHomeError:
+                app_rows = []
+        app_by_id: dict[str, dict[str, Any]] = {}
+        for row in app_rows:
+            device_id = str(row.get("thingName") or row.get("deviceId") or "")
+            if device_id:
+                app_by_id[device_id] = row
+        known_ids = {device.device_id for device in devices}
+        merged: list[Device] = []
+        for device in devices:
+            row = app_by_id.get(device.device_id)
+            if row is not None and is_smart_kasa_device(device) and row.get("status") == 1:
+                device = copy_device(device, online=True)
+            merged.append(device)
+        for row in app_rows:
+            device_id = str(row.get("thingName") or row.get("deviceId") or "")
+            model = str(row.get("model") or row.get("deviceModel") or "")
+            device_type = str(row.get("deviceType") or "")
+            if not device_id or device_id in known_ids:
+                continue
+            candidate = Device(self.name, device_id, "", model=model,
+                               extras={"deviceType": device_type})
+            if not is_smart_kasa_device(candidate):
+                continue
+            alias_name = str(row.get("nickname") or row.get("alias")
+                             or row.get("deviceName") or device_id)
+            merged.append(Device(self.name, device_id, decode_kasa_alias(alias_name),
+                                 model=model, online=row.get("status") == 1,
+                                 extras={"deviceType": device_type, "app_server": True}))
+            known_ids.add(device_id)
         attached: list[Device] = []
-        for item in devices:
-            item = self._attach_host(item)
-            if item.extras.get("host"):
-                item = copy_device(item, online=True)
-            attached.append(item)
+        for device in merged:
+            device = self._attach_host(device)
+            if device.extras.get("host"):
+                device = copy_device(device, online=True)
+            attached.append(device)
         self._devices = attached
         return attached
-
     def _passthrough(self, device: Device, request: dict[str, Any]) -> dict[str, Any]:
         self._ensure_login()
         url = device.extras.get("appServerUrl") or self.config.kasa_url
@@ -1415,8 +1614,7 @@ class KasaCloudConnector:
                 "requestData": json.dumps(request),
             },
         }
-        result = self._cloud(payload, url=url)
-        return decode_passthrough(result)
+        return decode_passthrough(self._cloud(payload, url=url))
 
     def _expand_children(self, parent: Device) -> list[Device]:
         if parent.online is False:
@@ -1475,31 +1673,51 @@ class KasaCloudConnector:
                 label = alias.match if alias else needle
                 if alias is None:
                     for da in DEFAULT_ALIASES:
-                        if da.name.lower() == needle.lower() or da.match.lower() == needle.lower():
+                        if (
+                            da.name.lower() == needle.lower()
+                            or da.match.lower() == needle.lower()
+                        ):
                             label = da.match
                             break
-                return Device(
-                    connector=self.name,
-                    device_id=needle,
-                    alias=label,
-                    model="KP125M",
-                    online=True,
-                    extras={
-                        "host": host,
-                        "deviceType": "SMART.KASAPLUG",
-                        "path": "klap",
-                    },
-                )
+                return Device(self.name, needle, label, model="KP125M", online=True,
+                              extras={"host": host, "deviceType": "SMART.KASAPLUG",
+                                      "path": "klap"})
             raise
         return self._attach_host(device, needle)
 
+    def _smart_without_host(self, device: Device) -> DeviceOffline:
+        kind = "SMART.KASAPLUG" if is_smart_kasa_device(device) else "Kasa"
+        return DeviceOffline(
+            f"{device.alias!r} ({kind}) has no LAN host. "
+            "Run `smart-home scan` from a hop that can reach the plug "
+            "(kasa.scan_via / SMART_HOME_SCAN_VIA)."
+        )
+
+    def _app_shadow_power(self, device: Device) -> bool:
+        on, _version, _session = self._app_shadow(device)
+        if on is None:
+            raise DeviceOffline(f"{device.alias!r} has no boolean app-server shadow state")
+        return on
+
     def get_power(self, device: Device) -> bool:
         device = self._attach_host(device)
+        if device.extras.get("app_server"):
+            return self._app_shadow_power(device)
         if is_smart_kasa_device(device):
-            _, energy = self._local_read(device)
-            if energy.on is None:
-                raise DeviceOffline(f"{device.alias!r} did not report power state")
-            return bool(energy.on)
+            host = host_for_device(self.config, device)
+            if host:
+                try:
+                    _, energy = self._local_read(device)
+                    if energy.on is not None:
+                        return bool(energy.on)
+                except DeviceOffline:
+                    if device.online is False:
+                        raise
+                except SmartHomeError:
+                    pass
+            elif device.online is False:
+                raise self._smart_without_host(device)
+            return self._app_shadow_power(device)
         host = host_for_device(self.config, device)
         if host:
             try:
@@ -1520,19 +1738,26 @@ class KasaCloudConnector:
                 if full_id == device.device_id:
                     return bool(child.get("state"))
         return bool(sysinfo.get("relay_state"))
-
     def set_power(self, device: Device, on: bool) -> None:
         device = self._attach_host(device)
+        if device.extras.get("app_server"):
+            self._app_set_power(device, on)
+            return
         if is_smart_kasa_device(device):
-            self.ensure_local_hosts()
-            device = self._attach_host(device)
             host = host_for_device(self.config, device)
-            if not host:
-                raise DeviceOffline(
-                    f"{device.alias!r} has no LAN host. Run `smart-home scan`."
-                )
-            username, password = self._kasa_user_pass()
-            self._local_backend().set_power(host, username, password, on)
+            if host:
+                try:
+                    username, password = self._kasa_user_pass()
+                    self._local_backend().set_power(host, username, password, on)
+                    return
+                except DeviceOffline:
+                    if device.online is False:
+                        raise
+                except SmartHomeError:
+                    pass
+            elif device.online is False:
+                raise self._smart_without_host(device)
+            self._app_set_power(device, on)
             return
         host = host_for_device(self.config, device)
         if host:
@@ -1546,12 +1771,51 @@ class KasaCloudConnector:
         if device.parent_id:
             request["context"] = {"child_ids": [device.device_id]}
         self._passthrough(device, request)
-
+    def _app_set_power(self, device: Device, on: bool) -> bool:
+        inventory = self._app_inventory()
+        state, version, auth = self._app_shadow(device, inventory=inventory)
+        if state is None or version is None:
+            raise DeviceOffline(f"{device.alias!r} has no valid app-server shadow")
+        host, token, term = auth
+        path = f"/v1/things/{urllib.parse.quote(device.device_id, safe='')}/matter/shadows"
+        body = json.dumps({"version": version + 1, "state": {"desired": {"on": on}}}).encode()
+        headers = {
+            "Authorization": f"ut|{token}", "app-cid": f"app:{APP_SERVER_APP}:{term}",
+            "x-app-name": APP_SERVER_APP, "x-app-version": "3.20.753",
+            "x-term-id": term, "x-ospf": "Android 14", "x-net-type": "wifi",
+            "x-strict": "0", "x-locale": "en_US", "Content-Type": "application/json",
+        }
+        status, text = self.transport.request("PATCH", host.rstrip("/") + path,
+                                              headers, body, self.timeout)
+        self._app_response(status, text)
+        observed, _version, _auth = self._app_shadow(
+            device, inventory=inventory, session=auth
+        )
+        if observed is not on:
+            raise SmartHomeError(
+                f"{device.alias!r} app-server read-back mismatch: requested {on}, reported {observed}"
+            )
+        return observed
     def energy(self, device: Device) -> Energy:
         device = self._attach_host(device)
+        if device.extras.get("app_server"):
+            on = self._app_shadow_power(device)
+            return Energy(watts=0.0, volts=0.0, amps=0.0, kwh=0.0, on=on, raw={})
         if is_smart_kasa_device(device):
-            _, energy = self._local_read(device)
-            return energy
+            host = host_for_device(self.config, device)
+            if host:
+                try:
+                    _, energy = self._local_read(device)
+                    return energy
+                except DeviceOffline:
+                    if device.online is False:
+                        raise
+                except SmartHomeError:
+                    pass
+            elif device.online is False:
+                raise self._smart_without_host(device)
+            on = self._app_shadow_power(device)
+            return Energy(watts=0.0, volts=0.0, amps=0.0, kwh=0.0, on=on, raw={})
         host = host_for_device(self.config, device)
         if host:
             try:
@@ -1782,6 +2046,10 @@ def require_power_cut_permission(
     allow_unmapped: bool,
     action: str = "cycle",
 ) -> None:
+    if name.strip().lower() in {"mac studio", "mac-studio"} or (
+        alias is not None and alias.match.strip().lower() == "mac studio"
+    ):
+        raise SafetyError("refusing to turn off or cycle the Mac Studio plug")
     if confirm != CONFIRM_CYCLE:
         raise SafetyError(f"refusing to {action} {name!r}; pass --confirm {CONFIRM_CYCLE}")
     if alias is None and not allow_unmapped:
@@ -2030,7 +2298,15 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "devices":
             connector = build_connector(config.default_connector, config)
-            rows = [_device_row(d) for d in connector.list_devices()]
+            rows = []
+            for device in connector.list_devices():
+                row = _device_row(device)
+                if is_smart_kasa_device(device):
+                    try:
+                        row["on"] = connector.get_power(device)
+                    except SmartHomeError as exc:
+                        row["state_error"] = str(exc)
+                rows.append(row)
             _print(rows, args.json)
             return 0
 
@@ -2052,15 +2328,13 @@ def main(argv: list[str] | None = None) -> int:
             _print(payload, args.json)
             return 0 if "watts" in payload or "on" in payload else 2
 
+
         if args.command in {"on", "off"}:
+            alias = config.aliases.get(args.target.lower())
             if args.command == "off":
-                alias = config.aliases.get(args.target.lower())
                 require_power_cut_permission(
-                    name=args.target,
-                    alias=alias,
-                    confirm=args.confirm,
-                    allow_unmapped=True,
-                    action="turn off",
+                    name=args.target, alias=alias, confirm=args.confirm,
+                    allow_unmapped=False, action="turn off",
                 )
             connector, device, _alias = resolve_target(config, args.target)
             connector.set_power(device, args.command == "on")
@@ -2069,18 +2343,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "cycle":
+            alias = config.aliases.get(args.target.lower())
             if args.confirm != CONFIRM_CYCLE:
                 raise SafetyError(
                     f"refusing to cycle {args.target!r}; pass --confirm {CONFIRM_CYCLE}"
                 )
             connector, device, alias = resolve_target(config, args.target)
             result = cycle_device(
-                connector,
-                device,
-                alias=alias,
-                confirm=args.confirm,
-                off_seconds=args.off_seconds,
-                allow_unmapped=args.allow_unmapped,
+                connector, device, alias=alias, confirm=args.confirm,
+                off_seconds=args.off_seconds, allow_unmapped=args.allow_unmapped,
                 even_if_off=args.even_if_off,
             )
             _print(result, args.json)

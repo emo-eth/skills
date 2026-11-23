@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 TEST_ROOT = Path(__file__).resolve().parent
 SCRIPT = TEST_ROOT.parent / "scripts" / "smart_home.py"
@@ -416,6 +417,123 @@ class TestKasaCloud(unittest.TestCase):
             self.assertEqual(off_req["system"]["set_relay_state"]["state"], 0)
             self.assertEqual(on_req["system"]["set_relay_state"]["state"], 1)
             self.assertEqual(off_req["context"]["child_ids"], [child_id])
+
+
+class TestKasaAppServer(unittest.TestCase):
+    def _connector(self, tmp, responses):
+        config = sh.AppConfig(path=Path(tmp) / "config.toml", state_dir=Path(tmp))
+        transport = FakeTransport([(200, json.dumps(row)) for row in responses])
+        connector = sh.KasaCloudConnector(config, transport=transport)
+        connector._app_login = lambda: ("https://app.test", "test-token", "term")
+        return connector, transport
+
+    def test_inventory_parses_top_level_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            connector, transport = self._connector(tmp, [{"data": [
+                {"thingName": "plug-device", "alias": "Plug", "status": 1}
+            ]}])
+            rows = connector._app_inventory()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["alias"], "Plug")
+            self.assertEqual(transport.calls[0]["method"], "GET")
+            self.assertIn("/v2/things?", transport.calls[0]["url"])
+
+    def test_shadow_reported_bool_and_unknown_fallback(self):
+        device = sh.Device("kasa", "plug-device", "Plug", model="KP125M",
+                           extras={"deviceType": "SMART.KASAPLUG"})
+        for reported, expected in ((True, True), (False, False)):
+            with self.subTest(reported=reported), tempfile.TemporaryDirectory() as tmp:
+                response = {"shadows": [{"thingName": device.device_id, "version": 1,
+                                      "state": {"reported": {"on": reported}}}]}
+                connector, transport = self._connector(tmp, [response])
+                connector._app_inventory = lambda: [{"thingName": device.device_id,
+                                                     "status": 1}]
+                self.assertIs(connector.get_power(device), expected)
+                self.assertEqual(transport.calls[0]["method"], "GET")
+                self.assertIn("/shadows?", transport.calls[0]["url"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            unknown = {"shadows": [{"thingName": device.device_id, "version": 1,
+                                 "state": {"reported": {"on": "false"}}}]}
+            response = {"shadows": [{"thingName": device.device_id, "version": 1,
+                                  "state": {"reported": {"on": False}}}]}
+            connector, transport = self._connector(tmp, [unknown, response])
+            connector._app_inventory = lambda: [{"thingName": device.device_id,
+                                                 "status": 1}]
+            self.assertIs(connector.get_power(device), False)
+            self.assertEqual(len(transport.calls), 2)
+            self.assertIn("/matter/shadows?", transport.calls[0]["url"])
+            self.assertIn("/things/shadows?", transport.calls[1]["url"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            connector, transport = self._connector(tmp, [unknown, {"shadows": []}])
+            connector._app_inventory = lambda: [{"thingName": device.device_id,
+                                                 "status": 1}]
+            with self.assertRaises(sh.SmartHomeError):
+                connector.get_power(device)
+            self.assertEqual(len(transport.calls), 2)
+
+    def test_desired_write_readback_mismatch_is_error(self):
+        device = sh.Device("kasa", "plug-device", "Plug", model="KP125M",
+                           extras={"deviceType": "SMART.KASAPLUG"})
+        shadow = {"shadows": [{"thingName": device.device_id, "version": 7,
+                            "state": {"reported": {"on": False}}}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            connector, transport = self._connector(tmp, [shadow, {}, shadow])
+            connector._app_inventory = lambda: [{"thingName": device.device_id,
+                                                 "status": 1}]
+            with self.assertRaises(sh.SmartHomeError):
+                connector.set_power(device, True)
+            calls = transport.calls
+            self.assertEqual([call["method"] for call in calls], ["GET", "PATCH", "GET"])
+            self.assertEqual(calls[1]["body"]["state"]["desired"], {"on": True})
+            self.assertEqual(calls[1]["body"]["version"], 8)
+
+    def test_cli_mac_studio_off_and_cycle_are_denied(self):
+        device = sh.Device("kasa", "studio-device", "Mac Studio")
+        alias = sh.Alias("studio", "kasa", "Mac Studio", allow_cycle=True)
+        connector = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text(
+                '[[device]]\nalias = "studio"\nmatch = "Mac Studio"\n'
+                'allow_cycle = true\n', encoding="utf-8"
+            )
+            for action in ("off", "cycle"):
+                with self.subTest(action=action), patch.object(
+                    sh, "resolve_target", return_value=(connector, device, alias)
+                ):
+                    code = sh.main(
+                        ["--config", str(cfg), action, "studio", "--confirm", "cycle"]
+                    )
+                    self.assertEqual(code, 2)
+                    connector.set_power.assert_not_called()
+
+    def test_cli_confirmation_and_allow_cycle_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text(
+                '[[device]]\nalias = "plug"\nmatch = "Plug"\n'
+                'allow_cycle = false\n', encoding="utf-8"
+            )
+            device = sh.Device("kasa", "plug-device", "Plug")
+            connector = Mock()
+            for action, confirmation, allowed in (
+                ("off", [], True), ("cycle", [], True),
+                ("off", ["--confirm", "cycle"], False),
+                ("cycle", ["--confirm", "cycle"], False),
+            ):
+                alias = sh.Alias("plug", "kasa", "Plug", allow_cycle=allowed)
+                with self.subTest(action=action, confirmation=confirmation), patch.object(
+                    sh, "load_config", return_value=sh.AppConfig(
+                        path=cfg, aliases={"plug": alias}
+                    )
+                ), patch.object(
+                    sh, "resolve_target", return_value=(connector, device, alias)
+                ):
+                    code = sh.main(["--config", str(cfg), action, "plug", *confirmation])
+                    self.assertEqual(code, 2)
+                    connector.set_power.assert_not_called()
 
 
 class TestCycleSafety(unittest.TestCase):
