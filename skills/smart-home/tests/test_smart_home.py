@@ -1268,7 +1268,7 @@ class TestStatusIsolation(unittest.TestCase):
 
 KLAP_STATE = {
     "get_device_info": {
-        "device_id": "803ABE5ED92F38252F2968C06265A37F2430D06F",
+        "device_id": "8000000000000000000000000000000000000001",
         "nickname": "TWVkaWEgUmFjaw==",
         "model": "KP125M",
         "type": "SMART.KASAPLUG",
@@ -1330,7 +1330,7 @@ class TestKlapSmart(unittest.TestCase):
             {
                 "deviceList": [
                     {
-                        "deviceId": "803ABE5ED92F38252F2968C06265A37F2430D06F",
+                        "deviceId": "8000000000000000000000000000000000000001",
                         "alias": "TWVkaWEgUmFjaw==",
                         "deviceModel": "KP125M(US)",
                         "deviceType": "SMART.KASAPLUG",
@@ -1489,7 +1489,7 @@ class TestKlapSmart(unittest.TestCase):
                         "alias": "Mix Cubes",
                         "model": "HS103(US)",
                         "relay_state": 0,
-                        "mac": "84:D8:1B:8E:24:25",
+                        "mac": "00:00:5E:00:53:01",
                         "deviceId": "hs103",
                     }
                 },
@@ -1506,11 +1506,11 @@ class TestKlapSmart(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
             hosts = {}
-            sh.index_host(hosts, "192.168.50.152", "Media Rack", "a82948234ed5")
+            sh.index_host(hosts, "192.168.50.152", "Media Rack", "00005e005302")
             sh.save_host_index(state, hosts)
             loaded = sh.load_host_index(state)
             self.assertEqual(loaded["media rack"], "192.168.50.152")
-            self.assertEqual(loaded["a82948234ed5"], "192.168.50.152")
+            self.assertEqual(loaded["00005e005302"], "192.168.50.152")
 
     def test_scan_persists_and_attaches_host(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1523,13 +1523,13 @@ class TestKlapSmart(unittest.TestCase):
                 def discover(self, username, password):
                     device = sh.Device(
                         connector="kasa",
-                        device_id="803ABE5ED92F38252F2968C06265A37F2430D06F",
+                        device_id="8000000000000000000000000000000000000001",
                         alias="Media Rack",
                         model="KP125M",
                         online=True,
                         extras={
                             "host": "192.168.50.152",
-                            "deviceMac": "A82948234ED5",
+                            "deviceMac": "00005E005302",
                             "deviceType": "SMART.KASAPLUG",
                         },
                     )
@@ -1540,7 +1540,7 @@ class TestKlapSmart(unittest.TestCase):
             found = connector.scan()
             self.assertEqual(found[0].extras["host"], "192.168.50.152")
             self.assertEqual(cfg.hosts["media rack"], "192.168.50.152")
-            self.assertEqual(cfg.hosts["a82948234ed5"], "192.168.50.152")
+            self.assertEqual(cfg.hosts["00005e005302"], "192.168.50.152")
             device = connector.resolve("Media Rack")
             self.assertEqual(device.extras.get("host"), "192.168.50.152")
 
@@ -1682,7 +1682,7 @@ class TestScanVia(unittest.TestCase):
                         online=True,
                         extras={
                             "host": "192.168.101.20",
-                            "deviceMac": "A82948235757",
+                            "deviceMac": "00005E005303",
                             "deviceType": "SMART.KASAPLUG",
                         },
                     )

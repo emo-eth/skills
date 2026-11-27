@@ -48,7 +48,7 @@ That writes `~/.config/smart-home/config.toml` mode 600.
 
 ```
 $ ./skills/smart-home/scripts/smart-home --json whoami
-{"ok":[{"account":"wenzel.james.r@gmail.com","connector":"kasa","device_count":16}],"skipped":[{"connector":"homeassistant","error":"..."}]}
+{"ok":[{"account":"<redacted>","connector":"kasa","device_count":16}],"skipped":[{"connector":"homeassistant","error":"..."}]}
 ```
 
 16 plugs. KP125M aliases arrive as base64 (`U3Bhcmtz` → Sparks, `UEM=` → PC, `NDA5MA==` → 4090) and are decoded. Placeholder aliases `spark0` / `emo-win` are not Kasa names.
@@ -107,7 +107,7 @@ $ python3 skills/smart-home/scripts/smart_home.py --json energy "Media Rack"
   "amps": 1.738,
   "connector": "kasa",
   "host": "192.168.50.152",
-  "id": "803ABE5ED92F38252F2968C06265A37F2430D06F",
+  "id": "…D06F",
   "kwh": 215.131,
   "model": "KP125M(US)",
   "on": true,
@@ -126,7 +126,7 @@ Sparks/PC/4090 still need their LAN IPs in `[[device]] host` before KLAP can rea
 
 `smart-home scan` runs python-kasa discover plus TCP :80 on the local /24, matches alias/deviceId/MAC, writes `~/.config/smart-home/hosts.toml` (mode 600, no secrets). `status` lists every cloud device. HS103/HS105 with no emeter still return `on` when the cloud path works.
 
-Live scan on studio: **only Media Rack** `192.168.50.152`. Sparks / PC / 4090 / SSDs (KP125M fw 1.4.1, MACs A82948235757 / A82948234E6B / A82948235A73 / A829482354CC) are not on `192.168.50.0/24`. Isolated IoT SSID has no L3 route from studio, so KLAP cannot reach them until they are on this LAN or the router routes the IoT VLAN.
+Live scan on studio: **only Media Rack** `192.168.50.152`. Sparks / PC / 4090 / SSDs (KP125M fw 1.4.1, MAC tails …5757 / …4E6B / …5A73 / …54CC) are not on `192.168.50.0/24`. Isolated IoT SSID has no L3 route from studio, so KLAP cannot reach them until they are on this LAN or the router routes the IoT VLAN.
 
 `python3 skills/smart-home/tests/test_smart_home.py` — 42 tests OK.
 
