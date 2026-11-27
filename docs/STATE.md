@@ -5,6 +5,11 @@
 This repository publishes personal skills and fourteen executable plugin packages. Wall-clock is the largest runtime package: native Pi and OMP adapters enforce time boundaries around sessions, assignments, and host actions. Codex and Claude remain portable discovery targets, not enforcement hosts.
 
 ## Where we are
+The published `lc-north-star` skill now uses the five-document VDD chain:
+`vrd.md -> constraints.md -> prd.md -> decisions.md -> spec.md`. Plans,
+tickets, and issues remain execution adapters after the spec. The skill's
+references contain the minimum templates; `emo-eth/vdd` contains the fuller
+authoring framework.
 
 The home fleet, sync, SSH, and local-inference contract is a draft skill at `skills/system-vibe/SKILL.md`. It is not `docs/vibe.md` (that is repo philosophy). Until the user approves it, treat it as a draft.
 
@@ -66,6 +71,7 @@ The repository now also includes `plugins/skiterate/`, the command-only Agent Pl
 `docs/vibe.md` is the approved repo-level philosophy contract: progress through sifting, a few deliberate crystallization stages, honest deliverable breakdown, symbiotic understanding, inheritable judgment, lightweight skill iteration, fresh-context friction capture, and resumable agent turns. The original three review rounds and the 2026-09-11 surgical clarification are applied and captured in `docs/review/2026-08-13-vibe-round-{1,2,3}-answers.md` and `docs/review/2026-09-11-vibe-surgical-round-1-answers.md`. The document stays concrete and example-rich without canonizing named implementations [D20, D33]; skill iteration remains an important primitive without establishing a general iteration doctrine [D39]. The vibe is the source of truth; skills and artifact chains are downstream facets [D30, D33]. D35 remains provisional.
 
 The downstream revision developed on `sieve-vibe` is now on `main` (PR #2): lc-north-star declares the chain a downstream facet of the vibe with stage and fix-round discipline [D30, D29, D34], its interview probes understanding [D32] and batches all currently known blocking questions instead of serializing independent questions one per turn, and its quality gates reject prescriptive vibes [D20]; the vibe template's `Means:` field is now `Example:`; `docs/lifecycle.md` declares the vibe upstream of the artifact chain; lc-ticketize requires deliverable tickets with enumerated sub-tickets [D31]; lc-review-capture names endless fix rounds a failure mode [D34]; lc-project-state's AGENTS.md wiring points at `docs/vibe.md` when present. branch-closure and lc-phase-tracker were checked and already align. The improved lc-north-star gates were run against `docs/vibe.md` itself: pass on all gates (details in the session).
+The PRD contract (`skills/lc-north-star/references/prd.md`) establishes a canonical industry-standard PRD specification: executive summary, problem narrative synthesized from VRD stakes, target personas & JTBD, end-to-end user journeys (before/after and happy path), prioritized functional requirements (P0/P1/P2) with negative constraints, UX/system state matrix, dedicated NFRs, guardrail metrics, and scope boundaries. Ticket specifications and execution slicing were completely purged from lc-north-star and relocated to lc-ticketize (`skills/lc-ticketize/references/ticket-spec.md`), restoring lc-north-star's clean product boundary (VRD -> PRD -> Spec -> Plan).
 
 On `ticketize-revision` (2026-08-13), the overlap-audit follow-on gives
 `lc-ticketize` one parent ticket per deliverable with tracked sub-tickets and
@@ -96,6 +102,15 @@ The native command `/tenet` (`plugins/tenet/`) is a Yearn-shaped capture for sta
 
 The cross-runtime advisor profiles package (`plugins/advisor-profiles/`) provides post-turn reviews across OMP, Pi, and Hermes from shared `WATCHDOG.yml` rosters (`skills/advisor-profiles/SKILL.md`). Advisors support optional `when` trigger conditions (`files`, `paths`, and `message_matches`). Pi and Hermes evaluate `when` before invoking the secondary model, yielding a `skipped` outcome with reason and skipping follow-up when conditions do not match. OMP's native advisor subsystem ignores `when` and still spends on all enabled advisors on every turn.
 Known dependency constraint: the exact OMP development dependency brings optional model and image packages with five high-severity audit findings. `npm audit --omit=optional` reports zero findings. Keep this visible until upstream packages resolve it; do not run an automatic audit fix that changes the tested host version.
+
+The router runtime now lives in `~/dev/agent-plugins/plugins/local-model-router/`.
+The Studio launch service and direct Bun CLI commands use that source; chezmoi owns the service config. Each Spark
+admits four requests for `ornith`; overflow waits at most 30 seconds before HTTP
+429. Health probes check loaded model IDs. Stream completion, errors, and client
+cancellation release each slot exactly once, after upstream cancellation settles.
+Node and Bun tests cover HTTP streaming, tool-ready SSE forwarding, cancellation,
+health checks, and the 30-second deadline. This replaces the earlier immediate-429
+policy for the current Spark request; broader router diagnostics remain as before.
 
 ## Standing constraints
 
@@ -137,8 +152,8 @@ Known dependency constraint: the exact OMP development dependency brings optiona
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 36 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |
 | Focus order deployment | Herdr 0.9.0 missing-runtime-dependency repair described above | `plugins/focus-order/herdr-plugin.toml`, `package.json`, `package-lock.json` | clean-package build/start smoke, 113 Node tests, typecheck, live Herdr manager navigation, popup launch and event-hook success | verified-live for named macOS scenarios |
 | Ticket-bound attention | `docs/ticket-bound-attention/vibe.md`, `docs/log/2026-09-18-ticket-bound-implementation-plan.md`, EMO-426 | `plugins/ticket-bound-attention/` | package `npm test` (27/27), `npm run check`; live capture/open/desk/shelve/funeral; `rank` proposed sit/hide/ask without seating | verified-live for named macOS scenarios |
-| Linear ticket ranker | [EMO-456](https://linear.app/emo-eth/issue/EMO-456/ranker-project-filter), [EMO-458](https://linear.app/emo-eth/issue/EMO-458/cross-project-top-k-with-durable-linear-ranks), `docs/log/2026-09-18-cross-project-topk-linear-ranks.md` | `tools/prioritize-linear-tickets.ts`, `tools/linear-ranks.ts`, `tools/linear-client.ts` | 47 Node tests (core + ranks + CLI, including multi-project and membership-safe resume) | source-verified |
-| Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md`, `prd.md`, D42 | `plugins/local-model-router/`, `skills/local-model-router/` | 9 Node/Bun unit tests and live-verification smoke testing exact contracts, fail-fast 429/503, invisibility, and Pi-grain stats | verified-live |
+| Linear ticket ranker | [EMO-456](https://linear.app/emo-eth/issue/EMO-456/ranker-project-filter), [EMO-458](https://linear.app/emo-eth/issue/EMO-458/cross-project-top-k-with-durable-linear-ranks), [EMO-488](https://linear.app/emo-eth/issue/EMO-488/ticket-ranker-tui-on-screen-controls-deletedone-triage-actions-and-x), `docs/log/2026-09-18-cross-project-topk-linear-ranks.md` | `tools/prioritize-linear-tickets.ts`, `tools/linear-ranks.ts`, `tools/linear-client.ts` | 53 Node tests (core + ranks + CLI triage D/C actions, progress counters, and shortcut banners) | source-verified |
+| Local model router | `docs/prds/2026-09-02-local-model-router/vibe.md`, `prd.md`, D42 | `~/dev/agent-plugins/plugins/local-model-router/`, `skills/local-model-router/` | Node/Bun admission, streaming, cancellation, health, config tests; live Spark and OMP verification recorded with EMO-422 | verified-live for the named checks |
 | Session history | `docs/prds/2026-09-02-session-history/vibe.md`, `prd.md`, D41 | `plugins/session-history/`, `skills/session-history/` | PRD approved 2026-09-15; `npm test` (15 Python, 17 Node, Pi and OMP native runner tests), `npm run check`, live CASS 0.7.1 installed via tap and verified | verified-live |
 | Agent memory | `docs/prds/2026-09-02-agent-memory/vibe.md` | not implemented | Batched north-star interview and explicit user approval on 2026-09-03 | documented |
 | Combined updates and restart | `plugins/plugin-updater/README.md` | `plugins/hard-update-restart/`, shared `plugins/plugin-updater/src/core.ts` | 41 Node tests, both typechecks; isolated native Herdr restart, multi-machine fleet pipeline, unofficial-version/custom-build update protection, restart-only mode, TUI client relaunch, GitHub plugin upgrade, disabled/config preservation, same OMP session and new-process config load | verified-live for named macOS scenarios; runtime downloads fixture-backed |

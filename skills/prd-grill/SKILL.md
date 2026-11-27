@@ -32,15 +32,15 @@ Completion criterion: the PRD and applicable `vibe.md` are read, the review targ
 
 Silently break the PRD and `vibe.md` into grillable sections:
 
-- North-star promise and target users.
-- Jobs, primary flows, and success criteria.
-- Requirements and acceptance criteria.
-- Undesirable outcomes, "not acceptable" clauses, and counterexamples.
-- Scope boundaries and explicit deferrals.
-- Platform, mobile, permissions, data visibility, empty, loading, error, persistence, and performance expectations.
+- Executive summary, problem narrative, and target user personas.
+- Jobs-to-be-Done (JTBD), end-to-end user journeys (happy path, degraded, recovery), and success criteria.
+- Prioritized functional requirements (P0 / P1 / P2) with observable acceptance criteria and "not acceptable" negative constraints.
+- UX & system state matrix (empty, loading, degraded, error, permission).
+- Dedicated Non-Functional Requirements (performance SLAs, security/auth, privacy, reliability, telemetry).
+- Scope boundaries, explicit non-goals, and release phasing.
+- Downstream decoupling: verify the PRD contains zero inlined ticket templates or execution choreographies.
 - Vibe promises, anti-vibes, use circumstances, and qualitative checks.
 - Open questions that block approval.
-
 Order questions from product intent to edge cases to vibe. Grill foundational decisions before downstream details.
 
 Completion criterion: every section that could change user-visible behavior or contract feel has a planned questioning round, unless it is obviously trivial and already explicit.

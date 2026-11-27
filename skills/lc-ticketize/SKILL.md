@@ -33,9 +33,7 @@ Output, Proof needed, Current status, and Destination status. "Proof needed" is
 the ticket's plain-language form of standup's "how we will prove it". Current
 status uses standup's ladder — `not done`, `implemented`, `merged`, `deployed`,
 `measured`, `done` — and when validation remains, `not done: validate ...`;
-never claim `done` without the ticket's stated proof. When joining an exemplar
-that schedules differently, mirror the exemplar.
-
+never claim `done` without the ticket's stated proof. When joining an exemplar that schedules differently, mirror the exemplar. For worktree- or file-backed tickets (`.herdr-ticket` / `TICKET.md`), use the structured Ticket Spec in [references/ticket-spec.md](references/ticket-spec.md) (Intention, Vibe, Boundaries, Done-when, Map, and Slice vs Ratchet execution mode).
 Completion: you can state the destination's fields, ID scheme, and grain — or
 you have declared the default because none exists.
 

@@ -29,15 +29,17 @@ incoherent. They have different mutability rules, and that is the point.
 **1. The artifact chain** — how an idea becomes shipped code. Each stage is a
 contract for the next; written once, amended deliberately, never edited casually.
 
-```
-vibe.md → PRD → spec → plan → implementation
+```text
+vrd.md → constraints.md → prd.md → decisions.md → spec.md
 ```
 
-This chain is a downstream facet of the repo's philosophy vibe
-(`docs/vibe.md`), which is the source of truth for how work is done here; the
-chain is updated or replaced as that vibe iterates, not the other way around
-[D30]. Stages stay few — three is ideal, four or five in practice [D29] — and
-each contract artifact gets at most two fix rounds, aiming for one [D34].
+This chain is a downstream facet of the repo's philosophy. The VRD carries
+ambition, feel, and stakes; constraints carry imposed reality and temporary
+safeguards; the PRD carries observable product behavior; decisions carry chosen
+technology; and the spec carries technical enforcement and verification. Plans,
+tickets, and issues are execution adapters after the spec, not additional stages.
+Stages stay few and each contract artifact gets at most two fix rounds, aiming
+for one.
 
 **2. The record chain** — how what happened survives context death. Append-only
 or continuously re-verified; never "finished."

@@ -1,12 +1,22 @@
 # Spec And Plan Reference
 
-The spec and plan are downstream of the product contract: `vibe.md` first, then the PRD derived from it. They can add technical detail, but they cannot change the contract silently.
+The spec is the technical how. It sits downstream of the five-document
+contract:
+
+```text
+vrd.md -> constraints.md -> prd.md -> decisions.md -> spec.md
+```
+
+It can add architecture, interfaces, state, and verification, but it cannot
+change the contract silently. Plans are optional execution sequencing after
+the spec; tickets, issues, and other trackers are adapters for particular
+execution environments.
 
 ## Spec Contract
 
-Write the spec to `docs/specs/YYYY-MM-DD-<topic>.md` unless repo convention says otherwise.
+Prefer `docs/prds/YYYY-MM-DD-<topic>/spec.md` beside the VRD and PRD unless repo convention already uses another spec path.
 
-The spec is living. Update it when the implementation approach changes, when a refactor changes boundaries, or when verification strategy changes. If a change would alter product behavior or vibe, create a contract amendment request instead.
+The spec is living. Update it when the implementation approach changes, when a refactor changes boundaries, or when verification strategy changes. If a change would alter product behavior or feel, create a contract amendment request instead.
 
 ### Spec Template
 
@@ -16,7 +26,7 @@ date: YYYY-MM-DD
 topic: <kebab-case-topic>
 status: draft
 source_prd: docs/prds/YYYY-MM-DD-<topic>/prd.md
-source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
+source_vrd: docs/prds/YYYY-MM-DD-<topic>/vrd.md
 ---
 
 # <Product Or Feature> Spec
@@ -25,12 +35,12 @@ source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
 
 - PRD: `docs/prds/YYYY-MM-DD-<topic>/prd.md`
 - PRD status: approved
-- Vibe: `docs/prds/YYYY-MM-DD-<topic>/vibe.md`
-- Vibe status: approved
+- VRD: `docs/prds/YYYY-MM-DD-<topic>/vrd.md`
+- VRD status: approved
 
 ## Technical Goal
 
-[How the system will satisfy the PRD and vibe contract.]
+[How the system will satisfy the PRD while preserving the VRD.]
 
 ## Requirement Traceability
 
@@ -53,7 +63,7 @@ source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
 
 ## UX And Product Behavior Details
 
-[Technical details needed to implement the PRD and vibe accurately: state transitions, validation, error handling, permissions, accessibility, responsive behavior, qualitative feel checks.]
+[Technical details needed to implement the PRD and VRD accurately: state transitions, validation, error handling, permissions, accessibility, responsive behavior, qualitative feel checks.]
 
 ## Verification
 
@@ -64,42 +74,79 @@ source_vibe: docs/prds/YYYY-MM-DD-<topic>/vibe.md
 
 ## Risks And Open Technical Questions
 
-- [Question that can be resolved without changing the PRD]
+- [Question that can be resolved without changing the PRD or VRD]
 
 ## Contract Amendment Requests
 
-- [Only include when technical discovery suggests the PRD or vibe should change. Do not implement these until the contract is amended.]
+- [Only include when technical discovery suggests the PRD or VRD should change. Do not implement these until the contract is amended.]
 ```
 
 ## Spec Quality Bar
 
-Before planning, verify:
+Before implementation or planning, verify:
 
 - Every PRD requirement appears in the traceability table.
-- Every vibe clause appears in the traceability table or is explicitly irrelevant to the target.
+- Every VRD feel clause appears in the traceability table or is explicitly irrelevant to the target.
 - Every behavior-changing technical choice points back to a PRD requirement.
-- Every feel-changing technical choice points back to a vibe clause.
+- Every feel-changing technical choice points back to a VRD feel clause.
 - Every user-visible edge case from the PRD has a technical treatment.
 - Every unresolved question is technical, not product-level.
-- Every proposed PRD or vibe change is isolated under `Contract Amendment Requests`.
+- Every proposed PRD or VRD change is isolated under `Contract Amendment Requests`.
 
-## Plan Contract
+## Plan Contract: Slice vs Ratchet
 
-Write the plan only after the spec exists. In the Native Markets workspace, prefer `nm-plan` for plan generation.
+A plan is optional for standard work, but mandatory for complex or empirical tasks. Plans follow one of two execution models:
 
-The plan is the execution artifact. It may include task ordering, file paths, test commands, checkpoints, and commit strategy. It must not invent product behavior.
+### 1. Slice Execution Plan (Standard Phased Delivery)
+Used for deterministic implementation across multiple layers:
+- Linear sequence of bounded checkpoints: `Foundation` -> `Implementation` -> `Verification`.
+- Each phase has clear verification criteria and commits.
 
-Before execution, verify:
+### 2. Ratchet Execution Plan (Empirical Optimization / AutoResearch + AutoImplement)
+Mandatory for tuning, search relevance, latency reduction, prompt engineering, or heuristic classifiers where code changes must be proved by metric movement on a frozen benchmark.
+
+#### The Four Artifacts of a Ratchet Plan
+1. **`program.md`**: The frozen contract containing:
+   - Scalar goal in one sentence with a number.
+   - Frozen files (evaluator, test suite, benchmark datasets—agent may never touch).
+   - Bounded edit surface (exact files allowed to change).
+   - Mechanical evaluation command and score extraction rule.
+   - Keep vs revert rule: threshold improvement (e.g. `≥ 2%`) required to keep; automatic `git reset --hard HEAD~1` on failure.
+2. **`eval.sh`**: The unfakeable mechanical oracle that executes the benchmark and prints a single greppable scalar line: `SCORE: <number>`.
+3. **`results.tsv`** (untracked): Machine-readable ledger of attempts:
+   `commit_hash\tscore\tkeep_or_discard\thypothesis_summary`
+4. **`journal.md`** (untracked): Negative memory. Records 5 lines per failed attempt explaining *why* it failed so fresh-context iterations never retry discarded hypotheses.
+
+#### The Ralph Loop Runner
+Ratchet plans execute as fresh-context iterations to prevent context rot:
+```bash
+while :; do
+  # 1. autoResearch: reads program.md, results.tsv, journal.md -> emits 1 hypothesis
+  # 2. autoImplement: applies 1 hypothesis to edit surface -> commits
+  # 3. runs eval.sh -> keeps or git reset --hard -> appends to results.tsv & journal.md
+done
+```
+Write `plan.md` beside the spec only when:
+
+- Multiple workstreams need an explicit order
+- Checkpoints, commit strategy, or risky sequencing matter
+- The user asks for a plan
+
+If a plan skill such as `plan` is available, use it only in those cases. Do not invoke it as ritual.
+
+The plan is disposable execution choreography. It may include task ordering, file paths, test commands, checkpoints, and commit strategy. It must not invent product behavior.
+
+When a plan is written, verify before execution:
 
 - Every spec section with implementation work has at least one task.
 - Every task references the spec behavior it implements.
-- No task changes PRD behavior or vibe without a named amendment.
+- No task changes PRD behavior or VRD feel without a named amendment.
 - The plan says when the spec must be updated during implementation.
 
 ## Downstream Change Rule
 
 When implementation reveals new information:
 
-- Update the plan for sequencing or task detail changes.
+- Update the plan (if it exists) for sequencing or task detail changes.
 - Update the spec for technical design, interfaces, tests, or refactors.
-- Ask for a contract amendment for product behavior, scope, user promise, platform support, success criteria, undesirable outcomes, or vibe.
+- Ask for a contract amendment for product behavior, scope, user promise, platform support, success criteria, undesirable outcomes, or feel.

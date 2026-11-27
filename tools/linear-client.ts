@@ -435,6 +435,28 @@ export async function setPriority(
   runLinear(["issue", "update", issueId, "--priority", String(priority)]);
 }
 
+/**
+ * Mark an issue as canceled in Linear.
+ */
+export async function markIssueCanceled(issueId: string): Promise<void> {
+  try {
+    runLinear(["issue", "update", issueId, "--state", "Canceled"]);
+  } catch {
+    runLinear(["issue", "update", issueId, "--state", "canceled"]);
+  }
+}
+
+/**
+ * Mark an issue as completed/Done in Linear.
+ */
+export async function markIssueDone(issueId: string): Promise<void> {
+  try {
+    runLinear(["issue", "update", issueId, "--state", "Done"]);
+  } catch {
+    runLinear(["issue", "update", issueId, "--state", "completed"]);
+  }
+}
+
 export async function setIssueDescription(issueId: string, description: string): Promise<void> {
   const path = join(tmpdir(), `linear-rank-${process.pid}-${Date.now()}-${issueId.replace(/[^A-Za-z0-9_-]/g, "_")}.md`);
   writeFileSync(path, description, "utf8");
@@ -562,4 +584,11 @@ export async function writeRelativeRank(options: {
 export async function deleteIssues(issueIds: string[]): Promise<void> {
   if (issueIds.length === 0) return;
   runLinear(["issue", "delete", "--bulk", ...issueIds, "--confirm"]);
+}
+
+/**
+ * Permanently delete a single issue.
+ */
+export async function deleteIssue(issueId: string): Promise<void> {
+  runLinear(["issue", "delete", issueId, "--confirm"]);
 }

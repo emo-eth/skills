@@ -13,7 +13,7 @@ This is the implementation plan. `GOAL.md` in this worktree is the contract. Do 
 | --- | --- | --- |
 | C1 | Opening/creating a Herdr worktree creates or binds a Linear ticket with no form. Human chair name, never a ticket number. | V1, V2 |
 | C2 | Every remember-later idea is a ticket even with no tree. Command-center questions that might outlive the pane get tickets. | V1, V6 |
-| C3 | Ticket face: **Intention**, **Vibe**, **Done-when**, **Map** (Herdr label + git path + where the rest lives). Not a title stub, not a session dump, not a second PRD. | V5 |
+| C3 | Ticket spec: **Intention**, **Vibe**, **Done-when**, **Map** (Herdr label + git path + where the rest lives). Not a title stub, not a session dump, not a second PRD. | V5 |
 | C4 | Agent in the tree already knows the ticket. Standing update: only when intention/vibe/done-when/map actually change. | V5 |
 | C5 | Desk is now: ranked now + named this sitting + standing chairs. Size is parallel attention. Nested tickets are not extra chairs. | V2 |
 | C6 | Hide = `workspace close`. Git stays. Ticket stays open. Reopen from Map. | V3 |
@@ -45,7 +45,7 @@ This is the implementation plan. `GOAL.md` in this worktree is the contract. Do 
 ## Incorrect / too loose (do not treat as done)
 
 1. **Capture claimed done because tickets existed.** Binding after the fact is not C1. New trees still born without tickets.
-2. **Ticket face is inconsistent.** Standing-desk issues look right. Launch tickets (billing, auth, relevance, …) are checklists with a Map appendix. Cold pickup still requires hunting GOAL.md / PRDs.
+2. **Ticket spec is inconsistent.** Standing-desk issues look right. Launch tickets (billing, auth, relevance, …) are checklists with a Map appendix. Cold pickup still requires hunting GOAL.md / PRDs.
 3. **Hide was treated as the product.** Closing chairs without a capture path is how ideas die the next time someone opens a tree with no ticket.
 4. **`worktree remove` was used as a threat in prompts but never gated.** Event hooks cannot block it.
 5. **p1 in this workspace is the old blotter/hide session.** It must not also write the plugin. This plan is owned by a dedicated pane.
