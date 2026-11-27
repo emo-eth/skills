@@ -7,7 +7,7 @@ license: MIT
 
 # Smart home connectors
 
-Talk to plugs and strips through authenticated APIs plus local python-kasa when studio can reach the plug. **IOT** (EP25 / HS103 / HS105) use Kasa Cloud across a separate IoT SSID. **SMART.KASAPLUG** (KP125M) does not tunnel XOR through `wap.tplinkcloud.com`; it uses KLAP on HTTP :80. `smart-home scan` discovers IPs with UDP broadcasts and TCP :80 on every local interface /24 plus ASUS guest VLANs `192.168.101.0/24` and `192.168.102.0/24` (override with `scan_cidrs` or `SMART_HOME_SCAN_CIDRS`). Isolated SSIDs with no L3 route still cannot be KLAP'd from studio until a host is on that VLAN or the router allows LAN→guest :80.
+Talk to plugs and strips through authenticated APIs plus local python-kasa when studio can reach the plug. **IOT** (EP25 / HS103 / HS105) use Kasa Cloud across a separate IoT SSID. **SMART.KASAPLUG** (KP125M) does not tunnel XOR through `wap.tplinkcloud.com`; it uses KLAP on HTTP :80. `smart-home scan` discovers IPs with UDP broadcasts and TCP :80 on every local interface /24 plus ASUS guest VLANs `192.168.101.0/24` and `192.168.102.0/24` (override with `scan_cidrs` or `SMART_HOME_SCAN_CIDRS`). Isolated SSIDs with no L3 route still cannot be KLAP'd from studio until a hop in `kasa.scan_via` / `SMART_HOME_SCAN_VIA` is on that VLAN (spark0 ethernet tags 501/502) or the router allows LAN→guest :80. Guest AP isolation drops even same-VLAN STA-to-STA, including the tagged trunk.
 
 Connectors today: **Kasa Cloud + unicast KLAP** (default) and **Home Assistant REST**. Add another backend by implementing the same list / energy / on / off surface.
 
@@ -81,7 +81,7 @@ Host map: `spark0` and `spark1` are the same Kasa plug `Sparks` (cycling either 
 ## Rules
 
 - Cloud for IOT when the cloud says online. Local python-kasa for SMART.KASAPLUG and for any plug with a host in `hosts.toml` or `[[device]] host`.
-- `smart-home scan` covers every local /24 plus guest CIDRs `192.168.101.0/24` / `192.168.102.0/24`. Guest AP isolation still blocks those packets from studio LAN until Wi-Fi is on that SSID or the router allows intranet access.
+- `smart-home scan` covers every local /24 plus guest CIDRs `192.168.101.0/24` / `192.168.102.0/24`, then SSH `scan_via` hops and KLAP-identifies TCP :80 there. Guest AP isolation still drops STA-to-STA on those VLANs until the router turns intranet access on.
 - Do not put Kasa or HA secrets in the skills repo, tickets, or chat logs. Do not log Matter setup codes.
 - Do not cycle a plug that is feeding this machine unless the operator named that target.
 - Map human aliases in `[[device]]`. Scan persists IPs so SMART plugs do not need a hand-written host when they are on this LAN.
@@ -89,4 +89,4 @@ Host map: `spark0` and `spark1` are the same Kasa plug `Sparks` (cycling either 
 
 ## Studio notes
 
-studio ethernet is `192.168.50.0/24`. Live scan finds Media Rack (`192.168.50.152`) on that LAN. Sparks / PC / 4090 / SSDs (KP125M) live on the isolated IoT SSID (ASUS guest `192.168.101/102`). IOT plugs that are cloud-online report watts/`on` via Kasa Cloud; SMART plugs need a unicast host. There is no Home Assistant listener on studio. `python-kasa` is not installed system-wide; `uvx` is.
+studio ethernet is `192.168.50.0/24`. Live scan finds Media Rack (`192.168.50.152`) on that LAN. Sparks / PC / 4090 / SSDs (KP125M) live on the isolated IoT SSID (ASUS guest VLANs 501=`192.168.101.0/24`, 502=`192.168.102.0/24`). spark0's `enP7s7.501/.502` NM connections trunk those VLANs; `SMART_HOME_SCAN_VIA=spark0` KLAP-reads from there. Guest AP isolation currently hides every STA (ARP only sees the AP). IOT plugs that are cloud-online report watts/`on` via Kasa Cloud; SMART plugs need a unicast host. There is no Home Assistant listener on studio. `python-kasa` is not installed system-wide; `uvx` is.

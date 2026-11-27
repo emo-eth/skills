@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import io
 import importlib.util
 import json
 import os
@@ -7,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import Mock, patch
 
 TEST_ROOT = Path(__file__).resolve().parent
@@ -457,7 +459,7 @@ class TestKasaAppServer(unittest.TestCase):
         config = sh.AppConfig(path=Path(tmp) / "config.toml", state_dir=Path(tmp))
         transport = FakeTransport([(200, json.dumps(row)) for row in responses])
         connector = sh.KasaCloudConnector(config, transport=transport)
-        connector._app_login = lambda: ("https://app.test", "test-token", "term")
+        connector._app_login = lambda: {"app_host": "https://app.test", "token": "test-token"}
         return connector, transport
 
     def test_inventory_parses_top_level_data(self):
@@ -569,6 +571,142 @@ class TestKasaAppServer(unittest.TestCase):
                     connector.set_power.assert_not_called()
 
 
+class KasaCloudRouter:
+    """Fake TP-Link legacy cloud + app-server. Counts logins; rejects listed tokens."""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+        self.rejected: set[str] = set()
+        self.logins = 0
+        self.app_logins = 0
+        self.login_terms: list[str] = []
+
+    def request(self, method, url, headers, body, timeout):
+        payload = json.loads(body.decode()) if body else None
+        self.calls.append({"method": method, "url": url, "headers": headers, "body": payload})
+        parsed = sh.urllib.parse.urlparse(url)
+        query = sh.urllib.parse.parse_qs(parsed.query)
+        if parsed.path == "/api/v2/account/getAccountStatusAndUrl":
+            return kasa_ok({"appServerUrl": "https://region.test"})
+        if parsed.path == "/api/v2/account/login":
+            self.app_logins += 1
+            self.login_terms.append(payload["terminalUUID"])
+            return kasa_ok({"token": f"app-{self.app_logins}",
+                            "refreshToken": f"refresh-{self.app_logins}"})
+        if parsed.path == "/api/v2/common/getAppServiceUrl":
+            return kasa_ok({"serviceUrls": {sh.APP_SERVER_SERVICE_ID: "https://app.test"}})
+        if parsed.hostname == "app.test":
+            token = headers["Authorization"].removeprefix("ut|")
+            if token in self.rejected:
+                return (401, "")
+            if parsed.path == "/v2/things":
+                return (200, json.dumps({"data": [{"thingName": "kp1", "status": 1}]}))
+            return (200, json.dumps({"shadows": [{"thingName": "kp1", "version": 3,
+                                                  "state": {"reported": {"on": True}}}]}))
+        if payload and payload.get("method") == "login":
+            self.logins += 1
+            self.login_terms.append(payload["params"]["terminalUUID"])
+            return kasa_ok({"token": f"cloud-{self.logins}"})
+        if query.get("token", [None])[0] in self.rejected:
+            return (200, json.dumps({"error_code": -20651, "msg": "Token expired"}))
+        return kasa_ok({"deviceList": [{"deviceId": "kp1", "alias": "Plug",
+                                        "deviceModel": "KP125M(US)", "status": 0}]})
+
+
+class TestKasaSessionCache(unittest.TestCase):
+    def _connector(self, tmp, router):
+        cfg = sh.AppConfig(path=Path(tmp) / "config.toml", state_dir=Path(tmp))
+        cfg.kasa_username = "user@example.com"
+        cfg.kasa_password = "pw"
+        cfg.aliases = {"plug": sh.Alias("plug", "kasa", "Plug")}
+        return sh.KasaCloudConnector(cfg, transport=router)
+
+    def _status(self, connector):
+        devices = connector.list_devices()
+        return [connector.energy(device).on for device in devices]
+
+    def _cache(self, tmp):
+        return json.loads((Path(tmp) / "kasa-session-cache.json").read_text())
+
+    def test_terminal_uuid_is_persisted_and_reused_for_app_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            router = KasaCloudRouter()
+            first = self._connector(tmp, router)
+            term_file = Path(tmp) / "kasa-terminal-uuid"
+            self.assertEqual(term_file.stat().st_mode & 0o777, 0o600)
+            first._app_login()
+            second = self._connector(tmp, router)
+            second._app_login()
+            self.assertEqual(first._terminal, second._terminal)
+            self.assertEqual(router.login_terms, [first._terminal, first._terminal])
+            self.assertEqual(term_file.read_text().strip(), first._terminal)
+
+    def test_second_process_reuses_both_cached_sessions_with_zero_logins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            router = KasaCloudRouter()
+            self.assertEqual(self._status(self._connector(tmp, router)), [True])
+            self.assertEqual((router.logins, router.app_logins), (1, 1))
+            path = Path(tmp) / "kasa-session-cache.json"
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            [entry] = self._cache(tmp).values()
+            self.assertEqual(entry["cloud"]["token"], "cloud-1")
+            self.assertEqual(entry["app"]["token"], "app-1")
+            self.assertEqual(entry["app"]["refresh_token"], "refresh-1")
+            self.assertEqual(entry["app"]["app_host"], "https://app.test")
+            self.assertEqual(entry["app"]["regional_url"], "https://region.test")
+            self.assertNotIn("pw", path.read_text())
+
+            router.calls.clear()
+            self.assertEqual(self._status(self._connector(tmp, router)), [True])
+            self.assertEqual((router.logins, router.app_logins), (1, 1))
+            paths = [sh.urllib.parse.urlparse(call["url"]).path for call in router.calls]
+            self.assertNotIn("/api/v2/account/login", paths)
+            self.assertFalse(any(
+                call["body"] and call["body"].get("method") == "login" for call in router.calls
+            ))
+
+    def test_rejected_cached_tokens_relogin_once_and_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            router = KasaCloudRouter()
+            self._status(self._connector(tmp, router))
+            term = router.login_terms[0]
+            router.rejected = {"cloud-1", "app-1"}
+            self.assertEqual(self._status(self._connector(tmp, router)), [True])
+            self.assertEqual((router.logins, router.app_logins), (2, 2))
+            self.assertEqual(set(router.login_terms), {term})
+            [entry] = self._cache(tmp).values()
+            self.assertEqual(entry["cloud"]["token"], "cloud-2")
+            self.assertEqual(entry["app"]["token"], "app-2")
+
+    def test_retry_after_relogin_failure_does_not_loop(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            router = KasaCloudRouter()
+            self._status(self._connector(tmp, router))
+            router.rejected = {"cloud-1", "cloud-2"}
+            with self.assertRaises(sh.AuthError):
+                self._connector(tmp, router).list_devices()
+            self.assertEqual(router.logins, 2)
+
+    def test_corrupt_cache_recovers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "kasa-session-cache.json").write_text("{not json")
+            router = KasaCloudRouter()
+            self.assertEqual(self._status(self._connector(tmp, router)), [True])
+            self.assertEqual((router.logins, router.app_logins), (1, 1))
+            [entry] = self._cache(tmp).values()
+            self.assertEqual(entry["cloud"]["token"], "cloud-1")
+
+    def test_cache_is_keyed_by_account(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            router = KasaCloudRouter()
+            self._connector(tmp, router).list_devices()
+            other = self._connector(tmp, router)
+            other.config.kasa_username = "other@example.com"
+            other.list_devices()
+            self.assertEqual(router.logins, 2)
+            self.assertEqual(len(self._cache(tmp)), 2)
+
+
 class TestCycleSafety(unittest.TestCase):
     def test_requires_confirm(self):
         device = sh.Device("kasa", "id", "spark0")
@@ -646,6 +784,115 @@ class TestCycleSafety(unittest.TestCase):
             )
         self.assertEqual(rec.events, [False, True])
         self.assertTrue(rec.power)
+
+    class _OffFails:
+        """Off raises after the relay is (maybe) cut; on behaviour configurable."""
+
+        def __init__(self, on_raises=False, readback=True):
+            self.events = []
+            self.on_raises = on_raises
+            self.readback = readback
+            self.reads = 0
+
+        def get_power(self, device):
+            self.reads += 1
+            return True if self.reads == 1 else self.readback
+
+        def set_power(self, device, on):
+            self.events.append(on)
+            if not on:
+                raise TimeoutError("read timed out")
+            if self.on_raises:
+                raise sh.SmartHomeError("on rejected")
+
+    def _cycle(self, connector, alias=None, confirm="cycle", slept=None):
+        return sh.cycle_device(
+            connector=connector,  # type: ignore[arg-type]
+            device=sh.Device("kasa", "dev-1234", "spark0"),
+            alias=alias or sh.Alias("spark0", "kasa", "spark0", allow_cycle=True),
+            confirm=confirm,
+            off_seconds=8,
+            allow_unmapped=False,
+            even_if_off=False,
+            sleep=(slept.append if slept is not None else lambda _s: None),
+        )
+
+    def test_off_error_attempts_recovery_on_success(self):
+        conn = self._OffFails()
+        slept = []
+        with self.assertRaises(sh.CycleFailed) as ctx:
+            self._cycle(conn, slept=slept)
+        self.assertEqual(conn.events, [False, True])
+        self.assertEqual(slept, [sh.CYCLE_RECOVERY_DELAY_SECONDS])
+        payload = ctx.exception.payload
+        self.assertFalse(payload["ok"])
+        self.assertIn("timed out", payload["off_error"])
+        self.assertEqual(payload["recovery"], {"attempted": True, "on": True})
+        self.assertIn("recovery on succeeded", str(ctx.exception))
+
+    def test_off_error_recovery_on_also_fails(self):
+        conn = self._OffFails(on_raises=True, readback=False)
+        with self.assertRaises(sh.CycleFailed) as ctx:
+            self._cycle(conn)
+        self.assertEqual(conn.events, [False, True])
+        recovery = ctx.exception.payload["recovery"]
+        self.assertEqual(recovery["on_error"], "on rejected")
+        self.assertIs(recovery["on"], False)
+        self.assertIn("did not verify", str(ctx.exception))
+
+    def test_off_error_recovery_readback_fails(self):
+        conn = self._OffFails()
+        conn.get_power = Mock(side_effect=[True, sh.SmartHomeError("offline")])
+        with self.assertRaises(sh.CycleFailed) as ctx:
+            self._cycle(conn)
+        recovery = ctx.exception.payload["recovery"]
+        self.assertIsNone(recovery["on"])
+        self.assertEqual(recovery["readback_error"], "offline")
+
+    def test_policy_refusals_never_touch_power(self):
+        cases = [
+            ("mac studio name", sh.Alias("x", "kasa", "Mac Studio", allow_cycle=True), "cycle"),
+            ("allow_cycle false", sh.Alias("spark0", "kasa", "spark0", allow_cycle=False), "cycle"),
+            ("missing confirm", None, None),
+        ]
+        for label, alias, confirm in cases:
+            with self.subTest(label):
+                conn = Mock()
+                with self.assertRaises(sh.SafetyError):
+                    self._cycle(conn, alias=alias, confirm=confirm)
+                conn.set_power.assert_not_called()
+                conn.get_power.assert_not_called()
+
+    def test_normal_cycle_reads_back(self):
+        conn = Mock()
+        conn.get_power.side_effect = [True, True]
+        slept = []
+        result = self._cycle(conn, slept=slept)
+        self.assertEqual([c.args[1] for c in conn.set_power.call_args_list], [False, True])
+        self.assertEqual(slept, [8])
+        self.assertTrue(result["was_on"])
+        self.assertTrue(result["on"])
+        self.assertEqual(conn.get_power.call_count, 2)
+
+    def test_cli_cycle_off_error_exits_nonzero_with_json(self):
+        conn = self._OffFails()
+        device = sh.Device("kasa", "dev-1234", "spark0")
+        alias = sh.Alias("spark0", "kasa", "spark0", allow_cycle=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = Path(tmp) / "config.toml"
+            cfg.write_text("", encoding="utf-8")
+            out = io.StringIO()
+            with patch.object(sh, "load_config", return_value=sh.AppConfig(
+                path=cfg, aliases={"spark0": alias}
+            )), patch.object(
+                sh, "resolve_target", return_value=(conn, device, alias)
+            ), patch.object(sh, "CYCLE_RECOVERY_DELAY_SECONDS", 0), redirect_stdout(out), redirect_stderr(io.StringIO()):
+                code = sh.main(["--config", str(cfg), "--json", "cycle", "spark0", "--confirm", "cycle"])
+        self.assertEqual(code, 2)
+        self.assertEqual(conn.events, [False, True])
+        payload = json.loads(out.getvalue())
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["recovery"]["on"])
 
 
 class TestHomeAssistant(unittest.TestCase):
@@ -869,6 +1116,28 @@ class TestSetup(unittest.TestCase):
             self.assertEqual(code, 0)
             cfg = sh.load_config(path, environ={})
             self.assertEqual(cfg.kasa_password, "one-line-secret")
+
+
+    def test_preserves_scan_via(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        "[kasa]",
+                        'username = "old@b.c"',
+                        'password = "old"',
+                        'scan_via = ["spark0"]',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            path.chmod(0o600)
+            sh.write_local_config(path, username="new@b.c", password="new")
+            again = sh.load_config(path, environ={})
+            self.assertEqual(again.kasa_username, "new@b.c")
+            self.assertEqual(again.scan_via, ["spark0"])
 
 
 class TestCliSafety(unittest.TestCase):
@@ -1359,6 +1628,151 @@ class TestScanCidrs(unittest.TestCase):
         self.assertEqual(bcasts[0], "255.255.255.255")
         self.assertIn("192.168.50.255", bcasts)
         self.assertIn("192.168.101.255", bcasts)
+
+
+
+class TestScanVia(unittest.TestCase):
+    def test_load_scan_via_from_config_and_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.toml"
+            path.write_text(
+                "\n".join(
+                    [
+                        "[kasa]",
+                        'username = "a@b.c"',
+                        'password = "secret"',
+                        'scan_via = ["spark0"]',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            path.chmod(0o600)
+            cfg = sh.load_config(path, environ={"SMART_HOME_SCAN_VIA": "edge,spark0"})
+            self.assertEqual(cfg.scan_via, ["spark0", "edge"])
+            hops = sh.scan_via_for(cfg)
+            self.assertEqual(hops, ["spark0", "edge"])
+
+    def test_host_is_directly_reachable_uses_local_ifaces_only(self):
+        cidrs = sh.local_ipv4_cidrs()
+        self.assertTrue(any(c.endswith("/24") for c in cidrs))
+        self.assertFalse(sh.host_is_directly_reachable("not-an-ip"))
+        # Guest scan CIDRs are not automatically local just because we probe them.
+        if "192.168.101.0/24" not in cidrs:
+            self.assertFalse(sh.host_is_directly_reachable("192.168.101.20"))
+
+    def test_scan_merges_via_discover(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = sh.AppConfig(path=Path(tmp) / "unused.toml", state_dir=Path(tmp))
+            cfg.kasa_username = "user@example.com"
+            cfg.kasa_password = "pw"
+            cfg.scan_via = ["spark0"]
+
+            class ViaLocal(FakeLocal):
+                def discover(self, username, password, cidrs=None):
+                    return []
+
+                def discover_via(self, hop, username, password, cidrs=None):
+                    self.reads.append({"via": hop, "cidrs": cidrs})
+                    device = sh.Device(
+                        connector="kasa",
+                        device_id="sparks-id",
+                        alias="Sparks",
+                        model="KP125M",
+                        online=True,
+                        extras={
+                            "host": "192.168.101.20",
+                            "deviceMac": "A82948235757",
+                            "deviceType": "SMART.KASAPLUG",
+                        },
+                    )
+                    return [(device, self.energy)]
+
+            local = ViaLocal()
+            connector = sh.KasaCloudConnector(cfg, transport=FakeTransport([]), local=local)
+            found = connector.scan()
+            self.assertEqual(len(found), 1)
+            self.assertEqual(found[0].extras["host"], "192.168.101.20")
+            loaded = sh.load_host_index(Path(tmp))
+            self.assertEqual(loaded["sparks"], "192.168.101.20")
+            self.assertEqual(local.reads[0]["via"], "spark0")
+
+    def test_energy_uses_via_when_host_not_local(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = sh.AppConfig(path=Path(tmp) / "unused.toml", state_dir=Path(tmp))
+            cfg.kasa_username = "user@example.com"
+            cfg.kasa_password = "pw"
+            cfg.scan_via = ["spark0"]
+            sh.index_host(cfg.hosts, "192.168.101.20", "Sparks")
+
+            class ViaLocal(FakeLocal):
+                def read(self, host, username, password):
+                    raise AssertionError("local read should be skipped for guest IP")
+
+                def read_via(self, hop, host, username, password):
+                    self.reads.append({"via": hop, "host": host})
+                    device = sh.Device(
+                        connector="kasa",
+                        device_id="sparks-id",
+                        alias="Sparks",
+                        model="KP125M",
+                        online=True,
+                        extras={"host": host, "deviceType": "SMART.KASAPLUG"},
+                    )
+                    return device, self.energy
+
+            local = ViaLocal()
+            original = sh.host_is_directly_reachable
+            sh.host_is_directly_reachable = lambda ip, extra=None: False
+            try:
+                connector = sh.KasaCloudConnector(
+                    cfg, transport=FakeTransport([]), local=local
+                )
+                device = sh.Device(
+                    "kasa",
+                    "sparks-id",
+                    "Sparks",
+                    model="KP125M",
+                    extras={"deviceType": "SMART.KASAPLUG"},
+                )
+                reading = connector.energy(device)
+            finally:
+                sh.host_is_directly_reachable = original
+            self.assertAlmostEqual(reading.watts, 206.6)
+            self.assertEqual(local.reads[0]["via"], "spark0")
+            self.assertEqual(local.reads[0]["host"], "192.168.101.20")
+
+    def test_ssh_klap_json_keeps_password_on_stdin(self):
+        seen = []
+
+        def fake_run(argv, input=None, capture_output=None, text=None, timeout=None):
+            seen.append({"argv": argv, "input": input, "timeout": timeout})
+
+            class Result:
+                returncode = 0
+                stdout = 'RESULT:{"host":"192.168.101.20","state":{"ok":true}}\n'
+                stderr = ""
+
+            return Result()
+
+        original = sh.subprocess.run
+        sh.subprocess.run = fake_run
+        try:
+            payload = sh.ssh_klap_json(
+                "spark0",
+                {"cmd": "read", "host": "192.168.101.20", "username": "u", "password": "s3cret"},
+            )
+        finally:
+            sh.subprocess.run = original
+        self.assertEqual(payload["host"], "192.168.101.20")
+        call = seen[0]
+        self.assertEqual(call["argv"][0], "ssh")
+        self.assertIn("spark0", call["argv"])
+        self.assertNotIn("s3cret", call["argv"])
+        self.assertIn("s3cret", call["input"])
+        self.assertIn("bash", call["argv"])
+        self.assertTrue(any("venv/bin/python" in str(a) for a in call["argv"]))
+
 
 
 if __name__ == "__main__":
